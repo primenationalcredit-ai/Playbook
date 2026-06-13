@@ -1,0 +1,55 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Daily sync runs at 6 AM UTC (midnight MST)
+[functions."pipedrive-daily-sync"]
+  schedule = "0 6 * * *"
+
+# Bonus tracking sync - runs hourly during business hours Mon-Sat
+[functions."consultant-bonus-sync"]
+  schedule = "0 12-23 * * 1-6"
+
+# Zoho payment sync - runs hourly during business hours Mon-Sat
+[functions."zoho-payment-sync"]
+  schedule = "30 12-23 * * 1-6"
+
+[functions."zoho-invoice-sync"]
+  schedule = "45 12-23 * * 1-6"
+
+# Full Pipedrive person scan for AM stall coverage + person->AM map.
+# Every 2 hours during business window (heavy scan, runs as background fn).
+[functions."am-pipeline-cache"]
+  schedule = "0 12-23/2 * * 1-6"
+
+# DISABLED - was causing duplicate/wrong data
+# [functions."sales-sync-backup"]
+#   schedule = "0 * * * *"
+
+# DISABLED - was causing duplicate/wrong data  
+# [functions."sales-auto-sync"]
+#   schedule = "*/5 * * * *"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# =============================================
+# ENVIRONMENT VARIABLES TO SET IN NETLIFY UI:
+# =============================================
+# PIPEDRIVE_API_KEY = (set in Netlify)
+# PIPEDRIVE_DOMAIN = asapcreditrepair
+# SENDGRID_API_KEY = (set in Netlify)
+# VITE_SUPABASE_URL = (set in Netlify)
+# SUPABASE_SERVICE_ROLE_KEY = (set in Netlify)
+# 
+# GOOGLE SHEETS API (for Credit Team Scorecard):
+# GOOGLE_SERVICE_ACCOUNT_EMAIL = (set in Netlify)
+# GOOGLE_PRIVATE_KEY = (set in Netlify)
+# GOOGLE_SHEET_ID = (set in Netlify)
+# =============================================

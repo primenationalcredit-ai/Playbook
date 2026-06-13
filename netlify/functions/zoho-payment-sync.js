@@ -1,0 +1,153 @@
+// Zoho Payment Sync v2 — Faster: pulls payments + invoice list data only
+// Enrichment (Pipedrive deal lookups) done separately to avoid timeouts
+const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
+const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
+const ZOHO_REFRESH_TOKEN = process.env.ZOHO_REFRESH_TOKEN;
+const ZOHO_ORG_ID = process.env.ZOHO_ORG_ID;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+async function getZohoToken() {
+  const params = new URLSearchParams();
+  params.append('grant_type', 'refresh_token');
+  params.append('client_id', ZOHO_CLIENT_ID);
+  params.append('client_secret', ZOHO_CLIENT_SECRET);
+  params.append('refresh_token', ZOHO_REFRESH_TOKEN);
+  const res = await fetch('https://accounts.zoho.com/oauth/v2/token', { method: 'POST', body: params });
+  const data = await res.json();
+  if (!data.access_token) throw new Error('Token failed: ' + JSON.stringify(data));
+  return data.access_token;
+}
+
+async function zohoGet(token, endpoint) {
+  const sep = endpoint.includes('?') ? '&' : '?';
+  const url = `https://www.zohoapis.com/invoice/v3${endpoint}${sep}organization_id=${ZOHO_ORG_ID}`;
+  const res = await fetch(url, { headers: { 'Authorization': `Zoho-oauthtoken ${token}` } });
+  if (!res.ok) { const err = await res.text(); throw new Error(`Zoho ${res.status}: ${err}`); }
+  return await res.json();
+}
+
+function parsePaymentType(itemName) {
+  if (!itemName) return 'additional_round';
+  const n = itemName.toLowerCase();
+  if (n.includes('doc') || n === 'doc1') return 'doc_fee';
+  if (n.includes('par') || n === 'par1') return 'partial';
+  if (n.includes('fin') || n === 'fin1') return 'final';
+  if (n.includes('pif') || n.includes('full')) return 'paid_in_full';
+  // Anything else is an additional round
+  return 'additional_round';
+}
+
+function parseDealId(companyName) {
+  if (!companyName) return null;
+  const parts = companyName.trim().split(/\s+/);
+  const id = parseInt(parts[0]);
+  return isNaN(id) || id < 1 ? null : id;
+}
+
+exports.handler = async (event) => {
+  const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
+
+  try {
+    const params = event.queryStringParameters || {};
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const targetMonth = params.month || currentMonth;
+    const monthStart = `${targetMonth}-01`;
+    // Calculate month end
+    const [y, m] = targetMonth.split('-').map(Number);
+    const monthEnd = new Date(y, m, 0).toISOString().split('T')[0]; // last day of month
+    const page = parseInt(params.page) || 1;
+    const perPage = 25; // Larger batches since we're not doing Pipedrive lookups
+
+    const token = await getZohoToken();
+
+    // Get existing payments to skip
+    const existRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${targetMonth}&select=zoho_payment_id`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    const existing = existRes.ok ? await existRes.json() : [];
+    const existingSet = new Set(existing.map(e => e.zoho_payment_id).filter(Boolean));
+
+    // Pull payments
+    const paymentsData = await zohoGet(token, `/customerpayments?date_start=${monthStart}&date_end=${monthEnd}&sort_column=date&sort_order=D&per_page=${perPage}&page=${page}`);
+    const payments = paymentsData.customerpayments || [];
+    const hasMore = paymentsData.page_context?.has_more_page || false;
+
+    let newRecords = 0, skipped = 0;
+    const batch = [];
+
+    for (const payment of payments) {
+      if (existingSet.has(payment.payment_id)) { skipped++; continue; }
+      if (payment.amount <= 0) continue;
+
+      let paymentType = 'unknown';
+      let dealId = null;
+
+      // Look up invoice from list endpoint (has company_name + we can get item info)
+      if (payment.invoice_numbers) {
+        try {
+          const invList = await zohoGet(token, `/invoices?invoice_number=${payment.invoice_numbers}`);
+          if (invList.invoices && invList.invoices.length > 0) {
+            const inv = invList.invoices[0];
+            // Get deal_id from company_name
+            dealId = parseDealId(inv.company_name);
+            
+            // Get payment type from full invoice (need line_items)
+            try {
+              const invDetail = await zohoGet(token, `/invoices/${inv.invoice_id}`);
+              if (invDetail.invoice?.line_items?.[0]) {
+                paymentType = parsePaymentType(invDetail.invoice.line_items[0].name);
+              }
+            } catch (e) {
+              // If detail fails, try to infer from amount
+              console.log(`Detail lookup failed for ${inv.invoice_id}, using amount heuristic`);
+            }
+          }
+        } catch (e) {
+          console.log(`Invoice lookup failed for ${payment.invoice_numbers}:`, e.message);
+        }
+      }
+
+      batch.push({
+        payment_date: payment.date,
+        payment_month: targetMonth,
+        amount: payment.amount,
+        payment_type: paymentType,
+        client_name: payment.customer_name,
+        zoho_payment_id: payment.payment_id,
+        pipedrive_deal_id: dealId,
+        consultant_name: 'pending_enrichment', // Will be filled by enrichment step
+        source: 'zoho_api'
+      });
+      newRecords++;
+    }
+
+    if (batch.length > 0) {
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal,resolution=ignore-duplicates'
+        },
+        body: JSON.stringify(batch)
+      });
+      if (!insertRes.ok) console.error('Insert error:', await insertRes.text());
+    }
+
+    return {
+      statusCode: 200, headers,
+      body: JSON.stringify({
+        month: targetMonth, page, paymentsScanned: payments.length,
+        newRecords, skipped, hasMore,
+        nextUrl: hasMore ? `/.netlify/functions/zoho-payment-sync?month=${targetMonth}&page=${page + 1}` : null,
+        syncedAt: now.toISOString()
+      })
+    };
+  } catch (error) {
+    console.error('Zoho sync error:', error);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+  }
+};

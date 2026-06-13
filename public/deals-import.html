@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASAP Playbook - Deals Import</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      background: #f5f5f5;
+    }
+    h1 { color: #1a1a2e; margin-bottom: 10px; }
+    .subtitle { color: #666; margin-bottom: 30px; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .card h2 { margin-top: 0; color: #333; }
+    .drop-zone {
+      border: 3px dashed #ddd;
+      border-radius: 12px;
+      padding: 60px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: #fafafa;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #4CAF50;
+      background: #f0fff0;
+    }
+    .drop-zone p { margin: 0; color: #666; font-size: 18px; }
+    .drop-zone small { color: #999; }
+    input[type="file"] { display: none; }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 20px;
+    }
+    button:hover { background: #45a049; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .status {
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 8px;
+      display: none;
+    }
+    .status.success { background: #d4edda; color: #155724; display: block; }
+    .status.error { background: #f8d7da; color: #721c24; display: block; }
+    .status.loading { background: #fff3cd; color: #856404; display: block; }
+    .stats { margin-top: 15px; }
+    .stats div { 
+      display: flex; 
+      justify-content: space-between; 
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .file-info {
+      background: #e8f5e9;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      display: none;
+    }
+    .instructions {
+      background: #e3f2fd;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .instructions h3 { margin-top: 0; color: #1565c0; }
+    .instructions ol { margin-bottom: 0; padding-left: 20px; }
+    .instructions li { margin-bottom: 10px; }
+    code {
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .warning {
+      background: #fff3e0;
+      border-left: 4px solid #ff9800;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background: #e0e0e0;
+      border-radius: 10px;
+      margin-top: 15px;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #4CAF50;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .chunk-info {
+      font-size: 14px;
+      color: #666;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 Deals Data Import</h1>
+  <p class="subtitle">Import Pipedrive deals into Supabase for unified reporting</p>
+
+  <div class="instructions">
+    <h3>📋 How to Export from Pipedrive:</h3>
+    <ol>
+      <li>Go to <strong>Pipedrive → Deals</strong></li>
+      <li>Select the filter/view you want to export (or "All deals")</li>
+      <li>Click <strong>Export</strong> → Choose <strong>CSV</strong></li>
+      <li>Make sure these columns are included:
+        <ul>
+          <li><code>ID</code>, <code>Title</code>, <code>Owner</code></li>
+          <li><code>Pipeline</code>, <code>Stage</code>, <code>Status</code>, <code>Value</code></li>
+          <li><code>Doc (1)</code>, <code>Final (1)</code>, <code>RD1 Start/End Dates</code></li>
+          <li><code>Call Center Rep</code>, <code>Person</code>, <code>Organization</code></li>
+          <li><code>Add time</code>, <code>Update time</code>, <code>Stage change time</code></li>
+        </ul>
+      </li>
+      <li>Upload the CSV file below</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Upload Deals CSV</h2>
+    
+    <div class="drop-zone" id="dropZone">
+      <p>📁 Drop your CSV file here</p>
+      <small>or click to browse</small>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
+
+    <div class="file-info" id="fileInfo">
+      <strong>File:</strong> <span id="fileName"></span><br>
+      <strong>Size:</strong> <span id="fileSize"></span><br>
+      <strong>Rows:</strong> <span id="rowCount"></span>
+    </div>
+
+    <div class="warning">
+      <strong>⚠️ Note:</strong> This will update existing deals (matched by ID) and insert new ones. 
+      It will NOT delete any deals from the database. Large files will be imported in chunks.
+    </div>
+
+    <button id="importBtn" disabled>Import Deals</button>
+
+    <div class="progress-bar" id="progressBar">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+    <div class="chunk-info" id="chunkInfo"></div>
+
+    <div class="status" id="status">
+      <div id="statusMessage"></div>
+      <div class="stats" id="stats"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🔄 After Import</h2>
+    <p>Once imported, your deals will be available in Supabase. The dashboard will automatically read from there instead of hitting Pipedrive API.</p>
+    <p><strong>Webhooks</strong> will keep the data in sync going forward - any deal changes in Pipedrive will automatically update Supabase.</p>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const rowCount = document.getElementById('rowCount');
+    const importBtn = document.getElementById('importBtn');
+    const status = document.getElementById('status');
+    const statusMessage = document.getElementById('statusMessage');
+    const stats = document.getElementById('stats');
+    const progressBar = document.getElementById('progressBar');
+    const progressFill = document.getElementById('progressFill');
+    const chunkInfo = document.getElementById('chunkInfo');
+
+    let csvLines = [];
+    let headerLine = '';
+
+    // Drop zone events
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleFile(file);
+    });
+
+    function handleFile(file) {
+      if (!file.name.endsWith('.csv')) {
+        alert('Please upload a CSV file');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target.result;
+        const lines = content.split('\n').filter(l => l.trim());
+        
+        headerLine = lines[0];
+        csvLines = lines.slice(1);
+        
+        fileName.textContent = file.name;
+        fileSize.textContent = formatBytes(file.size);
+        rowCount.textContent = csvLines.length.toLocaleString() + ' deals';
+        
+        fileInfo.style.display = 'block';
+        importBtn.disabled = false;
+        
+        // Reset status
+        status.className = 'status';
+        progressBar.style.display = 'none';
+        chunkInfo.textContent = '';
+      };
+      reader.readAsText(file);
+    }
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    importBtn.addEventListener('click', async () => {
+      if (csvLines.length === 0) return;
+
+      importBtn.disabled = true;
+      progressBar.style.display = 'block';
+      status.className = 'status loading';
+      statusMessage.textContent = '⏳ Importing deals...';
+      stats.innerHTML = '';
+
+      // Process in chunks of 200 rows to avoid payload size limits
+      const CHUNK_SIZE = 200;
+      const totalChunks = Math.ceil(csvLines.length / CHUNK_SIZE);
+      let totalInserted = 0;
+      let totalErrors = 0;
+
+      try {
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, csvLines.length);
+          const chunkLines = csvLines.slice(start, end);
+          
+          // Build CSV string with header for this chunk
+          const chunkCsv = headerLine + '\n' + chunkLines.join('\n');
+          
+          chunkInfo.textContent = `Processing chunk ${i + 1} of ${totalChunks} (rows ${start + 1} - ${end})...`;
+          progressFill.style.width = ((i + 1) / totalChunks * 100) + '%';
+
+          const response = await fetch('/.netlify/functions/deals-csv-import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csvData: chunkCsv, hasHeaders: true })
+          });
+
+          // Check if response is ok before parsing
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server error (${response.status}): ${errorText.slice(0, 200)}`);
+          }
+
+          let result;
+          try {
+            result = await response.json();
+          } catch (jsonErr) {
+            throw new Error(`Failed to parse response for chunk ${i + 1}. The chunk may be too large.`);
+          }
+
+          if (result.success) {
+            totalInserted += result.stats?.inserted || 0;
+            totalErrors += result.stats?.errors || 0;
+          } else {
+            throw new Error(result.error || 'Unknown error');
+          }
+
+          // Small delay between chunks to avoid rate limiting
+          if (i < totalChunks - 1) {
+            await new Promise(r => setTimeout(r, 300));
+          }
+        }
+
+        status.className = 'status success';
+        statusMessage.textContent = `✅ Import complete!`;
+        chunkInfo.textContent = '';
+        
+        stats.innerHTML = `
+          <div><span>Total Rows:</span><span>${csvLines.length.toLocaleString()}</span></div>
+          <div><span>Chunks Processed:</span><span>${totalChunks}</span></div>
+          <div><span>Deals Imported:</span><span>${totalInserted.toLocaleString()}</span></div>
+          <div><span>Errors:</span><span>${totalErrors.toLocaleString()}</span></div>
+        `;
+
+      } catch (err) {
+        status.className = 'status error';
+        statusMessage.textContent = '❌ Error: ' + err.message;
+        chunkInfo.textContent = '';
+      }
+
+      importBtn.disabled = false;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,728 @@
+// Consultant Bonus Metrics v4 — Derives ALL metrics from Zoho payments
+// Qualified docs = unique clients with doc_fee AND (partial OR final) payments
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY;
+const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepair';
+
+const AFFILIATE_TIERS = [
+  { min: 11, bonus: 200, label: '11+ clients' },
+  { min: 6, bonus: 110, label: '6-10 clients' },
+  { min: 3, bonus: 50, label: '3-5 clients' }
+];
+const DOC_CLUBS = [
+  { min: 90, bonus: 350, label: '90 Doc Club' },
+  { min: 75, bonus: 200, label: '75 Doc Club' },
+  { min: 60, bonus: 100, label: '60 Doc Club' }
+];
+
+function calcAccelerator(qd) {
+  let total = 0; const bands = [];
+  if (qd > 50) { const n = Math.min(qd, 60) - 50; bands.push({ tier: '51-60', docs: n, perDoc: 10, amount: n * 10 }); total += n * 10; }
+  if (qd > 60) { const n = Math.min(qd, 70) - 60; bands.push({ tier: '61-70', docs: n, perDoc: 20, amount: n * 20 }); total += n * 20; }
+  if (qd > 70) { const n = Math.min(qd, 80) - 70; bands.push({ tier: '71-80', docs: n, perDoc: 30, amount: n * 30 }); total += n * 30; }
+  if (qd > 80) { const n = qd - 80; bands.push({ tier: '81+', docs: n, perDoc: 45, amount: n * 45 }); total += n * 45; }
+  return { total, breakdown: bands };
+}
+
+async function supaGet(table, query) {
+  const sep = query ? '&' : '';
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}${sep}limit=10000`, {
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Range': '0-9999' }
+  });
+  return res.ok ? await res.json() : [];
+}
+
+exports.handler = async (event) => {
+  const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
+
+  try {
+    const params = event.queryStringParameters || {};
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const targetMonth = params.month || currentMonth;
+    const monthLabel = new Date(targetMonth + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const monthStart = `${targetMonth}-01`;
+
+    // Get consultants
+    const consultants = await supaGet('users', 'department=eq.credit_consultants&select=id,name,email,is_va');
+
+    // Get ALL payments (all months) for cross-referencing client journeys
+    const allPayments = await supaGet('consultant_payments', 'select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org');
+
+    // Build a master client map: deal_id → all payment types ever
+    const masterClientMap = {};
+    for (const p of allPayments) {
+      const key = p.pipedrive_deal_id || p.client_name;
+      if (!masterClientMap[key]) masterClientMap[key] = { types: new Set(), months: new Set(), consultant: p.consultant_name, isAffiliate: p.is_affiliate_deal, orgName: p.referrer_org };
+      masterClientMap[key].types.add(p.payment_type);
+      masterClientMap[key].months.add(p.payment_month);
+    }
+
+    // Get reviews
+    const reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=*`);
+
+    // Get already-awarded one-time bonuses
+    let awardedBonuses = [];
+    try {
+      awardedBonuses = await supaGet('bonus_awards', `select=*`);
+    } catch(e) {}
+    const awardedOrgs = new Set(awardedBonuses.map(a => `${a.bonus_type}:${a.org_name}`));
+
+    // Get refunds for refund rate
+    let refunds = [];
+    try {
+      refunds = await supaGet('refund_tracking', `refund_date=gte.${monthStart}&select=*`);
+    } catch(e) { /* table may not exist yet */ }
+
+    // Get invoice data for collection metrics
+    let invoiceData = [];
+    try {
+      invoiceData = await supaGet('consultant_invoices', `select=*`);
+    } catch(e) {}
+    // Monthly payments only (for commission calc)
+    const payments = allPayments.filter(p => p.payment_month === targetMonth);
+
+    // Consults for closing % — deals from Pipedrive filter 523803 (Ready to Quote this month)
+    // Cross-referenced with Zoho payments to see which ones actually paid doc fee
+    let consultsByOwner = {};  // owner -> { total, dealIds[] }
+    const rtqDealIds = new Set();
+    try {
+      let start = 0, more = true;
+      while (more) {
+        const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?filter_id=523803&start=${start}&limit=100&api_token=${PIPEDRIVE_API_KEY}`);
+        if (res.ok) {
+          const data = await res.json();
+          const deals = data.data || [];
+          deals.forEach(d => {
+            const o = d.owner_name || 'Unknown';
+            if (!consultsByOwner[o]) consultsByOwner[o] = { total: 0, dealIds: [] };
+            consultsByOwner[o].total++;
+            consultsByOwner[o].dealIds.push(d.id);
+            rtqDealIds.add(d.id);
+          });
+          more = data.additional_data?.pagination?.more_items_in_collection || false;
+          start += 100;
+          if (start > 1000) more = false;
+        } else { more = false; }
+      }
+    } catch(e) { console.log('Consults error:', e.message); }
+
+    // Build set of deal IDs that have doc_fee payments in Zoho
+    const dealIdsWithDocFee = new Set();
+    for (const p of allPayments) {
+      if (p.payment_type === 'doc_fee' && p.pipedrive_deal_id) {
+        dealIdsWithDocFee.add(p.pipedrive_deal_id);
+      }
+    }
+
+    // Lost deals for closing % — get from all pipelines with lost status
+    let lostByOwner = {};
+    try {
+      // Get lost deals from this month across all pipelines
+      let start = 0;
+      let moreLost = true;
+      while (moreLost) {
+        const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?status=lost&start=${start}&limit=100&api_token=${PIPEDRIVE_API_KEY}`);
+        if (res.ok) {
+          const data = await res.json();
+          const deals = data.data || [];
+          deals.filter(d => d.lost_time && d.lost_time >= monthStart).forEach(d => {
+            const o = d.owner_name || 'Unknown';
+            lostByOwner[o] = (lostByOwner[o] || 0) + 1;
+          });
+          moreLost = data.additional_data?.pagination?.more_items_in_collection || false;
+          start += 100;
+          if (start > 500) moreLost = false; // cap at 500 to avoid timeout
+        } else { moreLost = false; }
+      }
+    } catch(e) { console.log('Lost deals error:', e.message); }
+
+    // Week range
+    const day = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    const weekStartStr = monday.toISOString().split('T')[0];
+
+    const results = {};
+
+    for (const consultant of consultants) {
+      const name = consultant.name;
+      const isVA = consultant.is_va || false;
+      const baseRate = isVA ? 0.10 : 0.14;
+      const affiliateRate = isVA ? 0.14 : 0.21;
+
+      // Match payments to consultant
+      // Strict matching: payment consultant name must contain a significant part of the user's name
+      // Avoid: "Rosa" in "De La Rosa" matching "Rosalia"
+      const firstName = name.split(' ')[0].toLowerCase();
+      const lastName = name.split(' ').slice(-1)[0].toLowerCase();
+      const myPayments = payments.filter(p => {
+        const pName = (p.consultant_name || '').toLowerCase().trim();
+        // Exact first name match (word boundary): "cindy" in "cindy" or "cindy broadstreet"
+        const pParts = pName.split(/\s+/);
+        // Check if consultant first name matches user first name exactly
+        if (pParts[0] === firstName) return true;
+        // Check if last name appears in payment name (for "Carlos Danilo Salguera Balladares" matching "Carlos Salguera")  
+        if (lastName.length > 3 && pParts.some(pp => pp === lastName)) return true;
+        // Full name exact match
+        if (pName === name.toLowerCase()) return true;
+        return false;
+      });
+
+      // === SALES & COMMISSION (from Zoho) ===
+      let totalSales = 0, affiliateSales = 0, organicSales = 0;
+      let docFeeCount = 0, partialCount = 0, finalCount = 0, unknownCount = 0;
+      
+      for (const p of myPayments) {
+        const amt = parseFloat(p.amount) || 0;
+        totalSales += amt;
+        // Commission rate: is_affiliate_deal = org has "Consultant Referral" label → higher rate
+        if (p.is_affiliate_deal) { affiliateSales += amt; } else { organicSales += amt; }
+        if (p.payment_type === 'doc_fee') docFeeCount++;
+        else if (p.payment_type === 'partial') partialCount++;
+        else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') finalCount++;
+        else unknownCount++;
+      }
+
+      const baseCommission = organicSales * baseRate;
+      const affiliateCommission = affiliateSales * affiliateRate;
+      const totalCommission = baseCommission + affiliateCommission;
+
+      // === QUALIFIED DOCS (derived from payments) ===
+      // Group payments by client (using pipedrive_deal_id as unique identifier, fallback to client_name)
+      const clientMap = {};
+      for (const p of myPayments) {
+        const key = p.pipedrive_deal_id || p.client_name;
+        if (!clientMap[key]) clientMap[key] = { 
+          name: p.client_name, dealId: p.pipedrive_deal_id,
+          hasDocFee: false, hasPartial: false, hasFinal: false,
+          totalPaid: 0, orgName: p.referrer_org, 
+          isAffiliate: p.is_affiliate_deal,  // Consultant Referral label = affiliate for both commission + bonus
+          payments: [], firstPaymentDate: p.payment_date
+        };
+        clientMap[key].totalPaid += parseFloat(p.amount) || 0;
+        clientMap[key].payments.push(p);
+        if (p.payment_type === 'doc_fee') clientMap[key].hasDocFee = true;
+        if (p.payment_type === 'partial') clientMap[key].hasPartial = true;
+        if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') clientMap[key].hasFinal = true;
+        if (p.payment_date < clientMap[key].firstPaymentDate) clientMap[key].firstPaymentDate = p.payment_date;
+      }
+
+      const clients = Object.values(clientMap);
+      
+      // === QUALIFIED DOCS (cross-month journey) ===
+      // A qualified doc = client who paid doc fee THIS month AND has partial/final in ANY month
+      let qualifiedDocs = 0;
+      let docFeeOnlyCount = 0;
+      const qualifiedClients = [];
+      
+      for (const client of clients) {
+        if (!client.hasDocFee) continue; // Only count clients who paid doc fee this month
+        const key = client.dealId || client.name;
+        const masterRecord = masterClientMap[key];
+        
+        if (masterRecord && (masterRecord.types.has('partial') || masterRecord.types.has('final') || masterRecord.types.has('paid_in_full'))) {
+          qualifiedDocs++;
+          qualifiedClients.push(client);
+        } else {
+          docFeeOnlyCount++;
+        }
+      }
+      
+      // Also count clients who didn't pay doc fee this month but paid partial/final
+      // These became qualified in a prior month, contributing to THIS month's payment revenue
+      const priorMonthQualified = clients.filter(c => !c.hasDocFee && (c.hasPartial || c.hasFinal));
+      
+      const docFeeOnlyClients = clients.filter(c => c.hasDocFee && !qualifiedClients.includes(c));
+
+      // === ACCELERATOR ===
+      const accelerator = calcAccelerator(qualifiedDocs);
+
+      // === DOC CLUB ===
+      let docClub = null;
+      for (const club of DOC_CLUBS) { if (qualifiedDocs >= club.min) { docClub = { ...club }; break; } }
+      const docClubBonus = docClub ? docClub.bonus : 0;
+
+      // === AFFILIATE BOOK (orgs with Consultant Referral label) ===
+      const affiliateMap = {};
+      for (const client of qualifiedClients) {
+        if (client.isAffiliate && client.orgName) {
+          if (!affiliateMap[client.orgName]) affiliateMap[client.orgName] = 0;
+          affiliateMap[client.orgName]++;
+        }
+      }
+      const producingAffiliates = Object.entries(affiliateMap)
+        .filter(([_, count]) => count >= 3)
+        .sort((a, b) => b[1] - a[1]);
+
+      let affiliateBonus = 0;
+      const affiliateBonusDetail = [];
+      producingAffiliates.forEach(([affName, count], idx) => {
+        if (idx >= 5) {
+          let tierBonus = 0, tierLabel = '';
+          for (const tier of AFFILIATE_TIERS) { if (count >= tier.min) { tierBonus = tier.bonus; tierLabel = tier.label; break; } }
+          affiliateBonus += tierBonus;
+          affiliateBonusDetail.push({ name: affName, clients: count, bonus: tierBonus, tier: tierLabel });
+        }
+      });
+
+      // === REACTIVATION KICKER ($75 one-time for reviving dormant affiliate) ===
+      // Dormant = affiliate org with no clients for 90+ days, then sends a new one this month
+      let reactivationCount = 0;
+      const reactivatedOrgs = [];
+      
+      // Build affiliate org payment history from ALL months
+      const orgPaymentHistory = {};
+      for (const p of allPayments) {
+        if (!p.is_affiliate_deal || !p.referrer_org) continue;
+        // Match to this consultant
+        const pFirst = (p.consultant_name || '').split(' ')[0].toLowerCase();
+        if (pFirst !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
+        
+        if (!orgPaymentHistory[p.referrer_org]) orgPaymentHistory[p.referrer_org] = [];
+        orgPaymentHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month });
+      }
+      
+      for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
+        const thisMonthPayments = payments.filter(p => p.month === targetMonth);
+        const priorPayments = payments.filter(p => p.month < targetMonth).sort((a, b) => b.date.localeCompare(a.date));
+        
+        if (thisMonthPayments.length > 0 && priorPayments.length > 0) {
+          const lastPriorDate = new Date(priorPayments[0].date);
+          const firstThisMonth = new Date(thisMonthPayments[0].date);
+          const daysDiff = Math.floor((firstThisMonth - lastPriorDate) / (1000 * 60 * 60 * 24));
+          
+          if (daysDiff >= 90) {
+            // Check if already awarded
+            if (!awardedOrgs.has(`reactivation_kicker:${orgName}`)) {
+              reactivationCount++;
+              reactivatedOrgs.push({ name: orgName, lastActive: priorPayments[0].date, reactivatedOn: thisMonthPayments[0].date, daysDormant: daysDiff });
+            }
+          }
+        }
+      }
+      const reactivationBonus = reactivationCount * 75;
+
+      // === NEW AFFILIATE LAUNCH ($75 one-time for new affiliate with 3+ clients in first 60 days) ===
+      let newAffiliateLaunchCount = 0;
+      const newAffiliateOrgs = [];
+      
+      for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
+        // Find the very first payment from this org in ALL our data
+        const allOrgPayments = payments.sort((a, b) => a.date.localeCompare(b.date));
+        const firstEverDate = new Date(allOrgPayments[0].date);
+        const now_check = new Date();
+        const daysSinceFirst = Math.floor((now_check - firstEverDate) / (1000 * 60 * 60 * 24));
+        
+        // New affiliate = first payment within last 60 days
+        if (daysSinceFirst <= 60) {
+          // Count unique clients from this org
+          const orgClients = new Set();
+          for (const p of allPayments) {
+            if (p.referrer_org === orgName && p.is_affiliate_deal) {
+              orgClients.add(p.pipedrive_deal_id || p.client_name);
+            }
+          }
+          if (orgClients.size >= 3) {
+            if (!awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
+              newAffiliateLaunchCount++;
+              newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, clients: orgClients.size, daysSinceFirst });
+            }
+          }
+        }
+      }
+      const newAffiliateLaunchBonus = newAffiliateLaunchCount * 75;
+      // PIF = client paid Doc Fee AND Final (no Partial) within 5 business days
+      let pifCount = 0;
+      const pifClients = [];
+      for (const client of clients) {
+        if (!client.hasDocFee || !client.hasFinal || client.hasPartial) continue;
+        // Find doc fee date and final date
+        const docPayment = client.payments.find(p => p.payment_type === 'doc_fee');
+        const finalPayment = client.payments.find(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+        if (!docPayment || !finalPayment) continue;
+        // Count business days between doc fee and final
+        const docDate = new Date(docPayment.payment_date);
+        const finalDate = new Date(finalPayment.payment_date);
+        let bizDays = 0;
+        let d = new Date(docDate);
+        d.setDate(d.getDate() + 1); // start counting from next day
+        while (d <= finalDate) {
+          if (d.getDay() !== 0 && d.getDay() !== 6) bizDays++;
+          d.setDate(d.getDate() + 1);
+        }
+        if (bizDays <= 5) {
+          pifCount++;
+          pifClients.push({ name: client.name, docDate: docPayment.payment_date, finalDate: finalPayment.payment_date, bizDays, docAmount: docPayment.amount, finalAmount: finalPayment.amount });
+        }
+      }
+      const pifBonus = pifCount * 25;
+
+      // === REVIEWS ===
+      const myReviews = reviews.filter(r => r.assigned_to === consultant.id);
+      const reviewCount = myReviews.length;
+      const bbbReviews = myReviews.filter(r => (r.location_name || '').toLowerCase().includes('bbb')).length;
+      const reviewBonus = Math.max(0, reviewCount - 10) * 5 + bbbReviews * 50;
+
+      // === CLOSING % ===
+      // Closing % = RTQ deals that paid doc fee (Zoho) / total RTQ consults (Pipedrive filter 523803)
+      const myConsultData = Object.entries(consultsByOwner).filter(([k]) => {
+        const kFirst = k.split(' ')[0].toLowerCase();
+        return kFirst === firstName || (lastName.length > 3 && k.toLowerCase().includes(lastName));
+      });
+      const myConsultCount = myConsultData.reduce((sum, [_, v]) => sum + v.total, 0);
+      const myConsultDealIds = myConsultData.flatMap(([_, v]) => v.dealIds);
+      const myDocsPaid = myConsultDealIds.filter(id => dealIdsWithDocFee.has(id)).length;
+      const closingPct = myConsultCount > 0 ? Math.round((myDocsPaid / myConsultCount) * 100) : 0;
+
+      // === PAY-PAST-DOC-FEE RATE ===
+      // Of clients who paid doc fee THIS month, how many also paid partial/final?
+      const docFeeClientKeys = new Set(myPayments.filter(p => p.payment_type === 'doc_fee').map(p => p.pipedrive_deal_id || p.client_name));
+      let paidPastDocCount = 0;
+      for (const key of docFeeClientKeys) {
+        // Check if this same client has a partial/final in ANY month in our database
+        const hasMore = allPayments.some(p => 
+          (p.pipedrive_deal_id || p.client_name) === key && 
+          ['partial', 'final', 'paid_in_full'].includes(p.payment_type)
+        );
+        if (hasMore) paidPastDocCount++;
+      }
+      const payPastDocRate = docFeeClientKeys.size > 0 ? Math.round((paidPastDocCount / docFeeClientKeys.size) * 100) : 0;
+
+      // === REFUND RATE ===
+      const myRefunds = refunds.filter(r => {
+        const rOwner = (r.consultant_name || r.owner_name || '').toLowerCase();
+        return rOwner.includes(firstName) || (lastName.length > 3 && rOwner.includes(lastName));
+      });
+      const refundCount = myRefunds.length;
+      const refundAmount = myRefunds.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+
+      // === WEEKLY SPRINT (all weeks in the month) ===
+      const weeks = [];
+      const mStart = new Date(monthStart);
+      let wStart = new Date(mStart);
+      // Find first Monday of the month (or use month start)
+      while (wStart.getDay() !== 1 && wStart < now) wStart.setDate(wStart.getDate() + 1);
+      if (wStart > mStart) { // partial first week
+        const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() - 1);
+        const weekDocs = myPayments.filter(p => p.payment_type === 'doc_fee' && p.payment_date >= monthStart && p.payment_date <= wEnd.toISOString().split('T')[0]).length;
+        weeks.push({ week: 1, start: monthStart, end: wEnd.toISOString().split('T')[0], docs: weekDocs });
+      }
+      let weekNum = weeks.length + 1;
+      while (wStart <= now && wStart.getMonth() === mStart.getMonth()) {
+        const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 6);
+        const endStr = wEnd.toISOString().split('T')[0];
+        const startStr = wStart.toISOString().split('T')[0];
+        const weekDocs = myPayments.filter(p => p.payment_type === 'doc_fee' && p.payment_date >= startStr && p.payment_date <= endStr).length;
+        weeks.push({ week: weekNum, start: startStr, end: endStr, docs: weekDocs });
+        weekNum++;
+        wStart.setDate(wStart.getDate() + 7);
+      }
+      const currentWeekDocs = weeks.length > 0 ? weeks[weeks.length - 1].docs : 0;
+
+      // === ADDITIONAL KPIs ===
+      const onboardedClients = docFeeCount; // clients who paid doc fee this month = new signups
+      const affiliateClientsAdded = myPayments.filter(p => p.payment_type === 'doc_fee' && p.is_affiliate_deal).length;
+      const organicClientsAdded = docFeeCount - affiliateClientsAdded;
+      
+      // Average deal value (total sales / unique clients with payments)
+      const avgDealValue = clients.length > 0 ? Math.round(totalSales / clients.length) : 0;
+      
+      // Revenue per consult
+      const revenuePerConsult = myConsultCount > 0 ? Math.round(totalSales / myConsultCount) : 0;
+      
+      // Projected month end (based on business days elapsed vs remaining)
+      const monthStartDate = new Date(monthStart);
+      const today = new Date();
+      let bizDaysElapsed = 0, totalBizDaysInMonth = 0;
+      for (let d = new Date(monthStartDate); d.getMonth() === monthStartDate.getMonth(); d.setDate(d.getDate() + 1)) {
+        if (d.getDay() !== 0 && d.getDay() !== 6) {
+          totalBizDaysInMonth++;
+          if (d <= today) bizDaysElapsed++;
+        }
+      }
+      const projectedSales = bizDaysElapsed > 0 ? Math.round((totalSales / bizDaysElapsed) * totalBizDaysInMonth) : 0;
+      const dailyAvgSales = bizDaysElapsed > 0 ? Math.round(totalSales / bizDaysElapsed) : 0;
+      
+      // Clients past due — paid doc fee 14+ days ago but no partial/final yet
+      const pastDueClients = [];
+      for (const client of docFeeOnlyClients) {
+        const docPayment = client.payments.find(p => p.payment_type === 'doc_fee');
+        if (docPayment) {
+          const daysSinceDoc = Math.floor((today - new Date(docPayment.payment_date)) / (1000 * 60 * 60 * 24));
+          if (daysSinceDoc >= 14) {
+            pastDueClients.push({ name: client.name, docDate: docPayment.payment_date, daysSinceDoc, amount: docPayment.amount });
+          }
+        }
+      }
+      
+      // Stale clients — paid doc fee 30+ days ago, no further payment
+      const staleClients = pastDueClients.filter(c => c.daysSinceDoc >= 30);
+
+      // This month's clients vs prior month clients
+      const thisMonthClients = clients.filter(c => c.hasDocFee);
+      const priorMonthClients = clients.filter(c => !c.hasDocFee && (c.hasPartial || c.hasFinal));
+      const thisMonthRevenue = thisMonthClients.reduce((s, c) => s + c.totalPaid, 0);
+      const priorMonthRevenue = priorMonthClients.reduce((s, c) => s + c.totalPaid, 0);
+      
+      // Pending Payments — clients who have NOT paid in full (no final payment yet)
+      const pendingClients30 = [];
+      const pendingClients90 = [];
+      for (const p of allPayments) {
+        const pFirst = (p.consultant_name || '').split(' ')[0].toLowerCase();
+        if (pFirst !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
+        if (p.payment_type !== 'doc_fee') continue;
+        const key = p.pipedrive_deal_id || p.client_name;
+        const daysSince = Math.floor((today - new Date(p.payment_date)) / (1000 * 60 * 60 * 24));
+        const hasFinalPmt = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && (ap.payment_type === 'final' || ap.payment_type === 'paid_in_full'));
+        if (!hasFinalPmt) {
+          const hasPartialPmt = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && ap.payment_type === 'partial');
+          const entry = { name: p.client_name, docDate: p.payment_date, daysSinceDoc: daysSince, hasPaidPartial: hasPartialPmt };
+          if (daysSince >= 30) pendingClients30.push(entry);
+          if (daysSince >= 90) pendingClients90.push(entry);
+        }
+      }
+      
+      // Organic vs Affiliate closing %
+      let organicConsults = 0, affiliateConsults = 0, organicDocsPaid = 0, affiliateDocsPaid = 0;
+      for (const dealId of myConsultDealIds) {
+        const payment = allPayments.find(p => p.pipedrive_deal_id === dealId && p.payment_type === 'doc_fee');
+        if (payment?.is_affiliate_deal) { affiliateConsults++; if (dealIdsWithDocFee.has(dealId)) affiliateDocsPaid++; }
+        else { organicConsults++; if (dealIdsWithDocFee.has(dealId)) organicDocsPaid++; }
+      }
+      const organicClosingPct = organicConsults > 0 ? Math.round((organicDocsPaid / organicConsults) * 100) : 0;
+      const affiliateClosingPct = affiliateConsults > 0 ? Math.round((affiliateDocsPaid / affiliateConsults) * 100) : 0;
+
+      // === INVOICE / COLLECTION METRICS ===
+      // Match invoices to this consultant by deal ID overlap with their payments
+      const myDealIds = new Set(myPayments.filter(p => p.pipedrive_deal_id).map(p => String(p.pipedrive_deal_id)));
+      const myInvoices = invoiceData.filter(inv => inv.pipedrive_deal_id && myDealIds.has(String(inv.pipedrive_deal_id)));
+      const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
+      const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
+      const overdueAmount = overdueInvoices.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);
+      const totalInvoiced = myInvoices.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
+      const totalCollected = myInvoices.reduce((s, i) => s + (parseFloat(i.total) - parseFloat(i.balance) || 0), 0);
+      const collectionRate = totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0;
+      
+      // Invoices due this week
+      const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+      const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
+      const wkStart = weekStart.toISOString().split('T')[0];
+      const wkEnd = weekEnd.toISOString().split('T')[0];
+      const dueThisWeek = myInvoices.filter(inv => inv.due_date >= wkStart && inv.due_date <= wkEnd && parseFloat(inv.balance) > 0);
+      const dueThisWeekAmount = dueThisWeek.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);
+
+      // === TOTALS ===
+      const totalBonus = accelerator.total + docClubBonus + pifBonus + affiliateBonus + reviewBonus + reactivationBonus + newAffiliateLaunchBonus;
+      const totalEarnings = totalCommission + totalBonus;
+
+      results[name] = {
+        name, isVA,
+        baseRate: (baseRate * 100).toFixed(0) + '%',
+        affiliateRate: (affiliateRate * 100).toFixed(0) + '%',
+        totalSales: Math.round(totalSales * 100) / 100,
+        organicSales: Math.round(organicSales * 100) / 100,
+        affiliateSales: Math.round(affiliateSales * 100) / 100,
+        baseCommission: Math.round(baseCommission * 100) / 100,
+        affiliateCommission: Math.round(affiliateCommission * 100) / 100,
+        totalCommission: Math.round(totalCommission * 100) / 100,
+        paymentCount: myPayments.length,
+        docFeeCount, partialCount, finalCount, unknownCount,
+        // Qualified docs from payment data
+        qualifiedDocs,
+        docFeeOnlyCount: docFeeOnlyClients.length,
+        totalClients: clients.length,
+        accelerator, docClub, docClubBonus,
+        pifCount, pifBonus, pifClients,
+        reactivationCount, reactivationBonus, reactivatedOrgs,
+        newAffiliateLaunchCount, newAffiliateLaunchBonus, newAffiliateOrgs,
+        producingAffiliates: producingAffiliates.length,
+        affiliateDetail: producingAffiliates.map(([n, c]) => ({ name: n, clients: c })),
+        affiliateBonus, affiliateBonusDetail,
+        reviewCount, bbbReviews, reviewBonus,
+        closingPct, consultCount: myConsultCount, docsPaid: myDocsPaid,
+        weeklyDocs: currentWeekDocs, weeks,
+        payPastDocRate,
+        docFeeClients: docFeeClientKeys.size,
+        paidPastDocClients: paidPastDocCount,
+        meetsPayPastDocStandard: payPastDocRate >= 84,
+        refundCount, refundAmount,
+        // KPIs
+        onboardedClients, affiliateClientsAdded, organicClientsAdded,
+        avgDealValue, revenuePerConsult, projectedSales, dailyAvgSales,
+        pastDueCount: pastDueClients.length, pastDueClients,
+        staleCount: staleClients.length, staleClients,
+        pendingCount30: pendingClients30.length, pendingClients30,
+        pendingCount90: pendingClients90.length, pendingClients90,
+        thisMonthClientCount: thisMonthClients.length, thisMonthRevenue: Math.round(thisMonthRevenue),
+        priorMonthClientCount: priorMonthClients.length, priorMonthRevenue: Math.round(priorMonthRevenue),
+        organicClosingPct, affiliateClosingPct,
+        organicConsults, affiliateConsults, organicDocsPaid, affiliateDocsPaid,
+        // Invoice / Collection
+        overdueCount: overdueInvoices.length, overdueAmount: Math.round(overdueAmount),
+        partiallyPaidCount: partiallyPaidInvoices.length,
+        collectionRate, totalInvoiced: Math.round(totalInvoiced), totalCollected: Math.round(totalCollected),
+        dueThisWeekCount: dueThisWeek.length, dueThisWeekAmount: Math.round(dueThisWeekAmount),
+        bizDaysElapsed, totalBizDaysInMonth,
+        totalBonus: Math.round(totalBonus * 100) / 100,
+        totalEarnings: Math.round(totalEarnings * 100) / 100,
+        meetsClosingStandard: closingPct >= 40,
+        meetsReviewStandard: reviewCount >= 10,
+        // CLIENT DETAIL for drill-down
+        clientDetail: {
+          organicClients: myPayments.filter(p => !p.is_affiliate_deal).map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date })),
+          affiliateClients: myPayments.filter(p => p.is_affiliate_deal).map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org })),
+          docFeeList: myPayments.filter(p => p.payment_type === 'doc_fee').map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date })),
+          partialList: myPayments.filter(p => p.payment_type === 'partial').map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date })),
+          finalList: myPayments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date })),
+          qualifiedList: qualifiedClients.map(c => ({ name: c.name, totalPaid: c.totalPaid, org: c.orgName, isAffiliate: c.isAffiliate, payments: c.payments.map(p => ({ type: p.payment_type, amount: p.amount, date: p.payment_date })) })),
+          docFeeOnlyList: docFeeOnlyClients.map(c => ({ name: c.name, totalPaid: c.totalPaid })),
+          reviewList: myReviews.map(r => ({ reviewer: r.reviewer_name, rating: r.rating, date: r.review_date, location: r.location_name, text: (r.review_text || '').substring(0, 100) })),
+          consultList: myConsultDealIds.map(id => {
+            const paid = dealIdsWithDocFee.has(id);
+            const payment = allPayments.find(p => p.pipedrive_deal_id === id && p.payment_type === 'doc_fee');
+            return { dealId: id, paid, clientName: payment?.client_name || `Deal #${id}`, amount: payment?.amount || 0, date: payment?.payment_date || '' };
+          }).sort((a, b) => b.paid - a.paid),
+        }
+      };
+    }
+
+    // Sprint
+    let sprintWinner = null, sprintMax = 0;
+    for (const [n, d] of Object.entries(results)) { if (d.weeklyDocs > sprintMax) { sprintMax = d.weeklyDocs; sprintWinner = n; } }
+
+    // Weekly sprint winners — only for COMPLETED weeks (Sunday has passed)
+    const weeklyWinners = [];
+    const allWeeks = Object.values(results)[0]?.weeks || [];
+    const todayStr = new Date().toISOString().split('T')[0];
+    for (const week of allWeeks) {
+      const weekComplete = week.end < todayStr; // week end (Sunday) is before today
+      let bestName = null, bestDocs = 0;
+      for (const [n, d] of Object.entries(results)) {
+        const w = (d.weeks || []).find(wk => wk.week === week.week);
+        if (w && w.docs > bestDocs) { bestDocs = w.docs; bestName = n; }
+      }
+      weeklyWinners.push({ week: week.week, start: week.start, end: week.end, winner: weekComplete ? bestName : null, leader: bestName, docs: bestDocs, complete: weekComplete });
+    }
+
+    // COTM
+    let cotmCandidate = null, cotmMaxDocs = 0;
+    for (const [n, d] of Object.entries(results)) {
+      if (d.qualifiedDocs > cotmMaxDocs && d.producingAffiliates >= 5 && d.meetsReviewStandard) { cotmMaxDocs = d.qualifiedDocs; cotmCandidate = n; }
+    }
+
+    // Second pass: add sprint bonus (needs weeklyWinners computed above)
+    for (const [n, d] of Object.entries(results)) {
+      const weeksWon = weeklyWinners.filter(w => w.complete && w.winner === n).length;
+      d.sprintBonus = weeksWon * 150;
+      d.weeksWon = weeksWon;
+      d.totalBonus = Math.round((d.totalBonus + d.sprintBonus) * 100) / 100;
+      d.totalEarnings = Math.round((d.totalCommission + d.totalBonus) * 100) / 100;
+    }
+
+    // Team-wide totals
+    const todayPayments = payments.filter(p => p.payment_date === todayStr);
+    const todaySales = todayPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+    const todayDocs = todayPayments.filter(p => p.payment_type === 'doc_fee').length;
+    const todayPartials = todayPayments.filter(p => p.payment_type === 'partial').length;
+    const todayFinals = todayPayments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').length;
+    const mtdSales = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+    const mtdDocs = payments.filter(p => p.payment_type === 'doc_fee').length;
+    const mtdPartials = payments.filter(p => p.payment_type === 'partial').length;
+    const mtdFinals = payments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').length;
+    const firstCon = Object.values(results)[0] || {};
+    const mtdProjection = (firstCon.bizDaysElapsed || 1) > 0 ? Math.round((mtdSales / (firstCon.bizDaysElapsed || 1)) * (firstCon.totalBizDaysInMonth || 22)) : 0;
+
+    // Per-consultant today totals
+    const todayByConsultant = {};
+    for (const p of todayPayments) {
+      const cName = p.consultant_name || 'Unknown';
+      if (!todayByConsultant[cName]) todayByConsultant[cName] = { sales: 0, docs: 0, partials: 0, finals: 0, payments: 0 };
+      todayByConsultant[cName].sales += parseFloat(p.amount) || 0;
+      todayByConsultant[cName].payments++;
+      if (p.payment_type === 'doc_fee') todayByConsultant[cName].docs++;
+      if (p.payment_type === 'partial') todayByConsultant[cName].partials++;
+      if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') todayByConsultant[cName].finals++;
+    }
+
+    // YTD data from allPayments (already loaded)
+    const year = targetMonth.split('-')[0];
+    const ytdPayments = allPayments.filter(p => (p.payment_month || '').startsWith(year));
+    
+    const ytdSales = ytdPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+    const ytdDocs = ytdPayments.filter(p => p.payment_type === 'doc_fee').length;
+    
+    // YTD per consultant
+    const ytdByConsultant = {};
+    for (const p of ytdPayments) {
+      const cName = p.consultant_name || 'Unknown';
+      if (!ytdByConsultant[cName]) ytdByConsultant[cName] = { sales: 0, docs: 0, partials: 0, finals: 0, payments: 0, affiliateSales: 0, months: new Set() };
+      ytdByConsultant[cName].sales += parseFloat(p.amount) || 0;
+      ytdByConsultant[cName].payments++;
+      ytdByConsultant[cName].months.add(p.payment_month);
+      if (p.payment_type === 'doc_fee') ytdByConsultant[cName].docs++;
+      if (p.payment_type === 'partial') ytdByConsultant[cName].partials++;
+      if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') ytdByConsultant[cName].finals++;
+      if (p.is_affiliate_deal) ytdByConsultant[cName].affiliateSales += parseFloat(p.amount) || 0;
+    }
+    // Convert Sets to counts
+    for (const c of Object.values(ytdByConsultant)) { c.monthsActive = c.months.size; delete c.months; }
+
+    // Add today and YTD to each consultant result
+    for (const [n, d] of Object.entries(results)) {
+      d.today = todayByConsultant[n] || { sales: 0, docs: 0, partials: 0, finals: 0, payments: 0 };
+      d.ytd = ytdByConsultant[n] || { sales: 0, docs: 0, partials: 0, finals: 0, payments: 0, affiliateSales: 0, monthsActive: 0 };
+    }
+
+    // Auto-save newly detected one-time bonuses
+    for (const [n, d] of Object.entries(results)) {
+      for (const org of (d.reactivatedOrgs || [])) {
+        if (!awardedOrgs.has(`reactivation_kicker:${org.name}`)) {
+          try {
+            await fetch(`${SUPABASE_URL}/rest/v1/bonus_awards`, {
+              method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ consultant_name: n, bonus_type: 'reactivation_kicker', org_name: org.name, amount: 75, awarded_month: targetMonth })
+            });
+          } catch(e) {}
+        }
+      }
+      for (const org of (d.newAffiliateOrgs || [])) {
+        if (!awardedOrgs.has(`new_affiliate_launch:${org.name}`)) {
+          try {
+            await fetch(`${SUPABASE_URL}/rest/v1/bonus_awards`, {
+              method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ consultant_name: n, bonus_type: 'new_affiliate_launch', org_name: org.name, amount: 75, awarded_month: targetMonth })
+            });
+          } catch(e) {}
+        }
+      }
+    }
+
+    return {
+      statusCode: 200, headers,
+      body: JSON.stringify({
+        month: monthLabel, monthKey: targetMonth,
+        teamTotals: { todaySales, todayDocs, todayPartials, todayFinals, mtdSales, mtdDocs, mtdPartials, mtdFinals, mtdProjection, ytdSales, ytdDocs, totalPayments: payments.length,
+          totalOverdue: invoiceData.filter(i => i.status === 'overdue').length,
+          totalOverdueAmount: Math.round(invoiceData.filter(i => i.status === 'overdue').reduce((s, i) => s + (parseFloat(i.balance) || 0), 0)),
+          totalInvoices: invoiceData.length
+        },
+        consultants: results,
+        sprintWinner, sprintMaxDocs: sprintMax, weeklyWinners,
+        consultantOfMonth: cotmCandidate,
+        totalPayments: payments.length,
+        dataSources: { payments: 'Zoho Invoice API (live)', milestones: 'Derived from payment data' },
+        // Diagnostic
+        affiliateFlaggedCount: payments.filter(p => p.is_affiliate_deal === true).length,
+        orgEmailCount: payments.filter(p => p.org_has_email === true).length,
+        sampleOrgs: [...new Set(payments.map(p => p.referrer_org).filter(Boolean))].slice(0, 10),
+        updatedAt: now.toISOString()
+      })
+    };
+  } catch (error) {
+    console.error('Bonus metrics error:', error);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+  }
+};

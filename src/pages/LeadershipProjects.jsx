@@ -1,0 +1,876 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { useApp } from '../context/AppContext';
+import {
+  Plus,
+  MoreVertical,
+  Calendar,
+  User,
+  Users,
+  AlertTriangle,
+  Flag,
+  GripVertical,
+  X,
+  Edit3,
+  Trash2,
+  List,
+  LayoutGrid,
+  ChevronDown,
+  Clock,
+  Target,
+  FileText,
+  CheckCircle,
+  Pause,
+  AlertCircle,
+  Save,
+  Search,
+  Filter,
+  SortAsc,
+} from 'lucide-react';
+import { format, isPast, isToday, differenceInDays } from 'date-fns';
+
+const SUPABASE_URL = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
+
+const priorityColors = {
+  low: { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-300' },
+  medium: { bg: 'bg-blue-100', text: 'text-blue-600', border: 'border-blue-300' },
+  high: { bg: 'bg-orange-100', text: 'text-orange-600', border: 'border-orange-300' },
+  urgent: { bg: 'bg-red-100', text: 'text-red-600', border: 'border-red-300' },
+};
+
+const priorityLabels = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  urgent: 'Urgent',
+};
+
+function LeadershipProjects() {
+  const { currentUser, supabaseFetch } = useApp();
+  const [view, setView] = useState('board'); // 'board' or 'list'
+  const [stages, setStages] = useState([]);
+  const [cards, setCards] = useState([]);
+  const [leaders, setLeaders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draggedCard, setDraggedCard] = useState(null);
+  
+  // Modal states
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [editingCard, setEditingCard] = useState(null);
+  const [showStageModal, setShowStageModal] = useState(false);
+  const [editingStage, setEditingStage] = useState(null);
+  
+  // Filters
+  const [filterOwner, setFilterOwner] = useState('all');
+  const [filterPriority, setFilterPriority] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Check if user is leadership
+  const isLeadership = currentUser?.department === 'leadership' || currentUser?.role === 'admin';
+
+  useEffect(() => {
+    if (isLeadership) {
+      loadData();
+    }
+  }, [isLeadership]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // Load stages
+      const stagesData = await supabaseFetch('project_stages', 'order=position.asc');
+      setStages(stagesData || []);
+
+      // Load cards with members
+      const cardsData = await supabaseFetch('project_cards', 'order=position.asc');
+      setCards(cardsData || []);
+
+      // Load leadership users for owner dropdown
+      const usersData = await supabaseFetch('users', 'or=(department.eq.leadership,role.eq.admin)');
+      setLeaders(usersData || []);
+    } catch (err) {
+      console.error('Error loading data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apiCall = async (table, method, body, query = '') => {
+    const url = `${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ''}`;
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': method === 'POST' ? 'return=representation' : 'return=minimal'
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (method === 'POST' && response.ok) {
+      return response.json();
+    }
+    return response.ok;
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e, card) => {
+    setDraggedCard(card);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e, targetStageId) => {
+    e.preventDefault();
+    if (!draggedCard || draggedCard.stage_id === targetStageId) {
+      setDraggedCard(null);
+      return;
+    }
+
+    // Update card stage
+    await apiCall('project_cards', 'PATCH', 
+      { stage_id: targetStageId, updated_at: new Date().toISOString() },
+      `id=eq.${draggedCard.id}`
+    );
+
+    // Log activity
+    await apiCall('project_card_activity', 'POST', {
+      card_id: draggedCard.id,
+      user_id: currentUser.id,
+      user_name: currentUser.name,
+      action: 'moved',
+      details: `Moved to ${stages.find(s => s.id === targetStageId)?.name}`
+    });
+
+    setDraggedCard(null);
+    loadData();
+  };
+
+  // Card CRUD
+  const saveCard = async (cardData) => {
+    try {
+      if (editingCard?.id) {
+        await apiCall('project_cards', 'PATCH', 
+          { ...cardData, updated_at: new Date().toISOString() },
+          `id=eq.${editingCard.id}`
+        );
+      } else {
+        const maxPosition = Math.max(...cards.filter(c => c.stage_id === cardData.stage_id).map(c => c.position), -1);
+        await apiCall('project_cards', 'POST', {
+          ...cardData,
+          position: maxPosition + 1,
+          created_by: currentUser.id
+        });
+      }
+      setShowCardModal(false);
+      setEditingCard(null);
+      loadData();
+    } catch (err) {
+      console.error('Error saving card:', err);
+    }
+  };
+
+  const deleteCard = async (cardId) => {
+    if (!confirm('Delete this project? This cannot be undone.')) return;
+    await apiCall('project_cards', 'DELETE', null, `id=eq.${cardId}`);
+    loadData();
+  };
+
+  // Stage CRUD
+  const saveStage = async (stageData) => {
+    try {
+      if (editingStage?.id) {
+        await apiCall('project_stages', 'PATCH', stageData, `id=eq.${editingStage.id}`);
+      } else {
+        const maxPosition = Math.max(...stages.map(s => s.position), -1);
+        await apiCall('project_stages', 'POST', { ...stageData, position: maxPosition + 1 });
+      }
+      setShowStageModal(false);
+      setEditingStage(null);
+      loadData();
+    } catch (err) {
+      console.error('Error saving stage:', err);
+    }
+  };
+
+  const deleteStage = async (stageId) => {
+    const cardsInStage = cards.filter(c => c.stage_id === stageId);
+    if (cardsInStage.length > 0) {
+      alert('Cannot delete stage with cards. Move or delete cards first.');
+      return;
+    }
+    if (!confirm('Delete this stage?')) return;
+    await apiCall('project_stages', 'DELETE', null, `id=eq.${stageId}`);
+    loadData();
+  };
+
+  // Filter cards
+  const filteredCards = cards.filter(card => {
+    if (filterOwner !== 'all' && card.owner_id !== filterOwner) return false;
+    if (filterPriority !== 'all' && card.priority !== filterPriority) return false;
+    if (searchTerm && !card.title.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    return true;
+  });
+
+  if (!isLeadership) {
+    return (
+      <div className="p-6">
+        <div className="bg-yellow-50 text-yellow-700 p-4 rounded-lg flex items-center gap-3">
+          <AlertCircle className="w-5 h-5" />
+          <span>This page is only available to leadership.</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Project Management</h1>
+          <p className="text-slate-500 text-sm">Leadership only • Active initiatives & tracking</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* View Toggle */}
+          <div className="flex bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setView('board')}
+              className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium transition-colors ${
+                view === 'board' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Board
+            </button>
+            <button
+              onClick={() => setView('list')}
+              className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-sm font-medium transition-colors ${
+                view === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <List className="w-4 h-4" />
+              List
+            </button>
+          </div>
+          
+          <button
+            onClick={() => { setEditingCard(null); setShowCardModal(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-asap-blue text-white rounded-lg hover:bg-asap-blue-dark font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            New Project
+          </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-4 mb-4">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search projects..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-asap-blue"
+          />
+        </div>
+        
+        <select
+          value={filterOwner}
+          onChange={(e) => setFilterOwner(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+        >
+          <option value="all">All Owners</option>
+          {leaders.map(l => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+        
+        <select
+          value={filterPriority}
+          onChange={(e) => setFilterPriority(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+        >
+          <option value="all">All Priorities</option>
+          <option value="urgent">Urgent</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+
+        <button
+          onClick={() => setShowStageModal(true)}
+          className="text-sm text-slate-500 hover:text-asap-blue flex items-center gap-1"
+        >
+          <Edit3 className="w-4 h-4" />
+          Manage Stages
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-asap-blue/30 border-t-asap-blue rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-slate-500">Loading projects...</p>
+          </div>
+        </div>
+      ) : view === 'board' ? (
+        /* Kanban Board View */
+        <div className="flex-1 overflow-x-auto">
+          <div className="flex gap-4 h-full min-w-max pb-4">
+            {stages.map(stage => {
+              const stageCards = filteredCards.filter(c => c.stage_id === stage.id);
+              return (
+                <div
+                  key={stage.id}
+                  className="w-80 flex-shrink-0 bg-slate-100 rounded-xl flex flex-col"
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, stage.id)}
+                >
+                  {/* Stage Header */}
+                  <div className="p-3 border-b border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stage.color }} />
+                        <h3 className="font-semibold text-slate-800">{stage.name}</h3>
+                        <span className="text-sm text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
+                          {stageCards.length}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => { setEditingStage(stage); setShowStageModal(true); }}
+                        className="p-1 hover:bg-slate-200 rounded"
+                      >
+                        <MoreVertical className="w-4 h-4 text-slate-400" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cards */}
+                  <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                    {stageCards.map(card => (
+                      <ProjectCard
+                        key={card.id}
+                        card={card}
+                        onDragStart={handleDragStart}
+                        onEdit={() => { setEditingCard(card); setShowCardModal(true); }}
+                        onDelete={() => deleteCard(card.id)}
+                      />
+                    ))}
+                    
+                    {stageCards.length === 0 && (
+                      <div className="text-center py-8 text-slate-400 text-sm">
+                        No projects
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Add Card Button */}
+                  <button
+                    onClick={() => { 
+                      setEditingCard({ stage_id: stage.id }); 
+                      setShowCardModal(true); 
+                    }}
+                    className="m-2 p-2 flex items-center justify-center gap-2 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="text-sm">Add project</span>
+                  </button>
+                </div>
+              );
+            })}
+
+            {/* Add Stage Button */}
+            <button
+              onClick={() => { setEditingStage(null); setShowStageModal(true); }}
+              className="w-80 flex-shrink-0 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center gap-2 text-slate-500 hover:text-slate-700 hover:border-slate-400 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Add Stage
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* List View */
+        <div className="flex-1 bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Project</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Owner</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Stage</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Priority</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Due Date</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredCards.map(card => {
+                  const stage = stages.find(s => s.id === card.stage_id);
+                  const isOverdue = card.due_date && isPast(new Date(card.due_date)) && !isToday(new Date(card.due_date));
+                  
+                  return (
+                    <tr key={card.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-slate-800">{card.title}</p>
+                        {card.objective && (
+                          <p className="text-sm text-slate-500 truncate max-w-xs">{card.objective}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{card.owner_name || '-'}</td>
+                      <td className="px-4 py-3">
+                        <span 
+                          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium"
+                          style={{ backgroundColor: `${stage?.color}20`, color: stage?.color }}
+                        >
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage?.color }} />
+                          {stage?.name}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${priorityColors[card.priority]?.bg} ${priorityColors[card.priority]?.text}`}>
+                          {priorityLabels[card.priority]}
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3 text-sm ${isOverdue ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
+                        {card.due_date ? format(new Date(card.due_date), 'MMM d, yyyy') : '-'}
+                        {isOverdue && <span className="ml-1">⚠️</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => { setEditingCard(card); setShowCardModal(true); }}
+                            className="p-1.5 hover:bg-slate-100 rounded text-slate-400 hover:text-asap-blue"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteCard(card.id)}
+                            className="p-1.5 hover:bg-red-50 rounded text-slate-400 hover:text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            
+            {filteredCards.length === 0 && (
+              <div className="text-center py-12 text-slate-400">
+                <Target className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No projects found</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Card Modal */}
+      {showCardModal && (
+        <CardModal
+          card={editingCard}
+          stages={stages}
+          leaders={leaders}
+          currentUser={currentUser}
+          onSave={saveCard}
+          onClose={() => { setShowCardModal(false); setEditingCard(null); }}
+        />
+      )}
+
+      {/* Stage Modal */}
+      {showStageModal && (
+        <StageModal
+          stage={editingStage}
+          stages={stages}
+          onSave={saveStage}
+          onDelete={editingStage ? () => { deleteStage(editingStage.id); setShowStageModal(false); } : null}
+          onClose={() => { setShowStageModal(false); setEditingStage(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Project Card Component
+function ProjectCard({ card, onDragStart, onEdit, onDelete }) {
+  const isOverdue = card.due_date && isPast(new Date(card.due_date)) && !isToday(new Date(card.due_date));
+  const daysUntilDue = card.due_date ? differenceInDays(new Date(card.due_date), new Date()) : null;
+  
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, card)}
+      className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
+    >
+      <div className="flex items-start justify-between mb-2">
+        <h4 className="font-medium text-slate-800 flex-1">{card.title}</h4>
+        <div className="flex items-center gap-1">
+          <button onClick={onEdit} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-asap-blue">
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onDelete} className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-600">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+      
+      {card.objective && (
+        <p className="text-sm text-slate-500 mb-3 line-clamp-2">{card.objective}</p>
+      )}
+
+      {/* Priority & Due Date */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`px-2 py-0.5 rounded text-xs font-medium ${priorityColors[card.priority]?.bg} ${priorityColors[card.priority]?.text}`}>
+          {priorityLabels[card.priority]}
+        </span>
+        
+        {card.due_date && (
+          <span className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
+            <Calendar className="w-3 h-3" />
+            {format(new Date(card.due_date), 'MMM d')}
+            {isOverdue && <AlertTriangle className="w-3 h-3" />}
+          </span>
+        )}
+      </div>
+
+      {/* Owner */}
+      {card.owner_name && (
+        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-100">
+          <div className="w-6 h-6 bg-asap-blue rounded-full flex items-center justify-center text-white text-xs font-medium">
+            {card.owner_name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+          </div>
+          <span className="text-xs text-slate-600">{card.owner_name}</span>
+        </div>
+      )}
+
+      {/* Blocked/Risk indicator */}
+      {card.risks && (
+        <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700 flex items-start gap-1">
+          <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span className="line-clamp-2">{card.risks}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Card Modal Component
+function CardModal({ card, stages, leaders, currentUser, onSave, onClose }) {
+  const [formData, setFormData] = useState({
+    title: card?.title || '',
+    objective: card?.objective || '',
+    stage_id: card?.stage_id || stages[0]?.id,
+    owner_id: card?.owner_id || '',
+    owner_name: card?.owner_name || '',
+    priority: card?.priority || 'medium',
+    due_date: card?.due_date || '',
+    target_start_date: card?.target_start_date || '',
+    dependencies: card?.dependencies || '',
+    risks: card?.risks || '',
+    notes: card?.notes || '',
+    on_hold_reason: card?.on_hold_reason || '',
+    revisit_date: card?.revisit_date || '',
+  });
+
+  const handleOwnerChange = (ownerId) => {
+    const owner = leaders.find(l => l.id === ownerId);
+    setFormData(prev => ({
+      ...prev,
+      owner_id: ownerId,
+      owner_name: owner?.name || ''
+    }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.title.trim()) return;
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-slate-800">
+            {card?.id ? 'Edit Project' : 'New Project'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Project Title *</label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+              placeholder="Enter project title"
+              required
+            />
+          </div>
+
+          {/* Objective */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Objective / Outcome</label>
+            <textarea
+              value={formData.objective}
+              onChange={(e) => setFormData(prev => ({ ...prev, objective: e.target.value }))}
+              rows={2}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue resize-none"
+              placeholder="What's the goal of this project?"
+            />
+          </div>
+
+          {/* Stage & Owner Row */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Stage</label>
+              <select
+                value={formData.stage_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, stage_id: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+              >
+                {stages.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Owner *</label>
+              <select
+                value={formData.owner_id}
+                onChange={(e) => handleOwnerChange(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+              >
+                <option value="">Select owner</option>
+                {leaders.map(l => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Priority & Dates Row */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
+              <select
+                value={formData.priority}
+                onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
+              <input
+                type="date"
+                value={formData.due_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, due_date: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Target Start</label>
+              <input
+                type="date"
+                value={formData.target_start_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, target_start_date: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+              />
+            </div>
+          </div>
+
+          {/* Dependencies & Risks */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Dependencies</label>
+              <textarea
+                value={formData.dependencies}
+                onChange={(e) => setFormData(prev => ({ ...prev, dependencies: e.target.value }))}
+                rows={2}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue resize-none"
+                placeholder="What does this depend on?"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Risks / Blockers</label>
+              <textarea
+                value={formData.risks}
+                onChange={(e) => setFormData(prev => ({ ...prev, risks: e.target.value }))}
+                rows={2}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue resize-none text-red-600"
+                placeholder="Any blockers? Document immediately!"
+              />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+              rows={2}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue resize-none"
+              placeholder="Additional notes..."
+            />
+          </div>
+
+          {/* On Hold Section */}
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <h4 className="text-sm font-medium text-amber-800 mb-2">On Hold Details</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-amber-700 mb-1">Reason on Hold</label>
+                <input
+                  type="text"
+                  value={formData.on_hold_reason}
+                  onChange={(e) => setFormData(prev => ({ ...prev, on_hold_reason: e.target.value }))}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 focus:outline-none focus:border-amber-400 text-sm"
+                  placeholder="Why is this on hold?"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-amber-700 mb-1">Revisit Date</label>
+                <input
+                  type="date"
+                  value={formData.revisit_date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, revisit_date: e.target.value }))}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 focus:outline-none focus:border-amber-400 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="px-4 py-2 bg-asap-blue text-white rounded-lg hover:bg-asap-blue-dark flex items-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            {card?.id ? 'Update Project' : 'Create Project'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Stage Modal Component
+function StageModal({ stage, stages, onSave, onDelete, onClose }) {
+  const [name, setName] = useState(stage?.name || '');
+  const [color, setColor] = useState(stage?.color || '#3b82f6');
+
+  const colors = [
+    '#6b7280', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'
+  ];
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave({ name, color });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-800">
+            {stage ? 'Edit Stage' : 'New Stage'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Stage Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-asap-blue"
+              placeholder="e.g., In Review"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
+            <div className="flex gap-2 flex-wrap">
+              {colors.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={`w-8 h-8 rounded-full border-2 transition-transform ${
+                    color === c ? 'border-slate-800 scale-110' : 'border-transparent hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-between pt-4">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+            )}
+            <div className="flex gap-3 ml-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-asap-blue text-white rounded-lg hover:bg-asap-blue-dark"
+              >
+                {stage ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default LeadershipProjects;
