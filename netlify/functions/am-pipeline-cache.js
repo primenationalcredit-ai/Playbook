@@ -63,7 +63,36 @@ exports.handler = async () => {
     let start = 0;
     let hasMore = true;
     let pageCount = 0;
-    const maxPages = 60; // 60 * 500 = 30,000 persons ceiling
+    const maxPages = 300; // 300 * 500 = 150,000 persons ceiling
+
+    // Helper: build results + write both cache keys with the current accumulator.
+    // Called at checkpoints so a run cut short by a timeout still persists what
+    // it scanned, and the next run (or the scheduled background run) completes it.
+    const flush = async (complete) => {
+      const results = {};
+      for (const [am, s] of Object.entries(amStats)) {
+        results[am] = {
+          totalClients: s.total,
+          reportStalled: s.reportStalled,
+          paymentStalled: s.paymentStalled,
+          reportStallRate: s.total > 0 ? Math.round((s.reportStalled / s.total) * 100) : 0,
+          paymentStallRate: s.total > 0 ? Math.round((s.paymentStalled / s.total) * 100) : 0,
+          combinedStallRate: s.total > 0 ? Math.round(((s.reportStalled + s.paymentStalled) / s.total) * 100) : 0,
+          stalledClients: s.stalledClients.slice(0, 50)
+        };
+      }
+      const payload = {
+        accountManagers: results,
+        totalPersonsScanned: Object.values(amStats).reduce((a, s) => a + s.total, 0),
+        pagesScanned: pageCount,
+        complete,
+        stallThresholdDays: 14,
+        calculatedAt: new Date().toISOString()
+      };
+      await writeCache('am_pipeline_full', payload);
+      await writeCache('am_person_to_am', { personToAM, calculatedAt: payload.calculatedAt });
+      return payload;
+    };
 
     while (hasMore && pageCount < maxPages) {
       const res = await pdGet(`/persons?start=${start}&limit=500`);
@@ -96,35 +125,13 @@ exports.handler = async () => {
       start = res.additional_data?.pagination?.next_start || (start + 500);
       pageCount++;
       if (persons.length === 0) break;
+      // Checkpoint every 20 pages so partial coverage is never lost
+      if (pageCount % 20 === 0) await flush(false);
     }
 
-    const results = {};
-    for (const [am, s] of Object.entries(amStats)) {
-      results[am] = {
-        totalClients: s.total,
-        reportStalled: s.reportStalled,
-        paymentStalled: s.paymentStalled,
-        reportStallRate: s.total > 0 ? Math.round((s.reportStalled / s.total) * 100) : 0,
-        paymentStallRate: s.total > 0 ? Math.round((s.paymentStalled / s.total) * 100) : 0,
-        combinedStallRate: s.total > 0 ? Math.round(((s.reportStalled + s.paymentStalled) / s.total) * 100) : 0,
-        stalledClients: s.stalledClients.slice(0, 50)
-      };
-    }
+    const payload = await flush(!hasMore);
 
-    const payload = {
-      accountManagers: results,
-      totalPersonsScanned: Object.values(amStats).reduce((a, s) => a + s.total, 0),
-      pagesScanned: pageCount,
-      complete: !hasMore,
-      stallThresholdDays: 14,
-      calculatedAt: new Date().toISOString()
-    };
-
-    // Stall stats (read by am-stall-rate.js) + person->AM map (read by attribution fns)
-    await writeCache('am_pipeline_full', payload);
-    await writeCache('am_person_to_am', { personToAM, calculatedAt: payload.calculatedAt });
-
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, pagesScanned: pageCount, complete: !hasMore, managers: Object.keys(results).length }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, pagesScanned: pageCount, complete: payload.complete, managers: Object.keys(payload.accountManagers).length, totalClients: payload.totalPersonsScanned }) };
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
   }
