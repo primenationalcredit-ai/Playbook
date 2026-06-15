@@ -21,10 +21,10 @@
 [functions."zoho-invoice-sync"]
   schedule = "45 12-23 * * 1-6"
 
-# Full Pipedrive person scan for AM stall coverage + person->AM map.
-# Every 2 hours during business window (heavy scan, runs as background fn).
+# Active-client scan (CRS/Sold/Incomplete). Every 30 min during business window.
+# With PD_ACTIVE_PERSONS_FILTER set, one run completes a full refresh.
 [functions."am-pipeline-cache"]
-  schedule = "0 12-23/2 * * 1-6"
+  schedule = "*/30 12-23 * * 1-6"
 
 # DISABLED - was causing duplicate/wrong data
 # [functions."sales-sync-backup"]
