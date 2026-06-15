@@ -28,7 +28,8 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const UPDATE_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
 const LOGINS_NOT_READY = 934;
-const STALL_DAYS = 14;
+const STALL_MIN_DAYS = 14;   // grace period after round end before it counts
+const STALL_MAX_DAYS = 120;  // beyond this the client is cleanup, not a current stall
 
 // Round date-range deal fields (start at key, end at key + '_until')
 const ROUND_END_FIELDS = [
@@ -43,7 +44,7 @@ const PRIO = { CRS: 3, Sold: 2, Incomplete: 1 };
 
 const TIME_BUDGET_MS = 8500;
 const CHECKPOINT_EVERY = 25;
-const PROGRESS_KEY = 'am_pipeline_progress_v5';
+const PROGRESS_KEY = 'am_pipeline_progress_v6';
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 const supaAuth = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 
@@ -82,7 +83,7 @@ async function publish(personData, complete, extra) {
     if (!amStats[d.am]) amStats[d.am] = { evaluated: 0, stalled: 0, activeBook: 0, stalledClients: [] };
     const s = amStats[d.am];
     s.activeBook++;
-    if (!d.roundOver) continue;       // only round-over clients are evaluated
+    if (!d.inWindow) continue;       // only clients in the 14-120 day window are evaluated
     s.evaluated++; evaluated++;
     if (d.stalled) {
       s.stalled++; stalledTotal++;
@@ -102,7 +103,7 @@ async function publish(personData, complete, extra) {
     };
   }
   const calculatedAt = new Date().toISOString();
-  await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_DAYS, basis: 'round_end_logins_not_ready', complete, calculatedAt, ...extra });
+  await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, stallWindowDays: { min: STALL_MIN_DAYS, max: STALL_MAX_DAYS }, basis: 'round_end_logins_not_ready', complete, calculatedAt, ...extra });
   await writeCache('am_person_to_am', { personToAM, calculatedAt });
   return { managers: Object.keys(results).length, evaluated, stalledTotal, sample };
 }
@@ -175,10 +176,12 @@ exports.handler = async (event) => {
           const re = ad.roundEnd ? new Date(ad.roundEnd) : null;
           const roundOver = !!(re && re <= now);
           const daysSince = roundOver ? daysBetween(now, re) : null;
+          // Only clients whose round ended 14-120 days ago are in scope.
+          const inWindow = roundOver && daysSince >= STALL_MIN_DAYS && daysSince <= STALL_MAX_DAYS;
           let stalled = false, reason = null;
-          if (roundOver && statusId === LOGINS_NOT_READY && daysSince >= STALL_DAYS) { stalled = true; reason = `Logins Not Ready ${daysSince}d past round end`; }
-          else if (roundOver && ad.pipeline === 'Incomplete' && ad.movedThisMonth) { stalled = true; reason = 'Moved to Incomplete this month, round over'; }
-          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, roundOver, daysSince, stalled, reason };
+          if (inWindow && statusId === LOGINS_NOT_READY) { stalled = true; reason = `Logins Not Ready ${daysSince}d past round end`; }
+          else if (inWindow && ad.pipeline === 'Incomplete' && ad.movedThisMonth) { stalled = true; reason = `Moved to Incomplete this month, round over (${daysSince}d)`; }
+          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, roundOver, daysSince, inWindow, stalled, reason };
         }
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
         cursor = res.additional_data?.pagination?.next_start || (cursor + 500);
