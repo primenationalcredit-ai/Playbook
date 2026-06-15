@@ -103,8 +103,13 @@ async function publish(personData, complete, extra) {
     };
   }
   const calculatedAt = new Date().toISOString();
-  await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, stallWindowDays: { min: STALL_MIN_DAYS, max: STALL_MAX_DAYS }, basis: 'round_end_logins_not_ready', complete, calculatedAt, ...extra });
-  await writeCache('am_person_to_am', { personToAM, calculatedAt });
+  // Only publish to the live dashboard caches when a pass is COMPLETE. Partial
+  // passes (e.g. a single scheduled chunk) must never overwrite the last good
+  // snapshot with empty/half-built data.
+  if (complete) {
+    await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, stallWindowDays: { min: STALL_MIN_DAYS, max: STALL_MAX_DAYS }, basis: 'round_end_logins_not_ready', complete, calculatedAt, ...extra });
+    await writeCache('am_person_to_am', { personToAM, calculatedAt });
+  }
   return { managers: Object.keys(results).length, evaluated, stalledTotal, sample };
 }
 
