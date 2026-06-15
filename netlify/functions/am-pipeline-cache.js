@@ -1,21 +1,17 @@
-// am-pipeline-cache.js  (CRS/Sold/Incomplete clients, resumable + time-bounded)
-// Scans OPEN deals in the relevant client pipelines and computes per-AM stall
-// stats. This is the correct universe for the AM bonus: active clients only,
-// not the full 60k+ person list of old leads.
+// am-pipeline-cache.js  (two-phase: active deals -> person enrichment)
+// AM bonus universe = clients with an OPEN deal in CRS (45), Sold (7), or
+// Incomplete (71). The Account Manager and stall status are PERSON fields and
+// are NOT exposed on deal records, so we:
+//   Phase 1 (deals): page open deals, keep those in the 3 pipelines, collect the
+//                    person_id + which pipeline. Cheap (person_id is on deals).
+//   Phase 2 (persons): enrich each active person via GET /persons/{id} in
+//                    parallel batches, reading AM + UPDATE STATUS directly.
+// Resumable + time-bounded so no run exceeds the function limit; because the
+// active-client set is only a few hundred, it completes quickly and refreshes
+// automatically on the 2-hour schedule.
 //
-// Pipelines (from Joe): 45 = CRS, 7 = Sold, 71 = Incomplete.
-// Clients are de-duplicated by person_id so a client with more than one deal is
-// only counted once. AM and stall status are read off the deal (the Account
-// Manager person-field is exposed on deals in this account, same as the live AM
-// metrics use it).
-//
-// Each run scans for ~8s from the saved cursor and returns cleanly; the next run
-// (manual or the every-2-hours schedule) resumes. Because the active-client set
-// is small, this normally finishes in a single run -> fully automatic.
-//
-// Writes: app_cache[am_pipeline_full] (read by am-stall-rate),
-//         app_cache[am_person_to_am] (person_id -> AM, for rounds/referrals).
-// Progress: app_cache[am_pipeline_progress_v2].
+// Writes app_cache[am_pipeline_full] (read by am-stall-rate) and
+// app_cache[am_person_to_am] (person_id -> AM). Progress: am_pipeline_progress_v3.
 
 const PIPEDRIVE_TOKEN = process.env.PIPEDRIVE_API_KEY || '328f4866f7d86c2bfbee1ed8b5c1895a1f6444d0';
 const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepairusa';
@@ -25,7 +21,6 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const UPDATE_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
 
-// Relevant client pipelines
 const PIPELINES = { 45: 'CRS', 7: 'Sold', 71: 'Incomplete' };
 const PIPELINE_IDS = new Set(Object.keys(PIPELINES).map(Number));
 
@@ -38,7 +33,8 @@ const STATUS_LABELS = {
 };
 
 const TIME_BUDGET_MS = 8000;
-const PROGRESS_KEY = 'am_pipeline_progress_v2';
+const PERSON_BATCH = 8;            // parallel person lookups per batch
+const PROGRESS_KEY = 'am_pipeline_progress_v3';
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 const supaAuth = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 
@@ -53,7 +49,6 @@ function amNameOf(val) {
   if (typeof val === 'string') return val;
   return val.name || val.value || null;
 }
-
 function statusIdOf(val) {
   if (val === null || val === undefined) return 0;
   if (typeof val === 'object') return Number(val.value ?? val.id) || 0;
@@ -67,7 +62,6 @@ async function readCache(key) {
   } catch (e) {}
   return null;
 }
-
 async function writeCache(key, data) {
   await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
     method: 'POST',
@@ -76,7 +70,7 @@ async function writeCache(key, data) {
   });
 }
 
-async function publish(personData, dealsScanned, complete) {
+async function publish(personData, complete, extra) {
   const amStats = {};
   const personToAM = {};
   const pipelineCounts = { CRS: 0, Sold: 0, Incomplete: 0 };
@@ -84,10 +78,8 @@ async function publish(personData, dealsScanned, complete) {
     personToAM[id] = d.am;
     if (pipelineCounts[d.pipeline] !== undefined) pipelineCounts[d.pipeline]++;
     if (!amStats[d.am]) amStats[d.am] = { total: 0, reportStalled: 0, paymentStalled: 0, stalledClients: [] };
-    const s = amStats[d.am];
-    s.total++;
-    const statusId = d.statusId;
-    const label = STATUS_LABELS[statusId] || `ID:${statusId}`;
+    const s = amStats[d.am]; s.total++;
+    const statusId = d.statusId; const label = STATUS_LABELS[statusId] || `ID:${statusId}`;
     if (REPORT_STALLED.includes(statusId)) { s.reportStalled++; s.stalledClients.push({ name: d.name, id, updateStatus: label, type: 'report' }); }
     if (PAYMENT_STALLED.includes(statusId)) { s.paymentStalled++; s.stalledClients.push({ name: d.name, id, updateStatus: label, type: 'payment' }); }
     if (statusId === 1857) { s.reportStalled++; s.paymentStalled++; s.stalledClients.push({ name: d.name, id, updateStatus: label, type: 'both' }); }
@@ -95,9 +87,7 @@ async function publish(personData, dealsScanned, complete) {
   const results = {};
   for (const [am, s] of Object.entries(amStats)) {
     results[am] = {
-      totalClients: s.total,
-      reportStalled: s.reportStalled,
-      paymentStalled: s.paymentStalled,
+      totalClients: s.total, reportStalled: s.reportStalled, paymentStalled: s.paymentStalled,
       reportStallRate: s.total > 0 ? Math.round((s.reportStalled / s.total) * 100) : 0,
       paymentStallRate: s.total > 0 ? Math.round((s.paymentStalled / s.total) * 100) : 0,
       combinedStallRate: s.total > 0 ? Math.round(((s.reportStalled + s.paymentStalled) / s.total) * 100) : 0,
@@ -105,15 +95,7 @@ async function publish(personData, dealsScanned, complete) {
     };
   }
   const calculatedAt = new Date().toISOString();
-  await writeCache('am_pipeline_full', {
-    accountManagers: results,
-    totalPersonsScanned: Object.keys(personData).length,
-    dealsScanned,
-    pipelineCounts,
-    complete,
-    stallThresholdDays: 14,
-    calculatedAt
-  });
+  await writeCache('am_pipeline_full', { accountManagers: results, totalPersonsScanned: Object.keys(personData).length, pipelineCounts, complete, stallThresholdDays: 14, calculatedAt, ...extra });
   await writeCache('am_person_to_am', { personToAM, calculatedAt });
   return { managers: Object.keys(results).length, totalClients: Object.keys(personData).length, pipelineCounts };
 }
@@ -121,48 +103,68 @@ async function publish(personData, dealsScanned, complete) {
 exports.handler = async (event) => {
   if (event && event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   const t0 = Date.now();
+  const left = () => (Date.now() - t0) < TIME_BUDGET_MS;
   try {
     const params = (event && event.queryStringParameters) || {};
+    let pr = await readCache(PROGRESS_KEY);
+    const fresh = params.reset === '1' || !pr || pr.complete;
+    let phase = fresh ? 'deals' : (pr.phase || 'deals');
+    let activeIds = fresh ? {} : (pr.activeIds || {});   // pid -> pipeline name
+    let dealCursor = fresh ? 0 : (pr.dealCursor || 0);
+    let personIndex = fresh ? 0 : (pr.personIndex || 0);
+    let personData = fresh ? {} : (pr.personData || {});
+    let noAm = fresh ? 0 : (pr.noAm || 0);
+    let dealsScanned = fresh ? 0 : (pr.dealsScanned || 0);
 
-    let progress = await readCache(PROGRESS_KEY);
-    const freshStart = params.reset === '1' || !progress || progress.complete;
-    let personData = freshStart ? {} : (progress.personData || {});
-    let nextStart = freshStart ? 0 : (progress.nextStart || 0);
-    let dealsScanned = freshStart ? 0 : (progress.dealsScanned || 0);
-    let noAm = freshStart ? 0 : (progress.noAm || 0);
-
-    let hasMore = true;
-    let pagesThisRun = 0;
-    while (hasMore && (Date.now() - t0) < TIME_BUDGET_MS) {
-      const res = await pdGet(`/deals?status=open&start=${nextStart}&limit=500`);
-      const deals = res.data || [];
-      for (const d of deals) {
-        dealsScanned++;
-        if (!PIPELINE_IDS.has(Number(d.pipeline_id))) continue;
-        const pid = d.person_id?.value || d.person_id || null;
-        if (!pid) continue;
-        const am = amNameOf(d[ACCOUNT_MANAGER_FIELD]);
-        if (!am || am === 'null') { noAm++; continue; }
-        const name = d.person_id?.name || d.person_name || d.title || `Person ${pid}`;
-        personData[pid] = { am, statusId: statusIdOf(d[UPDATE_STATUS_FIELD]), name, pipeline: PIPELINES[Number(d.pipeline_id)] };
+    // PHASE 1: collect active client person_ids from open deals
+    if (phase === 'deals') {
+      let hasMore = true;
+      while (hasMore && left()) {
+        const res = await pdGet(`/deals?status=open&start=${dealCursor}&limit=500`);
+        const deals = res.data || [];
+        for (const d of deals) {
+          dealsScanned++;
+          if (!PIPELINE_IDS.has(Number(d.pipeline_id))) continue;
+          const pid = d.person_id?.value || d.person_id || null;
+          if (!pid) continue;
+          activeIds[pid] = PIPELINES[Number(d.pipeline_id)];
+        }
+        hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
+        dealCursor = res.additional_data?.pagination?.next_start || (dealCursor + 500);
+        if (deals.length === 0) hasMore = false;
       }
-      hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
-      nextStart = res.additional_data?.pagination?.next_start || (nextStart + 500);
-      pagesThisRun++;
-      if (deals.length === 0) { hasMore = false; break; }
+      if (!hasMore) { phase = 'persons'; personIndex = 0; }
     }
 
-    const complete = !hasMore;
-    const summary = await publish(personData, dealsScanned, complete);
-    await writeCache(PROGRESS_KEY, { personData, nextStart, dealsScanned, noAm, complete });
+    // PHASE 2: enrich active persons (AM + stall status) in parallel batches
+    if (phase === 'persons') {
+      const ids = Object.keys(activeIds);
+      while (personIndex < ids.length && left()) {
+        const slice = ids.slice(personIndex, personIndex + PERSON_BATCH);
+        const resns = await Promise.all(slice.map(id => pdGet(`/persons/${id}`)));
+        resns.forEach((r, k) => {
+          const pid = slice[k]; const p = r.data;
+          if (!p) return;
+          const am = amNameOf(p[ACCOUNT_MANAGER_FIELD]);
+          if (!am || am === 'null') { noAm++; return; }
+          personData[pid] = { am, statusId: statusIdOf(p[UPDATE_STATUS_FIELD]), name: p.name, pipeline: activeIds[pid] };
+        });
+        personIndex += slice.length;
+      }
+      if (personIndex >= ids.length) { phase = 'done'; }
+    }
+
+    const complete = phase === 'done';
+    const summary = await publish(personData, complete, { activeClientCount: Object.keys(activeIds).length, clientsWithoutAM: noAm, dealsScanned });
+    await writeCache(PROGRESS_KEY, { phase: complete ? 'done' : phase, activeIds, dealCursor, personIndex, personData, noAm, dealsScanned, complete });
 
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
-        ok: true, complete, pagesThisRun, dealsScanned, nextStart: complete ? 0 : nextStart,
-        managers: summary.managers, totalClients: summary.totalClients,
-        pipelineCounts: summary.pipelineCounts, clientsWithoutAM: noAm,
-        note: complete ? 'Full pass complete.' : 'Partial pass saved; will continue on next run / schedule.'
+        ok: true, complete, phase,
+        dealsScanned, activeClients: Object.keys(activeIds).length, enriched: Object.keys(personData).length,
+        clientsWithoutAM: noAm, managers: summary.managers, pipelineCounts: summary.pipelineCounts,
+        note: complete ? 'Full pass complete.' : (phase === 'deals' ? 'Still collecting active clients; run again.' : 'Enriching clients; run again.')
       })
     };
   } catch (err) {
