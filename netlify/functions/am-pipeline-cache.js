@@ -139,7 +139,9 @@ exports.handler = async (event) => {
           const pipeName = PIPELINES[plId];
           let movedThisMonth = false;
           if (plId === 71) {
-            const moved = parseDate(d.stage_change_time || d.update_time);
+            // Only the stage-change date marks an actual move into Incomplete.
+            // update_time changes on every sync/touch, so it is NOT a valid signal.
+            const moved = parseDate(d.stage_change_time);
             if (!moved || moved < monthStart) continue; // skip old Incompletes
             movedThisMonth = true;
           }

@@ -35,6 +35,7 @@ export default function AMBonus() {
   const [stallData, setStallData] = useState(null);
   const [roundsData, setRoundsData] = useState(null);
   const [referralData, setReferralData] = useState(null);
+  const [agreementData, setAgreementData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -84,6 +85,9 @@ export default function AMBonus() {
 
       // Referrals per AM — non-blocking (returns needsConfig until field is set)
       fetch(`/.netlify/functions/am-referrals?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setReferralData(d); }).catch(() => {});
+
+      // Agreement dates kept — visibility only, non-blocking (data starts at autobilling launch)
+      fetch('/.netlify/functions/am-agreement-dates').then(r => r.ok ? r.json() : null).then(d => { if (d) setAgreementData(d); }).catch(() => {});
 
       if (!selectedAM) {
         if (isAdmin && amList.length > 0) setSelectedAM(amList[0]?.id);
@@ -246,6 +250,19 @@ export default function AMBonus() {
       }
     }
 
+    // Agreement dates kept — VISIBILITY ONLY, never added to totalBonus
+    let agreementPctKept = null, agreementKept = null, agreementTotal = null, agreementNeedsData = false;
+    if (agreementData) {
+      if (agreementData.needsData) {
+        agreementNeedsData = true;
+      } else if (agreementData.byAM) {
+        const aMatch = Object.entries(agreementData.byAM).find(([key]) =>
+          amName && (key.toLowerCase().includes(amName.split(' ')[0].toLowerCase()) || amName.toLowerCase().includes(key.split(' ')[0].toLowerCase()))
+        );
+        if (aMatch) { agreementPctKept = aMatch[1].pctKept; agreementKept = aMatch[1].kept; agreementTotal = aMatch[1].total; }
+      }
+    }
+
     // Stall rate bonus
     let stallBonus = 0;
     if (stallRate !== null) {
@@ -263,12 +280,13 @@ export default function AMBonus() {
       stallRate, stallCount, stallTotal, stalledClients, stallBonus,
       additionalRounds, roundsBonus, roundDeals,
       referrals, referralBonus, referralNeedsConfig,
+      agreementPctKept, agreementKept, agreementTotal, agreementNeedsData,
       paymentStallRate, paymentStallCount,
       totalBonus
     };
     } catch(e) {
       console.error('getAMMetrics error:', e);
-      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralBonus: 0, referralNeedsConfig: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
+      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralBonus: 0, referralNeedsConfig: false, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
     }
   };
 
@@ -513,6 +531,28 @@ export default function AMBonus() {
                   <span>Base Pay + Bonus</span>
                   <span className="font-bold">{fmt(1500 + currentAMMetrics.totalBonus)}</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Visibility-only retention watch stat (does NOT affect bonus) */}
+            <div className="mt-4 bg-white rounded-xl border shadow-sm p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Clock size={20} className="text-slate-400" />
+                  <div>
+                    <p className="font-medium text-slate-800"><Tip text="Share of this AM's clients whose payment dates were never changed in the autobilling system. Visibility only. This does not add to or reduce the bonus. Number starts low and rises as auto-pay takes over.">Agreement Dates Kept</Tip> <span className="text-xs font-normal text-slate-400">(watch stat, not part of bonus)</span></p>
+                    <p className="text-sm text-slate-500">
+                      {currentAMMetrics.agreementNeedsData
+                        ? 'Tracking begins at autobilling launch'
+                        : (currentAMMetrics.agreementPctKept !== null
+                          ? `${currentAMMetrics.agreementKept} of ${currentAMMetrics.agreementTotal} clients kept their dates`
+                          : 'No data yet')}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-lg font-bold text-slate-400">
+                  {currentAMMetrics.agreementPctKept !== null ? `${currentAMMetrics.agreementPctKept}%` : '--'}
+                </p>
               </div>
             </div>
           </div>
