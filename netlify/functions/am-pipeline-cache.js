@@ -46,10 +46,15 @@ const PROGRESS_KEY = 'am_pipeline_progress_v4';
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 const supaAuth = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 
-async function pdGet(path) {
+async function pdGet(path, retry = 1) {
   const sep = path.includes('?') ? '&' : '?';
   const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1${path}${sep}api_token=${PIPEDRIVE_TOKEN}`);
-  return res.ok ? await res.json() : { data: null, _failed: true };
+  if (res.ok) return await res.json();
+  if ((res.status === 429 || res.status >= 500) && retry > 0) {
+    await new Promise(r => setTimeout(r, 2000));
+    return pdGet(path, retry - 1);
+  }
+  return { data: null, _failed: true, status: res.status };
 }
 function amNameOf(val) { if (!val) return null; if (typeof val === 'string') return val; return val.name || val.value || null; }
 function statusIdOf(val) { if (val === null || val === undefined) return 0; if (typeof val === 'object') return Number(val.value ?? val.id) || 0; return Number(val) || 0; }
@@ -121,9 +126,10 @@ exports.handler = async (event) => {
 
     // FAST MODE: page the active-clients People filter and enrich inline
     if (phase === 'filter') {
-      let hasMore = true;
+      let hasMore = true, aborted = false;
       while (hasMore && left()) {
         const res = await pdGet(`/persons?filter_id=${ACTIVE_FILTER}&start=${cursor}&limit=500`);
+        if (res._failed) { aborted = true; break; }
         const persons = res.data || [];
         for (const p of persons) enrich(personData, p, 'CRS');
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
@@ -132,14 +138,15 @@ exports.handler = async (event) => {
         if (persons.length === 0) hasMore = false;
         if (pagesThisRun % CHECKPOINT_EVERY === 0) await writeCache(PROGRESS_KEY, { mode, phase, activeIds, cursor, personData, complete: false });
       }
-      if (!hasMore) phase = 'done';
+      if (!hasMore && !aborted) phase = 'done';
     }
 
     // FALLBACK PHASE 1: collect active person_ids from open deals
     if (phase === 'deals') {
-      let hasMore = true;
+      let hasMore = true, aborted = false;
       while (hasMore && left()) {
         const res = await pdGet(`/deals?status=open&start=${cursor}&limit=500`);
+        if (res._failed) { aborted = true; break; }
         const deals = res.data || [];
         for (const d of deals) {
           if (!PIPELINE_IDS.has(Number(d.pipeline_id))) continue;
@@ -152,14 +159,15 @@ exports.handler = async (event) => {
         if (deals.length === 0) hasMore = false;
         if (pagesThisRun % CHECKPOINT_EVERY === 0) await writeCache(PROGRESS_KEY, { mode, phase, activeIds, cursor, personData, complete: false });
       }
-      if (!hasMore) { phase = 'persons'; cursor = 0; }
+      if (!hasMore && !aborted) { phase = 'persons'; cursor = 0; }
     }
 
     // FALLBACK PHASE 2: page the People LIST (500 at a time), keep active ones
     if (phase === 'persons') {
-      let hasMore = true;
+      let hasMore = true, aborted = false;
       while (hasMore && left()) {
         const res = await pdGet(`/persons?start=${cursor}&limit=500`);
+        if (res._failed) { aborted = true; break; }
         const persons = res.data || [];
         for (const p of persons) {
           const pipe = activeIds[p.id];
@@ -171,7 +179,7 @@ exports.handler = async (event) => {
         if (persons.length === 0) hasMore = false;
         if (pagesThisRun % CHECKPOINT_EVERY === 0) await writeCache(PROGRESS_KEY, { mode, phase, activeIds, cursor, personData, complete: false });
       }
-      if (!hasMore) phase = 'done';
+      if (!hasMore && !aborted) phase = 'done';
     }
 
     const complete = phase === 'done';
