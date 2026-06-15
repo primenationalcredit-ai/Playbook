@@ -116,6 +116,23 @@ exports.handler = async (event) => {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   try {
     const params = (event && event.queryStringParameters) || {};
+
+    // Real AM roster (from the users table) so non-AMs never enter the metric.
+    let rosterTokens = [];
+    try {
+      const amRes = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.account_managers&select=name`, { headers: localSupa });
+      if (amRes.ok) {
+        const amUsers = await amRes.json();
+        rosterTokens = amUsers.flatMap(u => (u.name || '').toLowerCase().split(/[\s-]+/).filter(p => p.length > 2));
+      }
+    } catch (e) {}
+    if (rosterTokens.length === 0) rosterTokens = ['dex-ann', 'dex', 'zairen', 'raquel', 'verzales', 'lanzas'];
+    const EXCLUDE = ['rose', 'mariana', 'navarro']; // explicitly not Account Managers
+    const rosterOk = (am) => {
+      const l = (am || '').toLowerCase();
+      if (EXCLUDE.some(x => l.includes(x))) return false;
+      return rosterTokens.some(t => l.includes(t));
+    };
     let pr = await readCache(PROGRESS_KEY);
     const fresh = params.reset === '1' || !pr || pr.complete;
     let phase = fresh ? 'deals' : (pr.phase || 'deals');
@@ -172,6 +189,7 @@ exports.handler = async (event) => {
           if (!ad) continue;
           const am = amNameOf(p[ACCOUNT_MANAGER_FIELD]);
           if (!am || am === 'null') { noAm++; continue; }
+          if (!rosterOk(am)) continue; // skip non-AMs (e.g., Rose, Mariana)
           const statusId = statusIdOf(p[UPDATE_STATUS_FIELD]);
           const re = ad.roundEnd ? new Date(ad.roundEnd) : null;
           const roundOver = !!(re && re <= now);
