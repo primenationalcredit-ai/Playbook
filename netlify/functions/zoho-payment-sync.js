@@ -8,6 +8,21 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function getZohoToken() {
+  // Reuse a cached access token (Zoho tokens last ~1 hour). Minting a new one on
+  // every call trips Zoho's refresh rate limit, which 500s the whole sync.
+  try {
+    const c = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.zoho_access_token&select=cache_value`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    if (c.ok) {
+      const rows = await c.json();
+      if (rows[0]) {
+        const t = JSON.parse(rows[0].cache_value);
+        if (t.token && t.expiresAt > Date.now() + 60000) return t.token;
+      }
+    }
+  } catch (e) {}
+
   const params = new URLSearchParams();
   params.append('grant_type', 'refresh_token');
   params.append('client_id', ZOHO_CLIENT_ID);
@@ -16,6 +31,16 @@ async function getZohoToken() {
   const res = await fetch('https://accounts.zoho.com/oauth/v2/token', { method: 'POST', body: params });
   const data = await res.json();
   if (!data.access_token) throw new Error('Token failed: ' + JSON.stringify(data));
+
+  // Cache it, refreshing 5 minutes before Zoho's stated expiry
+  try {
+    const ttlMs = data.expires_in ? (data.expires_in * 1000 - 300000) : 3300000;
+    await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
+      method: 'POST',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ cache_key: 'zoho_access_token', cache_value: JSON.stringify({ token: data.access_token, expiresAt: Date.now() + ttlMs }), updated_at: new Date().toISOString() })
+    });
+  } catch (e) {}
   return data.access_token;
 }
 
