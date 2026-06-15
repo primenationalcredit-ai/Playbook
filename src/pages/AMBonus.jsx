@@ -427,9 +427,9 @@ export default function AMBonus() {
                     <summary className="text-xs text-blue-500 cursor-pointer">View {currentAMMetrics.stallCount} stalled clients</summary>
                     <div className="mt-1 max-h-48 overflow-y-auto">
                       {currentAMMetrics.stalledClients.map((c, i) => (
-                        <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100">
+                        <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100 gap-2">
                           <span className="text-slate-700">{c.name}</span>
-                          <span className="text-red-500">{c.daysSince} days — {c.updateStatus}</span>
+                          <span className="text-red-500 text-right">{c.reason || (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd} days past round end` : '')}</span>
                         </div>
                       ))}
                     </div>
