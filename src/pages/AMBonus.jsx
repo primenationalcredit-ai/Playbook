@@ -48,7 +48,7 @@ export default function AMBonus() {
   const [proofFile, setProofFile] = useState(null);
   const [viewerUrl, setViewerUrl] = useState(null);
   const [processingId, setProcessingId] = useState(null);
-  const [formData, setFormData] = useState({ client_name: '', pipedrive_deal_id: '', product_name: '', proof_description: '' });
+  const [formData, setFormData] = useState({ client_name: '', pipedrive_deal_id: '', product_name: '', proof_description: '', account_manager_id: '' });
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -128,6 +128,7 @@ export default function AMBonus() {
         ...formData,
         proof_image_url: proofUrl,
         submitted_by: currentUser?.id,
+        account_manager_id: formData.account_manager_id || selectedAM || currentUser?.id,
         submission_month: selectedMonth,
         status: 'pending'
       };
@@ -135,7 +136,7 @@ export default function AMBonus() {
         method: 'POST', headers: { ...supaHeaders, Prefer: 'return=minimal' },
         body: JSON.stringify(body)
       });
-      setFormData({ client_name: '', pipedrive_deal_id: '', product_name: '', proof_description: '' });
+      setFormData({ client_name: '', pipedrive_deal_id: '', product_name: '', proof_description: '', account_manager_id: '' });
       setProofFile(null);
       setShowForm(false);
       loadData();
@@ -185,7 +186,7 @@ export default function AMBonus() {
   // Calculate metrics per AM
   const getAMMetrics = (amId) => {
     try {
-    const amSubs = submissions.filter(s => s.submitted_by === amId);
+    const amSubs = submissions.filter(s => (s.account_manager_id || s.submitted_by) === amId);
     const approved = amSubs.filter(s => s.status === 'approved');
     const pending = amSubs.filter(s => s.status === 'pending');
     const rejected = amSubs.filter(s => s.status === 'rejected');
@@ -752,6 +753,17 @@ export default function AMBonus() {
                   <label className="text-xs text-slate-500 mb-1 block">Client Name *</label>
                   <input type="text" value={formData.client_name} onChange={e => setFormData({...formData, client_name: e.target.value})}
                     className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="John Smith" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Account Manager *</label>
+                  <select value={formData.account_manager_id || selectedAM || ''} onChange={e => setFormData({...formData, account_manager_id: e.target.value})}
+                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
+                    <option value="">Select account manager...</option>
+                    {amList.map(am => (
+                      <option key={am.id} value={am.id}>{am.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1">Who gets credit for this signup. Defaults to the AM shown on the dashboard.</p>
                 </div>
                 <div>
                   <label className="text-xs text-slate-500 mb-1 block">Pipedrive Deal ID</label>
