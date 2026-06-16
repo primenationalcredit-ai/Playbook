@@ -27,13 +27,13 @@ const SATISFIED_THRESHOLD = 9; // 9-10 overall = route to review ask
 
 function NumberScale({ value, onChange, max = 10 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="grid grid-cols-10 gap-1.5">
       {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
         <button
           key={n}
           type="button"
           onClick={() => onChange(n)}
-          className={`w-10 h-10 rounded-lg border text-sm font-semibold transition ${
+          className={`h-10 rounded-lg border text-sm font-semibold transition ${
             value === n ? 'bg-asap-blue text-white border-asap-blue' : 'bg-white text-slate-700 border-slate-200 hover:border-asap-blue'
           }`}
         >
@@ -110,9 +110,11 @@ export default function Round2Survey() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 max-w-lg w-full p-8 text-center">
           {result.satisfied ? (
             <>
-              <h1 className="text-2xl font-bold text-slate-800 mb-2">Thank you!</h1>
+              <h1 className="text-2xl font-bold text-slate-800 mb-2">Thank you{form.client_name ? `, ${form.client_name}` : ''}!</h1>
               <p className="text-slate-600 mb-6">
-                We are thrilled you have had a great experience. Would you take a moment to share it? It genuinely helps other people find us.
+                {form.am_name
+                  ? `We are so glad ${form.am_name} has been taking good care of you. A quick review would mean the world to ${form.am_name}, and it helps other people find the same help you did. It only takes a minute.`
+                  : 'We are so glad you have had a great experience. A quick review would mean the world to our team, and it helps other people find the same help you did. It only takes a minute.'}
               </p>
               <a
                 href={result.reviewUrl}
@@ -120,7 +122,7 @@ export default function Round2Survey() {
                 rel="noopener noreferrer"
                 className="inline-block bg-asap-blue text-white font-semibold px-6 py-3 rounded-xl hover:opacity-90"
               >
-                Leave a Review
+                {form.am_name ? `Leave ${form.am_name} a Review` : 'Leave a Review'}
               </a>
             </>
           ) : (
