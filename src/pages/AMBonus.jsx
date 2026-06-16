@@ -283,9 +283,9 @@ export default function AMBonus() {
     let stallBonus = 0;
     const stallEligible = stallTotal >= 15;
     if (stallRate !== null && stallEligible) {
-      if (stallRate <= 25) stallBonus = 250;
-      else if (stallRate <= 35) stallBonus = 150;
-      else if (stallRate <= 45) stallBonus = 75;
+      if (stallRate <= 20) stallBonus = 250;
+      else if (stallRate <= 30) stallBonus = 150;
+      else if (stallRate <= 40) stallBonus = 75;
     }
 
     // CSAT (Round 2 survey) — score only, no bonus until tiers are calibrated
@@ -528,9 +528,9 @@ export default function AMBonus() {
               {currentAMMetrics.approvedCount >= 20 && <p className="text-xs text-green-500 mt-1">Standard met! {currentAMMetrics.approvedCount - 20} earning bonus</p>}
             </div>
             <div className="bg-white rounded-xl p-4 border shadow-sm">
-              <Clock size={18} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 45 ? 'text-green-500 mb-2' : 'text-red-500 mb-2') : 'text-amber-500 mb-2'} />
+              <Clock size={18} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 40 ? 'text-green-500 mb-2' : 'text-red-500 mb-2') : 'text-amber-500 mb-2'} />
               <p className="text-3xl font-bold">{currentAMMetrics.stallRate !== null ? currentAMMetrics.stallRate + '%' : '--'}</p>
-              <p className="text-sm text-slate-500"><Tip text="Share of clients whose latest round ended 14 to 120 days ago that are still in Logins Not Ready. Lower is better. Bonus tiers: 45% or below earns $75, 35% earns $150, 25% earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate</Tip></p>
+              <p className="text-sm text-slate-500"><Tip text="Share of clients whose latest round ended 14 to 120 days ago that are still in Logins Not Ready. Lower is better. Bonus tiers: 40% or below earns $75, 30% earns $150, 20% earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate</Tip></p>
               {currentAMMetrics.stallRate !== null && <p className="text-xs mt-1">{currentAMMetrics.stallCount} of {currentAMMetrics.stallTotal} clients stalled</p>}
               {currentAMMetrics.stallRate === null && <p className="text-xs text-slate-400 mt-1">Loading from Pipedrive...</p>}
             </div>
@@ -583,18 +583,18 @@ export default function AMBonus() {
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <Clock size={20} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 45 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
+                    <Clock size={20} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 40 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="Clients in Logins Not Ready 14 to 120 days past their round end, divided by all clients whose round ended in that window. Payment statuses do not count. Tiers: 45% or below = $75, 35% = $150, 25% = $250. Minimum 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
+                      <p className="font-medium text-slate-800"><Tip text="Clients in Logins Not Ready 14 to 120 days past their round end, divided by all clients whose round ended in that window. Payment statuses do not count. Tiers: 40% or below = $75, 30% = $150, 20% = $250. Minimum 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
                       <p className="text-sm text-slate-500">{currentAMMetrics.stallRate !== null ? `${currentAMMetrics.stallRate}% — ${currentAMMetrics.stallCount} of ${currentAMMetrics.stallTotal} clients` : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.stallBonus > 0 ? 'text-green-600' : 'text-slate-300'}`}>{fmt(currentAMMetrics.stallBonus)}</p>
                 </div>
                 <div className="mt-2 ml-8 grid grid-cols-4 gap-2 text-xs text-center">
-                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 45 ? 'bg-green-100 border-green-300 font-bold' : 'bg-green-50 border-green-200'}`}><p className="font-bold">45%</p><p>+$75</p></div>
-                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 35 ? 'bg-emerald-100 border-emerald-300 font-bold' : 'bg-emerald-50 border-emerald-200'}`}><p className="font-bold">35%</p><p>+$150</p></div>
-                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 25 ? 'bg-emerald-100 border-emerald-300 font-bold' : 'bg-emerald-50 border-emerald-200'}`}><p className="font-bold">25%</p><p>+$250</p></div>
+                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 40 ? 'bg-green-100 border-green-300 font-bold' : 'bg-green-50 border-green-200'}`}><p className="font-bold">40%</p><p>+$75</p></div>
+                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 30 ? 'bg-emerald-100 border-emerald-300 font-bold' : 'bg-emerald-50 border-emerald-200'}`}><p className="font-bold">30%</p><p>+$150</p></div>
+                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 20 ? 'bg-emerald-100 border-emerald-300 font-bold' : 'bg-emerald-50 border-emerald-200'}`}><p className="font-bold">20%</p><p>+$250</p></div>
                 </div>
                 {currentAMMetrics.stalledClients && currentAMMetrics.stalledClients.length > 0 && (
                   <details className="mt-2 ml-8">
