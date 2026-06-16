@@ -37,6 +37,8 @@ export default function AMBonus() {
   const [referralData, setReferralData] = useState(null);
   const [csatData, setCsatData] = useState(null);
   const [surveyResponses, setSurveyResponses] = useState([]);
+  const [surveySends, setSurveySends] = useState([]);
+  const [resendingId, setResendingId] = useState(null);
   const [openResponseId, setOpenResponseId] = useState(null);
   const [agreementData, setAgreementData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -92,6 +94,9 @@ export default function AMBonus() {
       // Raw Round 2 survey responses (for the per-client survey view)
       fetch(`${SUPABASE_URL}/rest/v1/client_surveys?survey_type=eq.round2_am&order=created_at.desc&select=*`, { headers: supaHeaders })
         .then(r => r.ok ? r.json() : null).then(d => { if (d) setSurveyResponses(d); }).catch(() => {});
+      // Actual sends (exclude backlog_seed dedupe markers) — powers the sent list + resend
+      fetch(`${SUPABASE_URL}/rest/v1/survey_sends?source=neq.backlog_seed&order=sent_at.desc&select=*`, { headers: supaHeaders })
+        .then(r => r.ok ? r.json() : null).then(d => { if (d) setSurveySends(d); }).catch(() => {});
 
       // Agreement dates kept — visibility only, non-blocking (data starts at autobilling launch)
       fetch('/.netlify/functions/am-agreement-dates').then(r => r.ok ? r.json() : null).then(d => { if (d) setAgreementData(d); }).catch(() => {});
@@ -319,6 +324,34 @@ export default function AMBonus() {
     return key.includes(nm.split(' ')[0]) || nm.includes(key.split(' ')[0]);
   });
   const isBad = (r) => (r.am_rating != null && r.am_rating <= 6) || (r.overall_satisfaction != null && r.overall_satisfaction <= 6);
+
+  // Actual sends for this AM (latest per client), and which of those haven't responded
+  const matchesAM = (name) => {
+    const key = (name || '').toLowerCase();
+    const nm = (currentAMName || '').toLowerCase();
+    if (!key || !nm || nm === 'unknown') return false;
+    return key.includes(nm.split(' ')[0]) || nm.includes(key.split(' ')[0]);
+  };
+  const mySendsMap = {};
+  (surveySends || []).forEach(s => {
+    if (!matchesAM(s.am_name)) return;
+    const pid = String(s.person_id);
+    if (!mySendsMap[pid] || new Date(s.sent_at) > new Date(mySendsMap[pid].sent_at)) mySendsMap[pid] = s;
+  });
+  const respondedPersonIds = new Set((surveyResponses || []).map(r => String(r.pipedrive_person_id)).filter(Boolean));
+  const pendingSends = Object.values(mySendsMap)
+    .filter(s => !respondedPersonIds.has(String(s.person_id)))
+    .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
+
+  const handleResend = async (send) => {
+    setResendingId(send.id);
+    try {
+      await fetch('/.netlify/functions/resend-survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ send_id: send.id }) });
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?source=neq.backlog_seed&order=sent_at.desc&select=*`, { headers: supaHeaders });
+      if (r.ok) setSurveySends(await r.json());
+    } catch (e) {}
+    setResendingId(null);
+  };
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
@@ -601,6 +634,32 @@ export default function AMBonus() {
             <h3 className="font-bold text-slate-800">Round 2 Survey Responses {currentAMName !== 'Unknown' ? `— ${currentAMName}` : ''}</h3>
             <span className="text-sm text-slate-500">{myResponses.length} response{myResponses.length === 1 ? '' : 's'}</span>
           </div>
+
+          {pendingSends.length > 0 && (
+            <div className="bg-white rounded-xl border shadow-sm">
+              <div className="px-4 py-3 border-b border-slate-100">
+                <p className="font-medium text-slate-800">Awaiting response <span className="text-sm font-normal text-slate-500">({pendingSends.length})</span></p>
+                <p className="text-xs text-slate-500">Sent but not filled out yet. Resend if it may have gone to spam or not delivered.</p>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {pendingSends.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between px-4 py-3">
+                    <div>
+                      <p className="font-medium text-slate-800">{s.client_name || 'Client'}</p>
+                      <p className="text-xs text-slate-500">Sent {s.sent_at ? new Date(s.sent_at).toLocaleDateString() : ''}{s.client_email ? ` · ${s.client_email}` : ''}</p>
+                    </div>
+                    <button
+                      onClick={() => handleResend(s)}
+                      disabled={resendingId === s.id}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-asap-blue text-asap-blue hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      <RefreshCw size={14} className={resendingId === s.id ? 'animate-spin' : ''} /> {resendingId === s.id ? 'Sending...' : 'Resend'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {myResponses.length === 0 ? (
             <div className="bg-white rounded-xl border shadow-sm p-8 text-center text-slate-500">
               No survey responses yet. They appear here as clients complete the Round 2 survey.
