@@ -94,6 +94,25 @@ export default function Round2Survey() {
       if (submitError) throw submitError;
 
       const satisfied = form.overall_satisfaction >= SATISFIED_THRESHOLD;
+
+      // Email the result to accounts@ (fire-and-forget; never blocks the thank-you)
+      try {
+        fetch('https://asap-payment-processor.netlify.app/.netlify/functions/notify-survey-result', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_name: form.client_name,
+            am_name: form.am_name,
+            overall_satisfaction: form.overall_satisfaction,
+            am_rating: form.am_rating,
+            explained_clearly: form.explained_clearly,
+            nps_score: form.nps_score,
+            what_could_improve: form.what_could_improve,
+            routed_to_review: satisfied,
+          }),
+        }).catch(() => {});
+      } catch (e) {}
+
       const loc = REVIEW_LOCATIONS[Math.floor(Math.random() * REVIEW_LOCATIONS.length)];
       setResult({ satisfied, reviewUrl: satisfied ? loc.url : null });
     } catch (err) {
