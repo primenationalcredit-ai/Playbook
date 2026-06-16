@@ -522,6 +522,7 @@ function UserModal({ user, onClose, onSave, taskTemplates }) {
   const [email, setEmail] = useState(user?.email || '');
   const [pipedriveName, setPipedriveName] = useState(user?.pipedrive_name || '');
   const [pipedriveOrgId, setPipedriveOrgId] = useState(user?.pipedrive_org_id || '');
+  const [orgError, setOrgError] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [department, setDepartment] = useState(user?.department || 'credit_consultants');
@@ -605,6 +606,13 @@ function UserModal({ user, onClose, onSave, taskTemplates }) {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
     if (isNew && !password) return;
+    // Departments that earn referrals must have a Pipedrive Org ID set
+    const REFERRAL_DEPTS = ['account_managers'];
+    if (REFERRAL_DEPTS.includes(department) && !pipedriveOrgId.trim()) {
+      setOrgError('A Pipedrive Org ID is required for Account Managers so referral tracking works.');
+      return;
+    }
+    setOrgError('');
 
     setLoading(true);
     try {
@@ -717,6 +725,7 @@ function UserModal({ user, onClose, onSave, taskTemplates }) {
             <p className="text-xs text-slate-500 mt-1">
               Referred clients placed under this organization count as this AM's referrals.
             </p>
+            {orgError && <p className="text-xs text-red-600 mt-1 font-medium">{orgError}</p>}
           </div>
 
           {/* Password field - only for new users */}
