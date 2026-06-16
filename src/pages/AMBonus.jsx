@@ -343,6 +343,34 @@ export default function AMBonus() {
     .filter(s => !respondedPersonIds.has(String(s.person_id)))
     .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
 
+  // Unified per-AM survey list: every send + every response, merged by person.
+  // Each row is either completed (has a response, shows scores) or awaiting (Resend).
+  const responsesByPerson = {};
+  const responsesNoPerson = [];
+  (myResponses || []).forEach(r => {
+    const pid = r.pipedrive_person_id ? String(r.pipedrive_person_id) : null;
+    if (pid) responsesByPerson[pid] = r; else responsesNoPerson.push(r);
+  });
+  const usedRespPids = new Set();
+  const unifiedSurveys = [];
+  Object.values(mySendsMap).forEach(s => {
+    const pid = String(s.person_id);
+    const resp = responsesByPerson[pid] || null;
+    if (resp) usedRespPids.add(pid);
+    unifiedSurveys.push({ key: 's-' + s.id, client_name: s.client_name || (resp && resp.client_name) || 'Client', sent_at: s.sent_at, send: s, response: resp });
+  });
+  Object.entries(responsesByPerson).forEach(([pid, r]) => {
+    if (usedRespPids.has(pid)) return;
+    unifiedSurveys.push({ key: 'r-' + r.id, client_name: r.client_name || 'Client', sent_at: null, send: null, response: r });
+  });
+  responsesNoPerson.forEach(r => {
+    unifiedSurveys.push({ key: 'rn-' + r.id, client_name: r.client_name || 'Client', sent_at: null, send: null, response: r });
+  });
+  unifiedSurveys.sort((a, b) => new Date(b.sent_at || b.response?.created_at || 0) - new Date(a.sent_at || a.response?.created_at || 0));
+  const sentCount = unifiedSurveys.length;
+  const completedCount = unifiedSurveys.filter(u => u.response).length;
+  const awaitingCount = sentCount - completedCount;
+
   const handleResend = async (send) => {
     setResendingId(send.id);
     try {
@@ -627,63 +655,63 @@ export default function AMBonus() {
         </div>
       )}
 
-      {/* Surveys Tab — per-client Round 2 survey responses for this AM */}
+      {/* Surveys Tab — unified: every survey sent for this AM, completed + awaiting, with resend */}
       {tab === 'surveys' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-800">Round 2 Survey Responses {currentAMName !== 'Unknown' ? `— ${currentAMName}` : ''}</h3>
-            <span className="text-sm text-slate-500">{myResponses.length} response{myResponses.length === 1 ? '' : 's'}</span>
+            <h3 className="font-bold text-slate-800">Round 2 Surveys {currentAMName !== 'Unknown' ? `— ${currentAMName}` : ''}</h3>
+            <span className="text-sm text-slate-500">{sentCount} sent · {completedCount} completed · {awaitingCount} awaiting</span>
           </div>
 
-          {pendingSends.length > 0 && (
-            <div className="bg-white rounded-xl border shadow-sm">
-              <div className="px-4 py-3 border-b border-slate-100">
-                <p className="font-medium text-slate-800">Awaiting response <span className="text-sm font-normal text-slate-500">({pendingSends.length})</span></p>
-                <p className="text-xs text-slate-500">Sent but not filled out yet. Resend if it may have gone to spam or not delivered.</p>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {pendingSends.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between px-4 py-3">
-                    <div>
-                      <p className="font-medium text-slate-800">{s.client_name || 'Client'}</p>
-                      <p className="text-xs text-slate-500">Sent {s.sent_at ? new Date(s.sent_at).toLocaleDateString() : ''}{s.client_email ? ` · ${s.client_email}` : ''}</p>
-                    </div>
-                    <button
-                      onClick={() => handleResend(s)}
-                      disabled={resendingId === s.id}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-asap-blue text-asap-blue hover:bg-blue-50 disabled:opacity-50"
-                    >
-                      <RefreshCw size={14} className={resendingId === s.id ? 'animate-spin' : ''} /> {resendingId === s.id ? 'Sending...' : 'Resend'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {myResponses.length === 0 ? (
+          {sentCount === 0 ? (
             <div className="bg-white rounded-xl border shadow-sm p-8 text-center text-slate-500">
-              No survey responses yet. They appear here as clients complete the Round 2 survey.
+              No surveys yet. They appear here once a survey is sent or a client completes one.
             </div>
           ) : (
             <div className="bg-white rounded-xl border shadow-sm divide-y divide-slate-100">
-              {myResponses.map((r) => {
-                const bad = isBad(r);
-                const open = openResponseId === r.id;
+              {unifiedSurveys.map((u) => {
+                const r = u.response;
+                const bad = r ? isBad(r) : false;
+                const open = r && openResponseId === r.id;
                 return (
-                  <div key={r.id} className={bad ? 'bg-red-50' : ''}>
-                    <button onClick={() => setOpenResponseId(open ? null : r.id)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50">
-                      <div className="flex items-center gap-3">
+                  <div key={u.key} className={bad ? 'bg-red-50' : ''}>
+                    <div className="w-full flex items-center justify-between px-4 py-3">
+                      <button
+                        onClick={() => r && setOpenResponseId(open ? null : r.id)}
+                        className={`flex items-center gap-3 text-left flex-1 ${r ? 'hover:opacity-70' : 'cursor-default'}`}
+                      >
                         {bad && <AlertTriangle size={16} className="text-red-500 shrink-0" />}
                         <div>
-                          <p className="font-medium text-slate-800">{r.client_name || 'Client'}</p>
-                          <p className="text-xs text-slate-500">{r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</p>
+                          <p className="font-medium text-slate-800">{u.client_name}</p>
+                          <p className="text-xs text-slate-500">
+                            {u.sent_at ? `Sent ${new Date(u.sent_at).toLocaleDateString()}` : (r?.created_at ? `Completed ${new Date(r.created_at).toLocaleDateString()}` : '')}
+                            {u.send?.client_email ? ` · ${u.send.client_email}` : ''}
+                          </p>
                         </div>
+                      </button>
+                      <div className="flex items-center gap-4">
+                        {r ? (
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-slate-500">AM <span className={`font-bold ${bad ? 'text-red-600' : 'text-slate-800'}`}>{r.am_rating ?? '--'}/10</span></span>
+                            <span className="text-slate-500">Overall <span className="font-bold text-slate-800">{r.overall_satisfaction ?? '--'}/10</span></span>
+                            <span className="text-xs font-medium text-green-600">Completed</span>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-xs font-medium text-amber-600">Awaiting response</span>
+                            {u.send && (
+                              <button
+                                onClick={() => handleResend(u.send)}
+                                disabled={resendingId === u.send.id}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-asap-blue text-asap-blue hover:bg-blue-50 disabled:opacity-50"
+                              >
+                                <RefreshCw size={14} className={resendingId === u.send.id ? 'animate-spin' : ''} /> {resendingId === u.send.id ? 'Sending...' : 'Resend'}
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="text-slate-500">AM rating <span className={`font-bold ${bad ? 'text-red-600' : 'text-slate-800'}`}>{r.am_rating ?? '--'}/10</span></span>
-                        <span className="text-slate-500">Overall <span className="font-bold text-slate-800">{r.overall_satisfaction ?? '--'}/10</span></span>
-                      </div>
-                    </button>
+                    </div>
                     {open && (
                       <div className="px-4 pb-4 text-sm text-slate-700 space-y-1">
                         <p>Overall satisfaction: <span className="font-semibold">{r.overall_satisfaction ?? 'n/a'}/10</span></p>
