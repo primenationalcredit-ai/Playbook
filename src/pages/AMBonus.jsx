@@ -102,7 +102,7 @@ export default function AMBonus() {
       fetch('/.netlify/functions/am-agreement-dates').then(r => r.ok ? r.json() : null).then(d => { if (d) setAgreementData(d); }).catch(() => {});
 
       if (!selectedAM) {
-        if (isAdmin && amList.length > 0) setSelectedAM(amList[0]?.id);
+        if (isAdmin) setSelectedAM('ALL');
         else if (currentUser?.id) setSelectedAM(currentUser.id);
       }
     } catch (e) { console.error(e); }
@@ -396,6 +396,7 @@ export default function AMBonus() {
           {isAdmin && amList.length > 0 && (
             <select value={selectedAM || ''} onChange={e => setSelectedAM(e.target.value)}
               className="px-3 py-1.5 border rounded-lg text-sm font-medium">
+              <option value="ALL">All Account Managers</option>
               {amList.map(am => (
                 <option key={am.id} value={am.id}>{am.name}</option>
               ))}
@@ -425,13 +426,97 @@ export default function AMBonus() {
         )}
       </div>
 
+      {/* All Account Managers overview (admins) */}
+      {tab === 'dashboard' && selectedAM === 'ALL' && (() => {
+        const rows = (amList || []).map(am => ({ am, m: getAMMetrics(am.id) }));
+        const sum = (f) => rows.reduce((t, r) => t + (Number(r.m?.[f]) || 0), 0);
+        const fmtPct = (v) => v == null ? '—' : `${Math.round(v)}%`;
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-xl p-4 border shadow-sm">
+                <Users size={18} className="text-blue-500 mb-2" />
+                <p className="text-3xl font-bold text-slate-800">{rows.length}</p>
+                <p className="text-sm text-slate-500">Account Managers</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 border shadow-sm">
+                <TrendingUp size={18} className="text-blue-500 mb-2" />
+                <p className="text-3xl font-bold text-slate-800">{sum('approvedCount')}</p>
+                <p className="text-sm text-slate-500">Credit Building Signups</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 border shadow-sm">
+                <Repeat size={18} className="text-purple-500 mb-2" />
+                <p className="text-3xl font-bold text-slate-800">{sum('additionalRounds')}</p>
+                <p className="text-sm text-slate-500">Additional Rounds</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 border shadow-sm">
+                <Award size={18} className="text-green-600 mb-2" />
+                <p className="text-3xl font-bold text-green-600">{fmt(sum('totalBonus'))}</p>
+                <p className="text-sm text-slate-500">Total Bonus (all AMs)</p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-100">
+                <h3 className="font-bold text-slate-800">All Account Managers — {selectedMonth === new Date().toISOString().slice(0, 7) ? 'this month' : selectedMonth}</h3>
+                <p className="text-xs text-slate-500">Every AM's numbers at a glance. Click a name to open their full dashboard.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-left">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Account Manager</th>
+                      <th className="px-4 py-2 font-medium text-center">Credit Signups</th>
+                      <th className="px-4 py-2 font-medium text-center">Stall Rate</th>
+                      <th className="px-4 py-2 font-medium text-center">Add'l Rounds</th>
+                      <th className="px-4 py-2 font-medium text-center">Referrals</th>
+                      <th className="px-4 py-2 font-medium text-center">Reviews</th>
+                      <th className="px-4 py-2 font-medium text-center">CSAT</th>
+                      <th className="px-4 py-2 font-medium text-right">Total Bonus</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.map(({ am, m }) => (
+                      <tr key={am.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <button onClick={() => setSelectedAM(am.id)} className="font-medium text-asap-blue hover:underline">{am.name}</button>
+                        </td>
+                        <td className="px-4 py-3 text-center">{m?.approvedCount ?? 0}</td>
+                        <td className="px-4 py-3 text-center">{m?.stallRate == null ? '—' : fmtPct(m.stallRate)}</td>
+                        <td className="px-4 py-3 text-center">{m?.additionalRounds ?? 0}</td>
+                        <td className="px-4 py-3 text-center">{m?.referrals ?? 0}{m?.referralPaid != null ? ` (${m.referralPaid} paid)` : ''}</td>
+                        <td className="px-4 py-3 text-center">{m?.reviewCount ?? 0}</td>
+                        <td className="px-4 py-3 text-center">{m?.csatResponses ? `${m.csatAvg ?? '—'}/10` : '—'}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(m?.totalBonus || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 font-semibold">
+                      <td className="px-4 py-3">Totals</td>
+                      <td className="px-4 py-3 text-center">{sum('approvedCount')}</td>
+                      <td className="px-4 py-3 text-center">—</td>
+                      <td className="px-4 py-3 text-center">{sum('additionalRounds')}</td>
+                      <td className="px-4 py-3 text-center">{sum('referrals')}</td>
+                      <td className="px-4 py-3 text-center">{sum('reviewCount')}</td>
+                      <td className="px-4 py-3 text-center">—</td>
+                      <td className="px-4 py-3 text-right text-green-600">{fmt(sum('totalBonus'))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Dashboard Tab */}
-      {tab === 'dashboard' && !currentAMMetrics && (
+      {tab === 'dashboard' && selectedAM !== 'ALL' && !currentAMMetrics && (
         <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
           <p className="text-slate-500">Select an Account Manager to view their bonus dashboard.</p>
         </div>
       )}
-      {tab === 'dashboard' && currentAMMetrics && (
+      {tab === 'dashboard' && selectedAM !== 'ALL' && currentAMMetrics && (
         <div className="space-y-4">
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
