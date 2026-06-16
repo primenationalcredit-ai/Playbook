@@ -88,10 +88,17 @@ exports.handler = async (event) => {
       if (!r.data || r.data.length === 0) break;
     }
 
-    // 4) Who has already been sent
-    const sentRes = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?survey_type=eq.round2_am&select=person_id`, { headers: supa });
-    const sentRows = sentRes.ok ? await sentRes.json() : [];
-    const alreadySent = new Set(sentRows.map(r => String(r.person_id)));
+    // 4) Who has already been sent (paginate; the REST read caps at 1000 rows/page)
+    const alreadySent = new Set();
+    let offset = 0;
+    while (offset <= 200000) {
+      const sentRes = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?survey_type=eq.round2_am&select=person_id&limit=1000&offset=${offset}`, { headers: supa });
+      if (!sentRes.ok) break;
+      const rows = await sentRes.json();
+      rows.forEach(r => alreadySent.add(String(r.person_id)));
+      if (rows.length < 1000) break;
+      offset += 1000;
+    }
 
     // 5) Build the to-send list (defensive: confirm status, has a contact method, not already sent)
     const toSend = [];
