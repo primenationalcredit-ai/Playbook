@@ -48,6 +48,33 @@ exports.handler = async (event) => {
     const seedSkip = params.seedSkip === '1' || params.seedSkip === 'true';
     const cap = params.limit ? parseInt(params.limit, 10) : DEFAULT_CAP;
 
+    // TEST MODE: send to a specified address + log a real row (source 'manual_test').
+    // Bypasses Pipedrive and dedupe so you can exercise the full pipeline + Survey
+    // Results list + Resend in one click. e.g. ?test=1&email=you@x.com&name=Test&am=Dex-Ann
+    if (params.test === '1' || params.test === 'true') {
+      const t = {
+        person_id: 'test-' + Date.now(),
+        name: params.name || 'Test Client',
+        am: params.am || '',
+        email: params.email || '',
+        phone: params.phone || '',
+      };
+      if (!t.email && !t.phone) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'Provide ?email= and/or ?phone=' }) };
+      }
+      let emailResult = null, smsResult = null;
+      try {
+        const sres = await fetch(SENDER_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(t) });
+        const sjson = await sres.json().catch(() => ({}));
+        emailResult = sjson.email || null; smsResult = sjson.sms || null;
+      } catch (e) { emailResult = 'error: ' + e.message; }
+      await fetch(`${SUPABASE_URL}/rest/v1/survey_sends`, {
+        method: 'POST', headers: { ...supa, Prefer: 'return=minimal' },
+        body: JSON.stringify({ person_id: t.person_id, client_name: t.name, client_email: t.email, client_phone: t.phone, am_name: t.am, survey_type: 'round2_am', source: 'manual_test', email_result: emailResult, sms_result: smsResult }),
+      });
+      return { statusCode: 200, headers, body: JSON.stringify({ test: true, sent_to: { email: t.email, phone: t.phone }, email: emailResult, sms: smsResult, note: 'Logged as manual_test. It now shows in Survey Results with a Resend button.' }) };
+    }
+
     // 1) Field metadata: numeric id for the status field + AM option labels
     const fields = (await pd('/personFields?limit=500')).data || [];
     const statusField = fields.find(f => f.key === CURRENT_STATUS_FIELD);
