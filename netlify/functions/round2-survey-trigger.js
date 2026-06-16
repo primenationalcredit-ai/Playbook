@@ -33,6 +33,7 @@ async function pd(path, method = 'GET', body) {
   return json;
 }
 
+function amNameOf(v) { if (!v) return null; if (typeof v === 'string') return v; return v.name || v.value || null; }
 function contact(p) {
   const email = Array.isArray(p.email) ? (p.email.find(e => e.primary)?.value || p.email[0]?.value) : (p.email || null);
   const phone = Array.isArray(p.phone) ? (p.phone.find(x => x.primary)?.value || p.phone[0]?.value) : (p.phone || null);
@@ -107,7 +108,7 @@ exports.handler = async (event) => {
       if (alreadySent.has(String(p.id))) continue;
       const c = contact(p);
       if (!c.email && !c.phone) continue;
-      toSend.push({ person_id: String(p.id), name: p.name || '', am: amMap[p[AM_FIELD]] || '', email: c.email, phone: c.phone });
+      toSend.push({ person_id: String(p.id), name: p.name || '', am: amNameOf(p[AM_FIELD]) || amMap[p[AM_FIELD]] || "", email: c.email, phone: c.phone });
     }
 
     if (dryRun) {
@@ -119,7 +120,7 @@ exports.handler = async (event) => {
     if (seedSkip) {
       const rows = people
         .filter(p => !alreadySent.has(String(p.id)))
-        .map(p => ({ person_id: String(p.id), client_name: p.name || '', am_name: amMap[p[AM_FIELD]] || '', survey_type: 'round2_am', source: 'backlog_seed' }));
+        .map(p => ({ person_id: String(p.id), client_name: p.name || '', am_name: amNameOf(p[AM_FIELD]) || amMap[p[AM_FIELD]] || '', survey_type: 'round2_am', source: 'backlog_seed' }));
       let seeded = 0;
       for (let i = 0; i < rows.length; i += 500) {
         const chunk = rows.slice(i, i + 500);

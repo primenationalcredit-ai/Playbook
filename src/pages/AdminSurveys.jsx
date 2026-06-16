@@ -30,11 +30,32 @@ function AdminSurveys() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedSurvey, setExpandedSurvey] = useState(null);
   const [dateRange, setDateRange] = useState('all');
+  const [r2Sends, setR2Sends] = useState([]);
+  const [resendingId, setResendingId] = useState(null);
 
   // Load surveys
   useEffect(() => {
     loadSurveys();
+    loadR2Sends();
   }, []);
+
+  const loadR2Sends = async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?source=neq.backlog_seed&order=sent_at.desc&select=*`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      });
+      if (res.ok) setR2Sends(await res.json());
+    } catch (e) { console.error('Error loading sends:', e); }
+  };
+
+  const handleR2Resend = async (sendId) => {
+    setResendingId(sendId);
+    try {
+      await fetch('/.netlify/functions/resend-survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ send_id: sendId }) });
+      await loadR2Sends();
+    } catch (e) {}
+    setResendingId(null);
+  };
 
   const loadSurveys = async () => {
     setLoading(true);
@@ -170,7 +191,7 @@ function AdminSurveys() {
         
         <div className="flex gap-2">
           <button
-            onClick={loadSurveys}
+            onClick={() => { loadSurveys(); loadR2Sends(); }}
             className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium transition-colors"
           >
             <RefreshCw size={18} />
@@ -186,7 +207,82 @@ function AdminSurveys() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Round 2 Survey — sends, response status, and resend (all AMs in one place) */}
+      {(() => {
+        const r2Responses = (surveys || []).filter(s => s.survey_type === 'round2_am');
+        const respByPerson = {};
+        r2Responses.forEach(r => { if (r.pipedrive_person_id) respByPerson[String(r.pipedrive_person_id)] = r; });
+        // latest send per person
+        const byPerson = {};
+        (r2Sends || []).forEach(s => {
+          const pid = String(s.person_id);
+          if (!byPerson[pid] || new Date(s.sent_at) > new Date(byPerson[pid].sent_at)) byPerson[pid] = s;
+        });
+        const rows = Object.values(byPerson).sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
+        const bad = (r) => r && ((r.am_rating != null && r.am_rating <= 6) || (r.overall_satisfaction != null && r.overall_satisfaction <= 6));
+        return (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 mb-6 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-800">Round 2 Survey — Sent &amp; Responses</h2>
+                <p className="text-sm text-slate-500">Everyone the Round 2 survey went to, who responded, and a resend button. {rows.length} sent.</p>
+              </div>
+              <MessageSquare size={20} className="text-blue-500" />
+            </div>
+            {rows.length === 0 ? (
+              <div className="px-5 py-8 text-center text-slate-500 text-sm">No Round 2 surveys have been sent yet. They appear here as clients reach "2ND RD DONE".</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-left">
+                    <tr>
+                      <th className="px-5 py-2 font-medium">Client</th>
+                      <th className="px-5 py-2 font-medium">Account Manager</th>
+                      <th className="px-5 py-2 font-medium">Sent</th>
+                      <th className="px-5 py-2 font-medium">Status</th>
+                      <th className="px-5 py-2 font-medium text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.map((s) => {
+                      const resp = respByPerson[String(s.person_id)];
+                      const isBad = bad(resp);
+                      return (
+                        <tr key={s.id} className={isBad ? 'bg-red-50' : ''}>
+                          <td className="px-5 py-3 font-medium text-slate-800">{s.client_name || 'Client'}</td>
+                          <td className="px-5 py-3 text-slate-600">{s.am_name || '—'}</td>
+                          <td className="px-5 py-3 text-slate-500">{s.sent_at ? format(new Date(s.sent_at), 'MMM d') : ''}</td>
+                          <td className="px-5 py-3">
+                            {resp ? (
+                              <span className={isBad ? 'text-red-600 font-semibold' : 'text-green-600 font-medium'}>
+                                Responded · AM {resp.am_rating ?? '?'}/10 · Overall {resp.overall_satisfaction ?? '?'}/10
+                              </span>
+                            ) : (
+                              <span className="text-amber-600">Awaiting response</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            {!resp && (
+                              <button
+                                onClick={() => handleR2Resend(s.id)}
+                                disabled={resendingId === s.id}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                              >
+                                <RefreshCw size={14} className={resendingId === s.id ? 'animate-spin' : ''} /> {resendingId === s.id ? 'Sending' : 'Resend'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
           <div className="flex items-center gap-2 mb-2">
