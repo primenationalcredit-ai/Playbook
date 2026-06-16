@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
-import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload } from 'lucide-react';
+import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle } from 'lucide-react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -36,6 +36,8 @@ export default function AMBonus() {
   const [roundsData, setRoundsData] = useState(null);
   const [referralData, setReferralData] = useState(null);
   const [csatData, setCsatData] = useState(null);
+  const [surveyResponses, setSurveyResponses] = useState([]);
+  const [openResponseId, setOpenResponseId] = useState(null);
   const [agreementData, setAgreementData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -87,6 +89,9 @@ export default function AMBonus() {
       // Referrals per AM — non-blocking (returns needsConfig until field is set)
       fetch(`/.netlify/functions/am-referrals?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setReferralData(d); }).catch(() => {});
       fetch(`/.netlify/functions/am-csat?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setCsatData(d); }).catch(() => {});
+      // Raw Round 2 survey responses (for the per-client survey view)
+      fetch(`${SUPABASE_URL}/rest/v1/client_surveys?survey_type=eq.round2_am&order=created_at.desc&select=*`, { headers: supaHeaders })
+        .then(r => r.ok ? r.json() : null).then(d => { if (d) setSurveyResponses(d); }).catch(() => {});
 
       // Agreement dates kept — visibility only, non-blocking (data starts at autobilling launch)
       fetch('/.netlify/functions/am-agreement-dates').then(r => r.ok ? r.json() : null).then(d => { if (d) setAgreementData(d); }).catch(() => {});
@@ -307,6 +312,13 @@ export default function AMBonus() {
 
   const currentAMMetrics = selectedAM ? getAMMetrics(selectedAM) : null;
   const currentAMName = (users || []).find(u => u.id === selectedAM)?.name || 'Unknown';
+  const myResponses = (surveyResponses || []).filter(r => {
+    const key = (r.am_name || '').toLowerCase();
+    const nm = (currentAMName || '').toLowerCase();
+    if (!key || !nm || nm === 'unknown') return false;
+    return key.includes(nm.split(' ')[0]) || nm.includes(key.split(' ')[0]);
+  });
+  const isBad = (r) => (r.am_rating != null && r.am_rating <= 6) || (r.overall_satisfaction != null && r.overall_satisfaction <= 6);
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4">
@@ -338,6 +350,9 @@ export default function AMBonus() {
         </button>
         <button onClick={() => setTab('credit-building')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'credit-building' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
           <TrendingUp size={16} /> Credit Building
+        </button>
+        <button onClick={() => setTab('surveys')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'surveys' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
+          <MessageSquare size={16} /> Surveys
         </button>
         {isAdmin && (
           <button onClick={() => setTab('approvals')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'approvals' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
@@ -576,6 +591,54 @@ export default function AMBonus() {
             </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Surveys Tab — per-client Round 2 survey responses for this AM */}
+      {tab === 'surveys' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-slate-800">Round 2 Survey Responses {currentAMName !== 'Unknown' ? `— ${currentAMName}` : ''}</h3>
+            <span className="text-sm text-slate-500">{myResponses.length} response{myResponses.length === 1 ? '' : 's'}</span>
+          </div>
+          {myResponses.length === 0 ? (
+            <div className="bg-white rounded-xl border shadow-sm p-8 text-center text-slate-500">
+              No survey responses yet. They appear here as clients complete the Round 2 survey.
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border shadow-sm divide-y divide-slate-100">
+              {myResponses.map((r) => {
+                const bad = isBad(r);
+                const open = openResponseId === r.id;
+                return (
+                  <div key={r.id} className={bad ? 'bg-red-50' : ''}>
+                    <button onClick={() => setOpenResponseId(open ? null : r.id)} className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50">
+                      <div className="flex items-center gap-3">
+                        {bad && <AlertTriangle size={16} className="text-red-500 shrink-0" />}
+                        <div>
+                          <p className="font-medium text-slate-800">{r.client_name || 'Client'}</p>
+                          <p className="text-xs text-slate-500">{r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm">
+                        <span className="text-slate-500">AM rating <span className={`font-bold ${bad ? 'text-red-600' : 'text-slate-800'}`}>{r.am_rating ?? '--'}/10</span></span>
+                        <span className="text-slate-500">Overall <span className="font-bold text-slate-800">{r.overall_satisfaction ?? '--'}/10</span></span>
+                      </div>
+                    </button>
+                    {open && (
+                      <div className="px-4 pb-4 text-sm text-slate-700 space-y-1">
+                        <p>Overall satisfaction: <span className="font-semibold">{r.overall_satisfaction ?? 'n/a'}/10</span></p>
+                        <p>Account manager rating: <span className="font-semibold">{r.am_rating ?? 'n/a'}/10</span></p>
+                        <p>Work explained clearly: <span className="font-semibold">{r.met_expectations === true ? 'Yes' : r.met_expectations === false ? 'No' : 'n/a'}</span></p>
+                        <p>Likely to refer: <span className="font-semibold">{r.nps_score != null ? `${r.nps_score}/10` : 'n/a'}</span></p>
+                        {r.what_could_improve && <p className="pt-1">Comment: <span className="italic">"{r.what_could_improve}"</span></p>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

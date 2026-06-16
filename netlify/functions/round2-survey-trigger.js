@@ -44,6 +44,7 @@ exports.handler = async (event) => {
   try {
     const params = (event && event.queryStringParameters) || {};
     const dryRun = params.dryRun === '1' || params.dryRun === 'true';
+    const seedSkip = params.seedSkip === '1' || params.seedSkip === 'true';
     const cap = params.limit ? parseInt(params.limit, 10) : DEFAULT_CAP;
 
     // 1) Field metadata: numeric id for the status field + AM option labels
@@ -104,6 +105,21 @@ exports.handler = async (event) => {
 
     if (dryRun) {
       return { statusCode: 200, headers, body: JSON.stringify({ dryRun: true, matched: people.length, eligible: toSend.length, sample: toSend.slice(0, 10) }) };
+    }
+
+    // Seed-skip: mark everyone currently at this status as already handled (no sends),
+    // so the daily trigger only ever sends to clients who arrive at the status later.
+    if (seedSkip) {
+      const rows = people
+        .filter(p => !alreadySent.has(String(p.id)))
+        .map(p => ({ person_id: String(p.id), client_name: p.name || '', am_name: amMap[p[AM_FIELD]] || '', survey_type: 'round2_am', source: 'backlog_seed' }));
+      let seeded = 0;
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500);
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends`, { method: 'POST', headers: { ...supa, Prefer: 'return=minimal' }, body: JSON.stringify(chunk) });
+        if (res.ok) seeded += chunk.length;
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ seedSkip: true, matched: people.length, seeded, note: 'Backlog marked as handled. Only new arrivals at this status will be surveyed going forward.' }) };
     }
 
     // 6) Send (capped) and log
