@@ -552,13 +552,14 @@ export default function AMBonus() {
               </div>
             </div>
 
-            {/* Visibility-only retention watch stat (does NOT affect bonus) */}
+            {/* Visibility-only retention watch stat (does NOT affect bonus) — management only */}
+            {isAdmin && (
             <div className="mt-4 bg-white rounded-xl border shadow-sm p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Clock size={20} className="text-slate-400" />
                   <div>
-                    <p className="font-medium text-slate-800"><Tip text="Share of this AM's clients whose payment dates were never changed in the autobilling system. Visibility only. This does not add to or reduce the bonus. Number starts low and rises as auto-pay takes over.">Agreement Dates Kept</Tip> <span className="text-xs font-normal text-slate-400">(watch stat, not part of bonus)</span></p>
+                    <p className="font-medium text-slate-800"><Tip text="Share of this AM's clients whose payment dates were never changed in the autobilling system. Visibility only. This does not add to or reduce the bonus. Management view only — used for coaching, not a public team metric. Number starts low and rises as auto-pay takes over.">Agreement Dates Kept</Tip> <span className="text-xs font-normal text-slate-400">(management view · coaching only)</span></p>
                     <p className="text-sm text-slate-500">
                       {currentAMMetrics.agreementNeedsData
                         ? 'Tracking begins at autobilling launch'
@@ -573,6 +574,7 @@ export default function AMBonus() {
                 </p>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}
