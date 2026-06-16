@@ -45,6 +45,7 @@ function AdminUsers() {
 
   // Filter users
   const filteredUsers = users.filter(user => {
+    if (user.department === 'inactive') return false;
     if (searchQuery && !user.name.toLowerCase().includes(searchQuery.toLowerCase()) && 
         !user.email?.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     if (filterDepartment !== 'all' && user.department !== filterDepartment) return false;
@@ -63,7 +64,7 @@ function AdminUsers() {
     
     try {
       // Try Netlify function first
-      await fetch('/.netlify/functions/manage-user', {
+      const res = await fetch('/.netlify/functions/manage-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -71,6 +72,10 @@ function AdminUsers() {
           userData: { userId: user.id, authId: user.auth_id }
         })
       });
+      const result = await res.json().catch(() => ({}));
+      if (result && result.deactivated) {
+        console.warn(`${userName} could not be hard-deleted (still referenced elsewhere) so was deactivated and removed from all lists.`, result.detail);
+      }
     } catch (error) {
       console.error('Error in delete:', error);
       // Try direct delete as fallback

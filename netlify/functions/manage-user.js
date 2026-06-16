@@ -282,31 +282,49 @@ export async function handler(event, context) {
 
     if (action === 'delete') {
       const { userId, authId } = userData;
+      const svcHeaders = { 'apikey': SERVICE_ROLE_KEY, 'Authorization': `Bearer ${SERVICE_ROLE_KEY}` };
 
-      // Delete auth user if exists
-      if (authId) {
-        await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${authId}`, {
-          method: 'DELETE',
-          headers: {
-            'apikey': SERVICE_ROLE_KEY,
-            'Authorization': `Bearer ${SERVICE_ROLE_KEY}`
-          }
-        });
+      // 1. Clear task_template references that FK-block the delete
+      for (const col of ['assigned_to', 'backup_user_1', 'backup_user_2']) {
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/task_templates?${col}=eq.${userId}`, {
+            method: 'PATCH',
+            headers: { ...svcHeaders, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ [col]: null })
+          });
+        } catch (e) { /* continue */ }
       }
 
-      // Delete app user
-      await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${userId}`, {
+      // 2. Delete auth login if present
+      if (authId) {
+        await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${authId}`, { method: 'DELETE', headers: svcHeaders });
+      }
+
+      // 3. Hard delete the app user and verify it actually happened
+      const delRes = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${userId}`, {
         method: 'DELETE',
-        headers: {
-          'apikey': SERVICE_ROLE_KEY,
-          'Authorization': `Bearer ${SERVICE_ROLE_KEY}`
-        }
+        headers: { ...svcHeaders, 'Prefer': 'return=representation' }
       });
 
+      if (delRes.ok) {
+        const removed = await delRes.json().catch(() => []);
+        if (Array.isArray(removed) && removed.length > 0) {
+          return { statusCode: 200, headers, body: JSON.stringify({ success: true, deleted: true, message: 'User deleted' }) };
+        }
+      }
+
+      // 4. Hard delete blocked (likely another FK reference). Soft-deactivate so they
+      //    drop off the user list and the Account Manager dropdown immediately.
+      const detail = await delRes.text().catch(() => '');
+      await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${userId}`, {
+        method: 'PATCH',
+        headers: { ...svcHeaders, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ department: 'inactive', role: 'user' })
+      });
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ success: true, message: 'User deleted' })
+        body: JSON.stringify({ success: true, deleted: false, deactivated: true, reason: 'fk_blocked', detail })
       };
     }
 
