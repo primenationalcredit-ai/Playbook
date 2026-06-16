@@ -144,6 +144,10 @@ function AdminUsers() {
         if (userData.pipedrive_name !== undefined) {
           userUpdates.pipedrive_name = userData.pipedrive_name || null;
         }
+        // Add pipedrive_org_id (AM referral org) if provided
+        if (userData.pipedrive_org_id !== undefined) {
+          userUpdates.pipedrive_org_id = userData.pipedrive_org_id || null;
+        }
         
         // Only add optional fields if they have values
         if (userData.hire_date) userUpdates.hire_date = userData.hire_date;
@@ -517,6 +521,7 @@ function UserModal({ user, onClose, onSave, taskTemplates }) {
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [pipedriveName, setPipedriveName] = useState(user?.pipedrive_name || '');
+  const [pipedriveOrgId, setPipedriveOrgId] = useState(user?.pipedrive_org_id || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [department, setDepartment] = useState(user?.department || 'credit_consultants');
@@ -546,6 +551,7 @@ function UserModal({ user, onClose, onSave, taskTemplates }) {
       setName(user.name || '');
       setEmail(user.email || '');
       setPipedriveName(user.pipedrive_name || '');
+      setPipedriveOrgId(user.pipedrive_org_id || '');
       setDepartment(user.department || 'credit_consultants');
       setRole(user.role || 'user');
       setIsVA(user.is_va || false);
@@ -608,6 +614,7 @@ function UserModal({ user, onClose, onSave, taskTemplates }) {
           name: name.trim(),
           email: email.trim().toLowerCase(),
           pipedrive_name: pipedriveName.trim() || null,
+          pipedrive_org_id: pipedriveOrgId.trim() || null,
           password: password,
           department,
           role,
@@ -693,6 +700,22 @@ function UserModal({ user, onClose, onSave, taskTemplates }) {
             />
             <p className="text-xs text-slate-500 mt-1">
               Must match exactly how the name appears in Pipedrive for payments to sync correctly
+            </p>          </div>
+
+          {/* Pipedrive Org ID - for AM referral tracking */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Pipedrive Org ID (referrals)
+            </label>
+            <input
+              type="text"
+              value={pipedriveOrgId}
+              onChange={(e) => setPipedriveOrgId(e.target.value)}
+              placeholder="Numeric Pipedrive organization ID for this AM's referrals"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-asap-blue"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Referred clients placed under this organization count as this AM's referrals.
             </p>
           </div>
 

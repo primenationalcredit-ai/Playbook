@@ -233,8 +233,8 @@ export default function AMBonus() {
       else if (c > 5) roundsBonus = (c - 5) * 25;
     }
 
-    // Referrals — live once the referral field is configured
-    let referrals = null, referralBonus = 0, referralNeedsConfig = false;
+    // Referrals — organization-based, live once an Org ID is set per AM
+    let referrals = null, referralPaid = null, referralBonus = 0, referralNeedsConfig = false, referralTopProducer = false;
     if (referralData) {
       if (referralData.needsConfig) {
         referralNeedsConfig = true;
@@ -242,11 +242,12 @@ export default function AMBonus() {
         const fMatch = Object.entries(referralData.byAM).find(([key]) =>
           amName && (key.toLowerCase().includes(amName.split(' ')[0].toLowerCase()) || amName.toLowerCase().includes(key.split(' ')[0].toLowerCase()))
         );
-        referrals = fMatch ? fMatch[1].count : 0;
-        // Standard 15/mo. $20 each through 8 qualified, $30 each above 8.
-        const q = referrals || 0;
-        if (q > 8) referralBonus = 8 * 20 + (q - 8) * 30;
-        else referralBonus = q * 20;
+        if (fMatch) {
+          referrals = fMatch[1].referrals;
+          referralPaid = fMatch[1].paid;
+          referralBonus = fMatch[1].bonus;
+          referralTopProducer = fMatch[1].isTopProducer;
+        } else { referrals = 0; referralPaid = 0; }
       }
     }
 
@@ -282,14 +283,14 @@ export default function AMBonus() {
       reviewCount, bbbReviews, reviewBonus,
       stallRate, stallCount, stallTotal, stalledClients, stallBonus,
       additionalRounds, roundsBonus, roundDeals,
-      referrals, referralBonus, referralNeedsConfig,
+      referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer,
       agreementPctKept, agreementKept, agreementTotal, agreementNeedsData,
       paymentStallRate, paymentStallCount,
       totalBonus
     };
     } catch(e) {
       console.error('getAMMetrics error:', e);
-      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralBonus: 0, referralNeedsConfig: false, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
+      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
     }
   };
 
@@ -470,8 +471,8 @@ export default function AMBonus() {
                   <div className="flex items-center gap-3">
                     <Users size={20} className={currentAMMetrics.referralBonus > 0 ? 'text-indigo-500' : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="Standard: 15 referrals/month. Referral signs up + pays doc fee = $20. Above 8 qualified = $30 each. Monthly top producer = extra $100.">Referrals</Tip></p>
-                      <p className="text-sm text-slate-500">{currentAMMetrics.referralNeedsConfig ? 'Awaiting referral field setup' : (currentAMMetrics.referrals !== null ? `${currentAMMetrics.referrals} qualified (paid doc fee)` : 'Loading...')}</p>
+                      <p className="font-medium text-slate-800"><Tip text="Referred clients are placed under the AM's Pipedrive organization. $20 per referral that pays its doc fee this month; once 8 are paid, all paid that month count at $30. Top producer (most paid) gets +$100 if they also have 15+ referrals. The 15 minimum is the monthly standard.">Referrals {currentAMMetrics.referralTopProducer ? <span className="text-xs text-indigo-600 font-semibold">★ Top Producer</span> : ''}</Tip></p>
+                      <p className="text-sm text-slate-500">{currentAMMetrics.referralNeedsConfig ? 'Set this AM\u2019s Pipedrive Org ID in Admin > Users' : (currentAMMetrics.referrals !== null ? `${currentAMMetrics.referrals} referrals \u00b7 ${currentAMMetrics.referralPaid} paid doc fee${currentAMMetrics.referrals < 15 ? ` \u00b7 ${15 - currentAMMetrics.referrals} to standard` : ''}` : 'Loading...')}</p>
                     </div>
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.referralBonus > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{(!currentAMMetrics.referralNeedsConfig && currentAMMetrics.referrals !== null) ? fmt(currentAMMetrics.referralBonus) : '--'}</p>
