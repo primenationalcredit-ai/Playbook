@@ -34,6 +34,12 @@
 # [functions."sales-auto-sync"]
 #   schedule = "*/5 * * * *"
 
+
+# Round 2 survey auto-send. Once a day on business days. Sends to clients newly at
+# "2ND RD DONE" who haven't been surveyed yet.
+[functions."round2-survey-trigger"]
+  schedule = "0 15 * * 1-6"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
