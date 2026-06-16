@@ -35,6 +35,7 @@ export default function AMBonus() {
   const [stallData, setStallData] = useState(null);
   const [roundsData, setRoundsData] = useState(null);
   const [referralData, setReferralData] = useState(null);
+  const [csatData, setCsatData] = useState(null);
   const [agreementData, setAgreementData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -85,6 +86,7 @@ export default function AMBonus() {
 
       // Referrals per AM — non-blocking (returns needsConfig until field is set)
       fetch(`/.netlify/functions/am-referrals?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setReferralData(d); }).catch(() => {});
+      fetch(`/.netlify/functions/am-csat?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setCsatData(d); }).catch(() => {});
 
       // Agreement dates kept — visibility only, non-blocking (data starts at autobilling launch)
       fetch('/.netlify/functions/am-agreement-dates').then(r => r.ok ? r.json() : null).then(d => { if (d) setAgreementData(d); }).catch(() => {});
@@ -275,6 +277,14 @@ export default function AMBonus() {
       else if (stallRate <= 45) stallBonus = 75;
     }
 
+    // CSAT (Round 2 survey) — score only, no bonus until tiers are calibrated
+    let csatAvg = null, csatResponses = 0, csatEligible = false, csatOverall = null;
+    if (csatData?.byAM) {
+      const cMatch = Object.entries(csatData.byAM).find(([key]) =>
+        amName && (key.toLowerCase().includes(amName.split(' ')[0].toLowerCase()) || amName.toLowerCase().includes(key.split(' ')[0].toLowerCase()))
+      );
+      if (cMatch) { csatAvg = cMatch[1].avgRating; csatResponses = cMatch[1].responses; csatEligible = cMatch[1].eligible; csatOverall = cMatch[1].avgOverall; }
+    }
     const totalBonus = creditBonus + reviewBonus + stallBonus + roundsBonus + referralBonus;
 
     return {
@@ -284,13 +294,14 @@ export default function AMBonus() {
       stallRate, stallCount, stallTotal, stalledClients, stallBonus,
       additionalRounds, roundsBonus, roundDeals,
       referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer,
+      csatAvg, csatResponses, csatEligible, csatOverall,
       agreementPctKept, agreementKept, agreementTotal, agreementNeedsData,
       paymentStallRate, paymentStallCount,
       totalBonus
     };
     } catch(e) {
       console.error('getAMMetrics error:', e);
-      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
+      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, csatAvg: null, csatResponses: 0, csatEligible: false, csatOverall: null, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
     }
   };
 
@@ -497,13 +508,17 @@ export default function AMBonus() {
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <MessageSquare size={20} className="text-slate-300" />
+                    <MessageSquare size={20} className={currentAMMetrics.csatAvg != null ? 'text-blue-500' : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="Post-service survey measuring client satisfaction. 90%+ required. Implementation delayed until 90 days after full program launch.">CSAT (Client Satisfaction)</Tip></p>
-                      <p className="text-sm text-slate-500">Delayed — begins 90 days after full implementation</p>
+                      <p className="font-medium text-slate-800"><Tip text="Average of the 'rate your account manager' score (1-10) from the Round 2 client survey this month. Needs at least 5 responses to be eligible. Score only for now — bonus tiers get set once we have real data to calibrate against.">CSAT (Account Manager Rating)</Tip> <span className="text-xs font-normal text-slate-400">(score only — tiers TBD)</span></p>
+                      <p className="text-sm text-slate-500">
+                        {currentAMMetrics.csatAvg != null
+                          ? `${currentAMMetrics.csatResponses} response${currentAMMetrics.csatResponses === 1 ? '' : 's'}${currentAMMetrics.csatEligible ? '' : ` — need ${5 - currentAMMetrics.csatResponses} more to qualify`}${currentAMMetrics.csatOverall != null ? ` · overall satisfaction ${currentAMMetrics.csatOverall}/10` : ''}`
+                          : 'No survey responses yet this month'}
+                      </p>
                     </div>
                   </div>
-                  <p className="text-lg font-bold text-slate-300">--</p>
+                  <p className={`text-lg font-bold ${currentAMMetrics.csatEligible ? 'text-blue-600' : 'text-slate-300'}`}>{currentAMMetrics.csatAvg != null ? `${currentAMMetrics.csatAvg}/10` : '--'}</p>
                 </div>
               </div>
 

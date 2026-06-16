@@ -44,6 +44,7 @@ import AMBonus from './pages/AMBonus';
 import ClientPipeline from './pages/ClientPipeline';
 import EnrollmentSurvey from './pages/EnrollmentSurvey';
 import CompletionSurvey from './pages/CompletionSurvey';
+import Round2Survey from './pages/Round2Survey';
 import RefundTracking from './pages/RefundTracking';
 
 function ProtectedRoute({ children, adminOnly = false, noRestrictedLeaders = false }) {
@@ -98,6 +99,7 @@ function App() {
       {/* PUBLIC SURVEY ROUTES - No authentication required */}
       <Route path="/survey/enrollment" element={<EnrollmentSurvey />} />
       <Route path="/survey/completion" element={<CompletionSurvey />} />
+      <Route path="/survey/round2" element={<Round2Survey />} />
       
       <Route path="/login" element={
         currentUser ? <Navigate to="/dashboard" replace /> : <Login />
