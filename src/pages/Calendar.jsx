@@ -614,10 +614,19 @@ export default function Calendar() {
         });
       }
 
-      // 3. Remove calendar events for this time off
+      // 3. Remove calendar events for this time off.
+      // Primary: delete by request id (reliable, catches any date drift).
+      await fetch(`${SUPABASE_URL}/rest/v1/events?event_type=eq.time_off&time_off_request_id=eq.${request.id}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+      });
+      // Fallback for legacy events created before they carried a request id: match by
+      // name within a padded date window (±2 days) so off-by-one strays are caught too.
       const userName = users.find(u => u.id === request.user_id)?.name || '';
       if (userName) {
-        const eventsRes = await fetch(`${SUPABASE_URL}/rest/v1/events?event_type=eq.time_off&title=ilike.*${encodeURIComponent(userName)}*&start_time=gte.${request.start_date}T00:00:00&start_time=lte.${request.end_date}T23:59:59`, {
+        const padStart = format(addDays(parseISO(request.start_date), -2), 'yyyy-MM-dd');
+        const padEnd = format(addDays(parseISO(request.end_date), 2), 'yyyy-MM-dd');
+        const eventsRes = await fetch(`${SUPABASE_URL}/rest/v1/events?event_type=eq.time_off&title=ilike.*${encodeURIComponent(userName)}*&start_time=gte.${padStart}T00:00:00&start_time=lte.${padEnd}T23:59:59`, {
           headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         });
         if (eventsRes.ok) {
@@ -706,6 +715,13 @@ export default function Calendar() {
   // Add approved time off to calendar as events
   const addTimeOffToCalendar = async (request) => {
     try {
+      // Idempotent: clear any existing calendar events tied to THIS request first, so a
+      // re-approval or an edited date range never leaves stale/extra days behind.
+      await fetch(`${SUPABASE_URL}/rest/v1/events?event_type=eq.time_off&time_off_request_id=eq.${request.id}`, {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+      });
+
       const userName = users.find(u => u.id === request.user_id)?.name || 'Employee';
       const typeLabel = request.request_type === 'sick' ? '🤒 Sick Leave' : 
                         request.request_type === 'personal' ? '👤 Personal Day' : '🏖️ Vacation';
@@ -719,6 +735,7 @@ export default function Calendar() {
         end_time: `${request.end_date}T12:00:00`,
         all_day: true,
         event_type: 'time_off',
+        time_off_request_id: request.id,
         created_by: currentUser?.id
       };
 
