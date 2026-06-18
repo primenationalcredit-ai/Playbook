@@ -1,7 +1,7 @@
 // Payment Enrichment — Looks up Pipedrive deals for payments missing consultant names
 // Processes 20 records at a time to stay under timeout
-const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY;
-const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepair';
+const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY || '328f4866f7d86c2bfbee1ed8b5c1895a1f6444d0';
+const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepairusa';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
