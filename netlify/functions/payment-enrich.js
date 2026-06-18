@@ -57,7 +57,7 @@ exports.handler = async (event) => {
   try {
     // Get payments that need enrichment (have deal_id but consultant is unknown/pending)
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/consultant_payments?consultant_name=in.(Unknown,pending_enrichment)&pipedrive_deal_id=not.is.null&select=id,pipedrive_deal_id,client_name,payment_type&limit=20`,
+      `${SUPABASE_URL}/rest/v1/consultant_payments?consultant_name=in.(Unknown,pending_enrichment)&pipedrive_deal_id=not.is.null&select=id,pipedrive_deal_id,client_name,payment_type&order=payment_date.desc&limit=20`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const payments = res.ok ? await res.json() : [];
