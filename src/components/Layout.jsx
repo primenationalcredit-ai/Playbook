@@ -162,6 +162,7 @@ function Layout() {
     { path: '/admin/backups', icon: UserCheck, label: 'Backup Settings' },
     { path: '/admin/onboarding', icon: UserPlus, label: 'Onboarding' },
     { path: '/admin/refunds', icon: DollarSign, label: 'Refund Tracking' },
+    ...(!isRestrictedLeader ? [{ path: '/admin/all-payments', icon: DollarSign, label: 'All Payments' }] : []),
     { path: '/admin/pipeline', icon: BarChart3, label: 'Client Pipeline' },
     // Financials - NOT for Kim or Mariana
     ...(!isRestrictedLeader ? [{ path: '/admin/financials', icon: Wallet, label: 'Financials' }] : []),
