@@ -17,23 +17,24 @@ import {
   Send,
 } from 'lucide-react';
 
-// GMB Locations with review links
+// GMB Locations with review links (corrected against master list, suspended removed)
 const GMB_LOCATIONS = [
-  { name: 'ASAP Credit Repair Detroit', city: 'Detroit', state: 'MI', url: 'https://g.page/r/CZrybhlaaO76EBM/review' },
-  { name: 'ASAP Credit Repair Houston', city: 'Houston', state: 'TX', url: 'https://g.page/r/CS-Fsp5yDQ_gEBM/review' },
-  { name: 'ASAP Credit Repair San Antonio', city: 'San Antonio', state: 'TX', url: 'https://g.page/r/CVRZTOVqU2rEBM/review' },
+  { name: 'ASAP Credit Repair Detroit', city: 'Detroit', state: 'MI', url: 'https://g.page/r/CZrybhIaaO76EBM/review' },
+  { name: 'ASAP Credit Repair Houston', city: 'Houston', state: 'TX', url: 'https://g.page/r/CS-Fsp5yDQ_qEBM/review' },
+  { name: 'ASAP Credit Repair San Antonio', city: 'San Antonio', state: 'TX', url: 'https://g.page/r/CVRZTOVqU2jrEBM/review' },
   { name: 'ASAP Credit Repair El Paso', city: 'El Paso', state: 'TX', url: 'https://g.page/r/Cdm3DFpEFp7UEBM/review' },
   { name: 'ASAP Credit Repair Albuquerque', city: 'Albuquerque', state: 'NM', url: 'https://g.page/r/CVY4fwJ1D-s-EBM/review' },
-  { name: 'ASAP Credit Repair Fort Myers', city: 'Fort Myers', state: 'FL', url: 'https://g.page/r/CdnAcOlmMPOnEBM/review' },
+  { name: 'ASAP Credit Repair Pasadena', city: 'Pasadena', state: 'TX', url: 'https://g.page/r/CdnkLE7YB9pbEBM/review' },
+  { name: 'ASAP Credit Repair Fort Myers', city: 'Fort Myers', state: 'FL', url: 'https://g.page/r/CdnAcOlmMPQnEBM/review' },
   { name: 'ASAP Credit Repair San Jose', city: 'San Jose', state: 'CA', url: 'https://g.page/r/CYQ9TCWDaaH2EBM/review' },
-  { name: 'ASAP Credit Repair & Financial Education Columbus', city: 'Columbus', state: 'OH', url: 'https://g.page/r/CXNK7Li4tlzAEBM/review' },
+  { name: 'ASAP Credit Repair & Financial Education Columbus', city: 'Columbus', state: 'OH', url: 'https://g.page/r/CXNK7Li4tkzAEBM/review' },
   { name: 'ASAP Credit Repair Birmingham', city: 'Birmingham', state: 'AL', url: 'https://g.page/r/CR1_2xeSuAmHEBM/review' },
-  { name: 'ASAP Credit Repair Phoenix', city: 'Phoenix', state: 'AZ', url: 'https://g.page/r/Ca0UFHboHmEiEBM/review' },
-  { name: 'ASAP Credit Repair Victoria', city: 'Victoria', state: 'TX', url: 'https://g.page/r/CeMoYiyXxjlEBM/review' },
-  { name: 'ASAP Credit Repair Lafayette', city: 'Lafayette', state: 'LA', url: 'https://g.page/r/CZYKdTCOqgnoEBM/review' },
+  { name: 'ASAP Credit Repair Phoenix', city: 'Phoenix', state: 'AZ', url: 'https://g.page/r/Ca0JFHboHmElEBM/review' },
+  { name: 'ASAP Credit Repair Victoria', city: 'Victoria', state: 'TX', url: 'https://g.page/r/CefMoYjyXxjtEBM/review' },
+  { name: 'ASAP Credit Repair Lafayette', city: 'Lafayette', state: 'LA', url: 'https://g.page/r/CZYKdTCOgqnoEBM/review' },
   { name: 'ASAP Credit Repair Fort Washington', city: 'Fort Washington', state: 'MD', url: 'https://g.page/r/CbwZS10T_h7EEBM/review' },
   { name: 'ASAP Credit Repair Tyler', city: 'Tyler', state: 'TX', url: 'https://g.page/r/CZNpORf21Bw5EBM/review' },
-  { name: 'ASAP Credit Repair Laurel', city: 'Laurel', state: 'MD', url: 'https://g.page/r/CWxMCitTPMEEEBM/review' },
+  { name: 'ASAP Credit Repair Las Cruces', city: 'Las Cruces', state: 'NM', url: 'https://g.page/r/Ca--BID9bBlOEBM/review' },
   { name: 'ASAP Credit Repair West Valley Utah', city: 'West Valley', state: 'UT', url: 'https://g.page/r/CY5zmMsEJsUWEBM/review' },
   { name: 'ASAP Credit Repair McAllen', city: 'McAllen', state: 'TX', url: 'https://g.page/r/CUJ_5njlAzcZEBM/review' },
 ];
