@@ -23,11 +23,9 @@ function AllPayments() {
   const load = async () => {
     setLoading(true);
     try {
-      const filter = month === 'all' ? '' : `payment_month=eq.${month}&`;
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?${filter}order=payment_date.desc&select=*&limit=5000`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-      });
-      if (res.ok) setPayments(await res.json());
+      const res = await fetch(`/.netlify/functions/all-payments?month=${month}`);
+      const data = await res.json();
+      setPayments(Array.isArray(data.payments) ? data.payments : []);
     } catch (e) { /* noop */ }
     setLoading(false);
   };
@@ -56,21 +54,21 @@ function AllPayments() {
         amount: parseFloat(form.amount),
         payment_type: form.payment_type,
         payment_date: form.payment_date,
-        payment_month: form.payment_date.slice(0, 7),
         consultant_name: form.consultant_name.trim() || null,
         pipedrive_deal_id: form.pipedrive_deal_id.trim() || null,
-        source: 'manual',
       };
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments`, {
+      const res = await fetch(`/.netlify/functions/all-payments`, {
         method: 'POST',
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!res.ok) { const t = await res.text(); throw new Error(t); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || 'error');
       setMsg({ ok: true, text: 'Payment added.' });
       setShowAdd(false);
+      const addedMonth = form.payment_date.slice(0, 7);
       setForm({ client_name: '', amount: '', payment_type: 'doc_fee', payment_date: new Date().toISOString().slice(0, 10), consultant_name: '', pipedrive_deal_id: '' });
-      if (body.payment_month !== month) setMonth(body.payment_month); else load();
+      if (month !== 'all' && addedMonth !== month) setMonth(addedMonth); else load();
     } catch (e) {
       setMsg({ ok: false, text: 'Could not save: ' + (e.message || 'error').slice(0, 140) });
     }
