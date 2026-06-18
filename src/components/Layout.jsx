@@ -42,7 +42,7 @@ import {
 import CoverageAlerts from './CoverageAlerts';
 
 function Layout() {
-  const { currentUser, logout, getCompletionStats, notifications } = useApp();
+  const { currentUser, logout, getCompletionStats, notifications, isViewingAs, realUser, stopViewingAs } = useApp();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
@@ -176,7 +176,18 @@ function Layout() {
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className={`flex h-screen bg-slate-50 ${isViewingAs ? 'pt-9' : ''}`}>
+      {isViewingAs && (
+        <div className="fixed top-0 left-0 right-0 z-[60] bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-3 text-sm font-medium shadow">
+          <span>Viewing as <strong>{currentUser?.name}</strong>{realUser?.name ? ` (you are ${realUser.name})` : ''}</span>
+          <button
+            onClick={() => { stopViewingAs(); navigate('/'); }}
+            className="px-3 py-1 rounded-md bg-white text-amber-700 font-semibold hover:bg-amber-50"
+          >
+            Exit to my view
+          </button>
+        </div>
+      )}
       {/* Sidebar */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-gradient-to-b from-asap-blue-dark to-asap-navy text-white transition-all duration-300 flex flex-col`}>
         {/* Logo */}

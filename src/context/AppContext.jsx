@@ -56,6 +56,9 @@ const SHIFT_TYPES = {
 
 export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
+  const [viewAsUser, setViewAsUser] = useState(() => {
+    try { const s = sessionStorage.getItem('viewAsUser'); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
   const [users, setUsers] = useState([]);
   const [taskTemplates, setTaskTemplates] = useState([]);
   const [dailyCompletions, setDailyCompletions] = useState({});
@@ -472,6 +475,8 @@ export function AppProvider({ children }) {
   };
 
   const logout = async () => {
+    try { sessionStorage.removeItem('viewAsUser'); } catch (e) {}
+    setViewAsUser(null);
     await supabase.auth.signOut();
     setCurrentUser(null);
     setUsers([]);
@@ -907,9 +912,25 @@ export function AppProvider({ children }) {
     ));
   };
 
+  const startViewingAs = (user) => {
+    if (!currentUser || currentUser.role !== 'admin') return; // only real admins can impersonate
+    if (!user || user.id === currentUser.id) return;
+    setViewAsUser(user);
+    try { sessionStorage.setItem('viewAsUser', JSON.stringify(user)); } catch (e) {}
+  };
+  const stopViewingAs = () => {
+    setViewAsUser(null);
+    try { sessionStorage.removeItem('viewAsUser'); } catch (e) {}
+  };
+
   const value = {
     // State
-    currentUser,
+    currentUser: viewAsUser || currentUser,
+    realUser: currentUser,
+    viewAsUser,
+    isViewingAs: !!viewAsUser,
+    startViewingAs,
+    stopViewingAs,
     users,
     taskTemplates,
     dailyCompletions,

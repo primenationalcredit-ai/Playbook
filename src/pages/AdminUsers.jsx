@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
   Plus,
@@ -32,7 +33,10 @@ function AdminUsers() {
     DEPARTMENTS,
     currentUser,
     taskTemplates,
+    startViewingAs,
+    realUser,
   } = useApp();
+  const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
@@ -372,6 +376,15 @@ function AdminUsers() {
                 </td>
                 <td className="p-4">
                   <div className="flex items-center justify-end gap-1">
+                    {(realUser?.role === 'admin') && user.id !== realUser?.id && user.department !== 'inactive' && (
+                      <button
+                        onClick={() => { startViewingAs(user); navigate('/'); }}
+                        className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
+                        title={`View as ${user.name}`}
+                      >
+                        <Eye size={16} />
+                      </button>
+                    )}
                     {user.auth_id && (
                       <button
                         onClick={() => { setResetUser(user); setShowResetModal(true); }}
