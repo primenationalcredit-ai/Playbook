@@ -12,6 +12,9 @@ import {
   BarChart3,
   MapPin,
   Info,
+  Mail,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 
 // GMB Locations with review links
@@ -32,7 +35,6 @@ const GMB_LOCATIONS = [
   { name: 'ASAP Credit Repair Tyler', city: 'Tyler', state: 'TX', url: 'https://g.page/r/CZNpORf21Bw5EBM/review' },
   { name: 'ASAP Credit Repair Laurel', city: 'Laurel', state: 'MD', url: 'https://g.page/r/CWxMCitTPMEEEBM/review' },
   { name: 'ASAP Credit Repair West Valley Utah', city: 'West Valley', state: 'UT', url: 'https://g.page/r/CY5zmMsEJsUWEBM/review' },
-  { name: 'ASAP Credit Repair McAllen', city: 'McAllen', state: 'TX', url: 'https://g.page/r/placeholder/review' },
 ];
 
 function ReviewRandomizer() {
@@ -41,6 +43,11 @@ function ReviewRandomizer() {
   const [locationStats, setLocationStats] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [dealId, setDealId] = useState('');
+  const [sendEmail, setSendEmail] = useState(true);
+  const [sendText, setSendText] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showStats, setShowStats] = useState(false);
   const [timeframe, setTimeframe] = useState('month'); // week, month, all
@@ -158,6 +165,38 @@ function ReviewRandomizer() {
     window.open(selectedLocation.url, '_blank');
   };
 
+  const SENDER_URL = 'https://asap-payment-processor.netlify.app/.netlify/functions/send-review-link';
+  const handleSendReviewLink = async () => {
+    if (!selectedLocation || !dealId.trim()) { setSendResult({ ok: false, msg: 'Enter a Deal ID first.' }); return; }
+    if (!sendEmail && !sendText) { setSendResult({ ok: false, msg: 'Pick email, text, or both.' }); return; }
+    setSending(true); setSendResult(null);
+    try {
+      const res = await fetch(SENDER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deal_id: dealId.trim(),
+          channels: { email: sendEmail, text: sendText },
+          review_url: selectedLocation.url,
+          location_name: selectedLocation.name,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data.email === 'sent' || data.sms === 'sent')) {
+        const parts = [];
+        if (data.email === 'sent') parts.push('email');
+        if (data.sms === 'sent') parts.push('text');
+        setSendResult({ ok: true, msg: `Review link sent by ${parts.join(' and ')} to ${data.client_name || 'client'}.` });
+        setDealId('');
+      } else {
+        setSendResult({ ok: false, msg: data.error || 'Could not send. Check the Deal ID has a contact with email/phone.' });
+      }
+    } catch (e) {
+      setSendResult({ ok: false, msg: 'Send failed. Try again.' });
+    }
+    setSending(false);
+  };
+
   return (
     <div className="p-6 lg:p-8 max-w-4xl mx-auto">
       {/* Header */}
@@ -235,6 +274,37 @@ function ReviewRandomizer() {
                 <ExternalLink size={18} />
                 Open Link
               </button>
+            </div>
+
+            {/* Send to client by email / text */}
+            <div className="mt-4 pt-4 border-t border-blue-100">
+              <p className="text-sm font-semibold text-slate-700 mb-2">Send this link to a client</p>
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                <input
+                  type="text"
+                  value={dealId}
+                  onChange={e => setDealId(e.target.value)}
+                  placeholder="Pipedrive Deal ID"
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
+                <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                  <input type="checkbox" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} /> <Mail size={14} /> Email
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-slate-700">
+                  <input type="checkbox" checked={sendText} onChange={e => setSendText(e.target.checked)} /> <MessageSquare size={14} /> Text
+                </label>
+                <button
+                  onClick={handleSendReviewLink}
+                  disabled={sending}
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-asap-blue text-white rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50"
+                >
+                  <Send size={16} className={sending ? 'animate-pulse' : ''} /> {sending ? 'Sending...' : 'Send'}
+                </button>
+              </div>
+              {sendResult && (
+                <p className={`text-sm mt-2 ${sendResult.ok ? 'text-green-600' : 'text-red-600'}`}>{sendResult.msg}</p>
+              )}
+              <p className="text-[11px] text-slate-400 mt-1">Pulls the client's email and phone from the deal. Defaults to both channels.</p>
             </div>
 
             {/* Stats for this location */}
