@@ -629,7 +629,7 @@ export default function ConsultantBonus() {
         <div className="bg-white rounded-xl p-4 border shadow-sm">
           <Users size={18} className="text-purple-500 mb-2" />
           <p className="text-3xl font-bold text-slate-800">{c.producingAffiliates}</p>
-          <p className="text-sm text-slate-500">Active Affiliates</p>
+          <p className="text-sm text-slate-500"><Tip text="Affiliate organizations that sent you 3 or more qualified clients this month (a qualified client paid their doc fee and at least a partial). Standard is 5 active affiliates per month.">Active Affiliates</Tip></p>
           {c.producingAffiliates < 5 && <p className="text-xs text-purple-500 mt-1">{5 - c.producingAffiliates} more to bonus threshold</p>}
         </div>
         <div className="bg-white rounded-xl p-4 border shadow-sm">
@@ -743,7 +743,7 @@ export default function ConsultantBonus() {
             </div>
             {c.newAffiliateLaunchCount > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'newaffiliate' ? null : 'newaffiliate')} label={`View ${c.newAffiliateLaunchCount} new affiliates`} />}
             {expandedSection === 'newaffiliate' && c.newAffiliateOrgs && (
-              <ClientPanel title="New Affiliate Launches (3+ clients in first 60 days)" items={c.newAffiliateOrgs.map(o => ({ name: o.name, amount: 75, type: `${o.clients} clients in ${o.daysSinceFirst} days`, date: o.firstDate }))} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title="New Affiliate Launches (org created in last 60 days, 3+ clients)" items={c.newAffiliateOrgs.map(o => ({ name: o.name, amount: 75, type: `${o.clients} clients · org created ${o.daysSinceCreated ?? o.daysSinceFirst}d ago`, date: o.firstDate }))} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 
@@ -821,8 +821,9 @@ export default function ConsultantBonus() {
             {expandedSection === 'sprint' && (
               <ClientPanel title="Weekly Sprint Breakdown" items={(c.weeks || []).map(w => {
                 const winner = data.weeklyWinners?.find(ww => ww.week === w.week);
-                const won = winner?.winner === c.name || winner?.leader === c.name;
-                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, type: `${w.docs} doc fees${won && winner?.complete ? ' — Won $150' : won ? ' — Leading' : ''}`, date: winner?.complete ? (won ? 'Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In Progress' };
+                const won = !!(winner?.complete && winner?.winner === c.name);
+                const leading = !!(!winner?.complete && winner?.leader === c.name);
+                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress' };
               })} onClose={() => setExpandedSection(null)} />
             )}
           </div>
@@ -857,7 +858,7 @@ export default function ConsultantBonus() {
         <h3 className="font-bold text-slate-800 mb-3">Commission Detail (Live from Zoho)</h3>
         <div className="space-y-2 text-sm">
           <div>
-            <div className="flex justify-between"><span className="text-slate-600"><Tip text="Clients from Google, website, direct calls. Commission at base rate.">Organic Sales ({c.baseRate})</Tip></span><span className="font-medium">{fmt(c.googleSales)} × {c.baseRate} = {fmt(c.baseCommission)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-600"><Tip text="Clients from Google, website, direct calls. Commission at base rate.">Organic Sales ({c.baseRate})</Tip></span><span className="font-medium">{fmt(c.organicSales)} × {c.baseRate} = {fmt(c.baseCommission)}</span></div>
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'google' ? null : 'google')} label={`View ${c.clientDetail?.organicClients?.length || 0} clients`} />
             {expandedSection === 'google' && c.clientDetail && (
               <ClientPanel title={`Organic Clients — ${c.baseRate}`} items={c.clientDetail.organicClients} onClose={() => setExpandedSection(null)} />

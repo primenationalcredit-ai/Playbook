@@ -88,6 +88,7 @@ exports.handler = async (event) => {
     // Cross-referenced with Zoho payments to see which ones actually paid doc fee
     let consultsByOwner = {};  // owner -> { total, dealIds[] }
     const rtqDealIds = new Set();
+    const dealMeta = {};       // dealId -> { name, value } for names + PIF payoff check
     try {
       let start = 0, more = true;
       while (more) {
@@ -101,6 +102,7 @@ exports.handler = async (event) => {
             consultsByOwner[o].total++;
             consultsByOwner[o].dealIds.push(d.id);
             rtqDealIds.add(d.id);
+            dealMeta[d.id] = { name: d.person_name || d.title || `Deal #${d.id}`, value: parseFloat(d.value) || 0 };
           });
           more = data.additional_data?.pagination?.more_items_in_collection || false;
           start += 100;
@@ -115,6 +117,40 @@ exports.handler = async (event) => {
       if (p.payment_type === 'doc_fee' && p.pipedrive_deal_id) {
         dealIdsWithDocFee.add(p.pipedrive_deal_id);
       }
+    }
+
+    // Cached lookup: org creation date (add_time) by org name — for New Affiliate Launch
+    const orgAddTimeCache = {};
+    async function getOrgAddTime(orgName) {
+      if (orgName in orgAddTimeCache) return orgAddTimeCache[orgName];
+      let result = null;
+      try {
+        const r = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/organizations/search?term=${encodeURIComponent(orgName)}&exact_match=true&fields=name&api_token=${PIPEDRIVE_API_KEY}`);
+        if (r.ok) {
+          const j = await r.json();
+          const item = j.data?.items?.[0]?.item;
+          if (item?.id) {
+            const dr = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/organizations/${item.id}?api_token=${PIPEDRIVE_API_KEY}`);
+            if (dr.ok) { const dj = await dr.json(); result = dj.data?.add_time || null; }
+          }
+        }
+      } catch (e) {}
+      orgAddTimeCache[orgName] = result;
+      return result;
+    }
+    // Cached lookup: deal total value by id — for PIF paid-in-full check
+    const dealValueCache = {};
+    async function getDealValue(dealId) {
+      if (!dealId) return 0;
+      if (dealId in dealValueCache) return dealValueCache[dealId];
+      if (dealMeta[dealId]) { dealValueCache[dealId] = dealMeta[dealId].value || 0; return dealValueCache[dealId]; }
+      let v = 0;
+      try {
+        const r = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals/${dealId}?api_token=${PIPEDRIVE_API_KEY}`);
+        if (r.ok) { const j = await r.json(); v = parseFloat(j.data?.value) || 0; }
+      } catch (e) {}
+      dealValueCache[dealId] = v;
+      return v;
     }
 
     // Lost deals for closing % — get from all pipelines with lost status
@@ -310,14 +346,16 @@ exports.handler = async (event) => {
       const newAffiliateOrgs = [];
       
       for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
-        // Find the very first payment from this org in ALL our data
         const allOrgPayments = payments.sort((a, b) => a.date.localeCompare(b.date));
-        const firstEverDate = new Date(allOrgPayments[0].date);
-        const now_check = new Date();
-        const daysSinceFirst = Math.floor((now_check - firstEverDate) / (1000 * 60 * 60 * 24));
-        
-        // New affiliate = first payment within last 60 days
-        if (daysSinceFirst <= 60) {
+        // "New" = the affiliate's Pipedrive ORG was created within the last 60 days.
+        // (Not first-payment date — an old org sending its first client recently is an
+        // active affiliate, not a new launch.)
+        const addTime = await getOrgAddTime(orgName);
+        if (!addTime) continue; // can't confirm a recent org creation → treat as existing/active
+        const orgCreated = new Date(String(addTime).replace(' ', 'T') + (String(addTime).includes('Z') ? '' : 'Z'));
+        const daysSinceCreated = Math.floor((new Date() - orgCreated) / (1000 * 60 * 60 * 24));
+
+        if (daysSinceCreated <= 60) {
           // Count unique clients from this org
           const orgClients = new Set();
           for (const p of allPayments) {
@@ -328,7 +366,7 @@ exports.handler = async (event) => {
           if (orgClients.size >= 3) {
             if (!awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
               newAffiliateLaunchCount++;
-              newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, clients: orgClients.size, daysSinceFirst });
+              newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, orgCreated: addTime, clients: orgClients.size, daysSinceCreated });
             }
           }
         }
@@ -343,6 +381,15 @@ exports.handler = async (event) => {
         const docPayment = client.payments.find(p => p.payment_type === 'doc_fee');
         const finalPayment = client.payments.find(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
         if (!docPayment || !finalPayment) continue;
+        // Only count if the client actually paid their fee in full. Compare what they
+        // paid against the deal's total value in Pipedrive. A token "final" (e.g. $1)
+        // leaves a balance owed and does NOT qualify. Falls back to a doc-fee floor
+        // only if the deal value can't be read.
+        const dealValue = await getDealValue(client.dealId);
+        const paidInFull = dealValue > 0
+          ? (Number(client.totalPaid) >= dealValue * 0.95)
+          : (Number(finalPayment.amount) >= Number(docPayment.amount));
+        if (!paidInFull) continue;
         // Count business days between doc fee and final
         const docDate = new Date(docPayment.payment_date);
         const finalDate = new Date(finalPayment.payment_date);
@@ -583,7 +630,7 @@ exports.handler = async (event) => {
           consultList: myConsultDealIds.map(id => {
             const paid = dealIdsWithDocFee.has(id);
             const payment = allPayments.find(p => p.pipedrive_deal_id === id && p.payment_type === 'doc_fee');
-            return { dealId: id, paid, clientName: payment?.client_name || `Deal #${id}`, amount: payment?.amount || 0, date: payment?.payment_date || '' };
+            return { dealId: id, paid, clientName: payment?.client_name || dealMeta[id]?.name || `Deal #${id}`, amount: payment?.amount || dealMeta[id]?.value || 0, date: payment?.payment_date || '' };
           }).sort((a, b) => b.paid - a.paid),
         }
       };
