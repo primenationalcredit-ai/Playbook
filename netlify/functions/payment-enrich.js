@@ -16,6 +16,25 @@ function isAffiliateOrg(orgName) {
 const ORG_EMAIL_FIELD = 'ba6dfecbc8c99e28eefa892a929f317156c36474';
 const orgCache = {};
 
+// Account Manager (Pipedrive Person field). Additional rounds credit the AM, not the deal owner.
+const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
+const personCache = {};
+function amNameOf(val) {
+  if (!val) return null;
+  if (typeof val === 'string') return val;
+  return val.name || val.value || null;
+}
+async function getPerson(personId) {
+  if (!personId) return null;
+  const id = typeof personId === 'object' ? (personId.value || personId) : personId;
+  if (personCache[id]) return personCache[id];
+  try {
+    const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/persons/${id}?api_token=${PIPEDRIVE_API_KEY}`);
+    if (res.ok) { const data = await res.json(); personCache[id] = data.data; return data.data; }
+  } catch (e) { console.log(`Person ${id} lookup failed`); }
+  return null;
+}
+
 async function getOrgDetails(orgId) {
   if (!orgId) return null;
   const id = typeof orgId === 'object' ? (orgId.value || orgId) : orgId;
@@ -38,7 +57,7 @@ exports.handler = async (event) => {
   try {
     // Get payments that need enrichment (have deal_id but consultant is unknown/pending)
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/consultant_payments?consultant_name=in.(Unknown,pending_enrichment)&pipedrive_deal_id=not.is.null&select=id,pipedrive_deal_id,client_name&limit=20`,
+      `${SUPABASE_URL}/rest/v1/consultant_payments?consultant_name=in.(Unknown,pending_enrichment)&pipedrive_deal_id=not.is.null&select=id,pipedrive_deal_id,client_name,payment_type&limit=20`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const payments = res.ok ? await res.json() : [];
@@ -49,6 +68,14 @@ exports.handler = async (event) => {
 
     let enriched = 0, failed = 0;
     const dealCache = {};
+
+    // person_id -> AM name map (same cache the AM tools use), for additional-round credit
+    let personToAM = {};
+    try {
+      const cRes = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.am_person_to_am&select=cache_value`,
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      if (cRes.ok) { const rows = await cRes.json(); if (rows[0]) personToAM = JSON.parse(rows[0].cache_value).personToAM || {}; }
+    } catch (e) {}
 
     for (const payment of payments) {
       const dealId = payment.pipedrive_deal_id;
@@ -68,7 +95,18 @@ exports.handler = async (event) => {
       }
 
       if (deal) {
-        const consultantName = deal.owner_name || 'Unknown';
+        let consultantName = deal.owner_name || 'Unknown';
+        // Additional rounds credit the Account Manager on the deal, not the deal owner
+        if (payment.payment_type === 'additional_round') {
+          let am = amNameOf(deal[ACCOUNT_MANAGER_FIELD]);
+          const personId = deal.person_id?.value || deal.person_id || null;
+          if (!am && personId && personToAM[personId]) am = personToAM[personId];
+          if (!am && personId) {
+            const p = await getPerson(personId);
+            am = amNameOf(p?.[ACCOUNT_MANAGER_FIELD]);
+          }
+          if (am) consultantName = am;
+        }
         const orgName = deal.org_name || null;
         let isConsultantReferral = false;
         let orgHasEmail = false;
