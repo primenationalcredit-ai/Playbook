@@ -122,7 +122,7 @@ function App() {
         <Route path="incoming-reviews" element={<IncomingReviews />} />
         <Route path="review-link" element={<ReviewRandomizer />} />
         <Route path="payments" element={<ConsultantPayments />} />
-        <Route path="admin/all-payments" element={<AllPayments />} />
+        <Route path="admin/all-payments" element={<ConsultantPayments />} />
         <Route path="secured-cards" element={<SecuredCards />} />
         <Route path="paysheet" element={<Paysheet />} />
         <Route path="csr-dashboard" element={<CSRDashboard />} />

@@ -8,13 +8,14 @@ const PAYMENT_TYPES = ['doc_fee', 'partial', 'final', 'paid_in_full'];
 const fmt = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const monthKey = (d) => d.toISOString().slice(0, 7);
 
-function AllPayments() {
+function AllPayments({ embedded = false }) {
   const now = new Date();
   const [month, setMonth] = useState('all');
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -41,6 +42,24 @@ function AllPayments() {
       setMsg({ ok: true, text: month === 'all' ? `Synced ${syncMonth} from Zoho.` : 'Synced from Zoho.' });
     } catch (e) { setMsg({ ok: false, text: 'Sync failed.' }); }
     setSyncing(false);
+  };
+
+  const runEnrich = async () => {
+    setEnriching(true); setMsg(null);
+    try {
+      let total = 0, rounds = 0, remaining = 1;
+      while (remaining > 0 && rounds < 30) {
+        const r = await fetch(`/.netlify/functions/payment-enrich`);
+        const d = await r.json().catch(() => ({}));
+        total += (d.enriched || 0);
+        remaining = typeof d.remaining === 'number' ? d.remaining : 0;
+        rounds++;
+        if (!d.enriched && !remaining) break;
+      }
+      await load();
+      setMsg({ ok: true, text: total ? `Filled in ${total} consultant name${total === 1 ? '' : 's'}.${remaining ? ' Some still pending, run again.' : ''}` : 'No new names to pull right now.' });
+    } catch (e) { setMsg({ ok: false, text: 'Could not pull names.' }); }
+    setEnriching(false);
   };
 
   const saveManual = async () => {
@@ -82,13 +101,18 @@ function AllPayments() {
   for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); monthOptions.push(monthKey(d)); }
 
   return (
-    <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+    <div className={embedded ? '' : 'p-6 lg:p-8 max-w-7xl mx-auto'}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl lg:text-3xl font-bold text-slate-800">All Payments</h1>
-          <p className="text-slate-500">Every payment from Zoho, plus any added manually. Use this to spot what's missing and add payments by hand.</p>
-        </div>
-        <div className="flex gap-2">
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-slate-800">All Payments</h1>
+            <p className="text-slate-500">Every payment from Zoho, plus any added manually. Use this to spot what's missing and add payments by hand.</p>
+          </div>
+        )}
+        <div className={`flex gap-2 flex-wrap ${embedded ? 'ml-auto' : ''}`}>
+          <button onClick={runEnrich} disabled={enriching} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50" title="Look up the deal owner in Pipedrive for any payment showing pending">
+            <RefreshCw size={18} className={enriching ? 'animate-spin' : ''} /> {enriching ? 'Pulling...' : 'Pull consultant names'}
+          </button>
           <button onClick={runSync} disabled={syncing} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50">
             <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Syncing...' : 'Sync from Zoho'}
           </button>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import AllPayments from './AllPayments';
 import { useApp } from '../context/AppContext';
 import { 
   DollarSign, TrendingUp, Users, FileText, 
@@ -10,6 +11,7 @@ import { format, subMonths, addMonths, startOfMonth, endOfMonth, startOfYear, su
 
 function ConsultantPayments() {
   const { currentUser } = useApp();
+  const [tab, setTab] = useState('dashboard');
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -440,6 +442,15 @@ function ConsultantPayments() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-6 border-b border-slate-200 mb-6">
+        <button onClick={() => setTab('dashboard')} className={`pb-2 text-sm font-medium border-b-2 -mb-px ${tab === 'dashboard' ? 'border-asap-blue text-asap-blue' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Dashboard</button>
+        <button onClick={() => setTab('all')} className={`pb-2 text-sm font-medium border-b-2 -mb-px ${tab === 'all' ? 'border-asap-blue text-asap-blue' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>All Payments</button>
+      </div>
+
+      {tab === 'all' && <AllPayments embedded />}
+
+      {tab === 'dashboard' && (<>
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 text-red-700">
           <AlertCircle className="w-5 h-5" />
@@ -769,6 +780,7 @@ function ConsultantPayments() {
           </div>
         </>
       )}
+      </>)}
     </div>
   );
 }
