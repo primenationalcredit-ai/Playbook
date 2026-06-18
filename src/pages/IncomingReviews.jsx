@@ -66,17 +66,15 @@ function IncomingReviews() {
 
   useEffect(() => {
     loadData();
-  }, [statusFilter, locationFilter]);
+  }, [locationFilter]);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Load reviews
+      // Load ALL reviews (every status) so the Pending/Assigned/Completed counts are
+      // always complete. The active tab filters the displayed list client-side.
       let query = 'select=*&order=created_at.desc';
-      if (statusFilter !== 'all') {
-        query += `&status=eq.${statusFilter}`;
-      }
       if (locationFilter !== 'all') {
         query += `&location_name=eq.${encodeURIComponent(locationFilter)}`;
       }
@@ -238,6 +236,7 @@ function IncomingReviews() {
 
   // Filter reviews by search
   const filteredReviews = reviews.filter(review => {
+    if (statusFilter !== 'all' && review.status !== statusFilter) return false;
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
