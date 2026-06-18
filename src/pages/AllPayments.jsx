@@ -10,7 +10,7 @@ const monthKey = (d) => d.toISOString().slice(0, 7);
 
 function AllPayments() {
   const now = new Date();
-  const [month, setMonth] = useState(monthKey(now));
+  const [month, setMonth] = useState('all');
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -23,7 +23,8 @@ function AllPayments() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${month}&order=payment_date.desc&select=*`, {
+      const filter = month === 'all' ? '' : `payment_month=eq.${month}&`;
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?${filter}order=payment_date.desc&select=*&limit=5000`, {
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
       });
       if (res.ok) setPayments(await res.json());
@@ -36,9 +37,10 @@ function AllPayments() {
   const runSync = async () => {
     setSyncing(true); setMsg(null);
     try {
-      await fetch(`/.netlify/functions/zoho-payment-sync?month=${month}`);
+      const syncMonth = month === 'all' ? monthKey(new Date()) : month;
+      await fetch(`/.netlify/functions/zoho-payment-sync?month=${syncMonth}`);
       await load();
-      setMsg({ ok: true, text: 'Synced from Zoho.' });
+      setMsg({ ok: true, text: month === 'all' ? `Synced ${syncMonth} from Zoho.` : 'Synced from Zoho.' });
     } catch (e) { setMsg({ ok: false, text: 'Sync failed.' }); }
     setSyncing(false);
   };
@@ -78,7 +80,7 @@ function AllPayments() {
   const filtered = payments.filter(p => !search || (p.client_name || '').toLowerCase().includes(search.toLowerCase()) || String(p.pipedrive_deal_id || '').includes(search));
   const total = filtered.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
-  const monthOptions = [];
+  const monthOptions = ['all'];
   for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); monthOptions.push(monthKey(d)); }
 
   return (
@@ -102,7 +104,7 @@ function AllPayments() {
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <select value={month} onChange={e => setMonth(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
-          {monthOptions.map(m => <option key={m} value={m}>{m}</option>)}
+          {monthOptions.map(m => <option key={m} value={m}>{m === 'all' ? 'All time' : m}</option>)}
         </select>
         <div className="flex-1 relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
