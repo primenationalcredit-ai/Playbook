@@ -4,7 +4,21 @@ import { DollarSign, Plus, Search, RefreshCw, X, Check } from 'lucide-react';
 const SUPABASE_URL = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
 
-const PAYMENT_TYPES = ['doc_fee', 'partial', 'final', 'paid_in_full'];
+const PAYMENT_TYPES = ['doc_fee', 'partial', 'final', 'additional_round', 'paid_in_full'];
+const TYPE_LABELS = {
+  doc_fee: 'Doc Fee',
+  partial: 'Partial Payment',
+  final: 'Final Payment',
+  additional_round: '2 Additional Rounds',
+  paid_in_full: 'Paid In Full',
+  unknown: 'Unknown',
+};
+const typeLabel = (t) => TYPE_LABELS[t] || String(t || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+const fmtDate = (s) => {
+  if (!s) return '';
+  const p = String(s).slice(0, 10).split('-'); // YYYY-MM-DD
+  return p.length === 3 ? `${p[1]}-${p[2]}-${p[0]}` : s;
+};
 const fmt = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const monthKey = (d) => d.toISOString().slice(0, 7);
 
@@ -160,9 +174,9 @@ function AllPayments({ embedded = false }) {
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-5 py-3 text-slate-500">{p.payment_date || ''}</td>
+                    <td className="px-5 py-3 text-slate-500">{fmtDate(p.payment_date)}</td>
                     <td className="px-5 py-3 font-medium text-slate-800">{p.client_name || '—'}</td>
-                    <td className="px-5 py-3 text-slate-600">{(p.payment_type || '').replace(/_/g, ' ')}</td>
+                    <td className="px-5 py-3 text-slate-600">{typeLabel(p.payment_type)}</td>
                     <td className="px-5 py-3 text-slate-600">{p.consultant_name && p.consultant_name !== 'pending_enrichment' ? p.consultant_name : '—'}</td>
                     <td className="px-5 py-3 text-slate-500">{p.pipedrive_deal_id || '—'}</td>
                     <td className="px-5 py-3">
@@ -202,7 +216,7 @@ function AllPayments({ embedded = false }) {
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Type</label>
                 <select value={form.payment_type} onChange={e => setForm({ ...form, payment_type: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
-                  {PAYMENT_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+                  {PAYMENT_TYPES.map(t => <option key={t} value={t}>{typeLabel(t)}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
