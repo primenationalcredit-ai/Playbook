@@ -183,18 +183,19 @@ function ReviewRandomizer() {
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && (data.email === 'sent' || data.sms === 'sent')) {
-        const parts = [];
-        if (data.email === 'sent') parts.push('email');
-        if (data.sms === 'sent') parts.push('text');
-        setSendResult({ ok: true, msg: `Review link sent by ${parts.join(' and ')} to ${data.client_name || 'client'}.` });
-        setDealId('');
-      } else if (res.ok) {
-        // Function ran but neither channel sent — show why (no contact info, etc.)
-        const why = [];
-        if (data.email && data.email !== 'sent') why.push(`email: ${data.email}`);
-        if (data.sms && data.sms !== 'sent') why.push(`text: ${data.sms}`);
-        setSendResult({ ok: false, msg: data.error || `Nothing sent (${why.join(', ') || 'no email or phone on the deal'}).` });
+      if (res.ok) {
+        const sent = [];
+        const failed = [];
+        if (sendEmail) { if (data.email === 'sent') sent.push('email'); else if (data.email) failed.push(`email (${data.email})`); }
+        if (sendText) { if (data.sms === 'sent') sent.push('text'); else if (data.sms) failed.push(`text (${data.sms})`); }
+        if (sent.length && !failed.length) {
+          setSendResult({ ok: true, msg: `Review link sent by ${sent.join(' and ')} to ${data.client_name || 'client'}.` });
+          setDealId('');
+        } else if (sent.length) {
+          setSendResult({ ok: false, msg: `Sent by ${sent.join(' and ')} to ${data.client_name || 'client'}. Did not send ${failed.join(', ')}.` });
+        } else {
+          setSendResult({ ok: false, msg: data.error || `Nothing sent: ${failed.join(', ') || 'no contact info on the deal'}.` });
+        }
       } else {
         setSendResult({ ok: false, msg: `${data.error || 'Send failed'} (status ${res.status}).` });
       }
