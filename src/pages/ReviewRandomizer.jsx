@@ -35,6 +35,7 @@ const GMB_LOCATIONS = [
   { name: 'ASAP Credit Repair Tyler', city: 'Tyler', state: 'TX', url: 'https://g.page/r/CZNpORf21Bw5EBM/review' },
   { name: 'ASAP Credit Repair Laurel', city: 'Laurel', state: 'MD', url: 'https://g.page/r/CWxMCitTPMEEEBM/review' },
   { name: 'ASAP Credit Repair West Valley Utah', city: 'West Valley', state: 'UT', url: 'https://g.page/r/CY5zmMsEJsUWEBM/review' },
+  { name: 'ASAP Credit Repair McAllen', city: 'McAllen', state: 'TX', url: 'https://g.page/r/CUJ_5njlAzcZEBM/review' },
 ];
 
 function ReviewRandomizer() {
@@ -188,11 +189,17 @@ function ReviewRandomizer() {
         if (data.sms === 'sent') parts.push('text');
         setSendResult({ ok: true, msg: `Review link sent by ${parts.join(' and ')} to ${data.client_name || 'client'}.` });
         setDealId('');
+      } else if (res.ok) {
+        // Function ran but neither channel sent — show why (no contact info, etc.)
+        const why = [];
+        if (data.email && data.email !== 'sent') why.push(`email: ${data.email}`);
+        if (data.sms && data.sms !== 'sent') why.push(`text: ${data.sms}`);
+        setSendResult({ ok: false, msg: data.error || `Nothing sent (${why.join(', ') || 'no email or phone on the deal'}).` });
       } else {
-        setSendResult({ ok: false, msg: data.error || 'Could not send. Check the Deal ID has a contact with email/phone.' });
+        setSendResult({ ok: false, msg: `${data.error || 'Send failed'} (status ${res.status}).` });
       }
     } catch (e) {
-      setSendResult({ ok: false, msg: 'Send failed. Try again.' });
+      setSendResult({ ok: false, msg: 'Could not reach the sender service. The send-review-link function is most likely not deployed on the payment-processor project yet.' });
     }
     setSending(false);
   };
