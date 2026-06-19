@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DollarSign, Plus, Search, RefreshCw, X, Check } from 'lucide-react';
 
 const SUPABASE_URL = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
@@ -30,6 +30,8 @@ function AllPayments({ embedded = false }) {
   const [search, setSearch] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [remaining, setRemaining] = useState(null);
+  const autoRan = useRef(false);
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -47,6 +49,14 @@ function AllPayments({ embedded = false }) {
 
   useEffect(() => { load(); }, [month]);
 
+  // Auto-run enrichment to completion once when the tab opens
+  useEffect(() => {
+    if (autoRan.current) return;
+    autoRan.current = true;
+    runEnrich(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const runSync = async () => {
     setSyncing(true); setMsg(null);
     try {
@@ -58,20 +68,29 @@ function AllPayments({ embedded = false }) {
     setSyncing(false);
   };
 
-  const runEnrich = async () => {
-    setEnriching(true); setMsg(null);
+  const runEnrich = async (auto = false) => {
+    if (enriching) return;
+    setEnriching(true);
+    if (!auto) setMsg(null);
+    let total = 0, rounds = 0, rem = 1;
     try {
-      let total = 0, rounds = 0, remaining = 1;
-      while (remaining > 0 && rounds < 30) {
+      while (rem > 0 && rounds < 800) {
         const r = await fetch(`/.netlify/functions/payment-enrich`);
         const d = await r.json().catch(() => ({}));
         total += (d.enriched || 0);
-        remaining = typeof d.remaining === 'number' ? d.remaining : 0;
+        rem = typeof d.remaining === 'number' ? d.remaining : 0;
+        setRemaining(rem);
         rounds++;
-        if (!d.enriched && !remaining) break;
+        if (!d.enriched && !rem) break;
+        if (rounds % 10 === 0) await load(); // refresh the list periodically so names appear as they fill
       }
       await load();
-      setMsg({ ok: true, text: total ? `Filled in ${total} consultant name${total === 1 ? '' : 's'}.${remaining ? ' Some still pending, run again.' : ''}` : 'No new names to pull right now.' });
+      setMsg({
+        ok: true,
+        text: total
+          ? `Filled in ${total} consultant name${total === 1 ? '' : 's'}.${rem ? ` ${rem.toLocaleString()} still pending.` : ' All caught up.'}`
+          : (rem ? `${rem.toLocaleString()} still pending.` : 'All caught up. Nothing to enrich.'),
+      });
     } catch (e) { setMsg({ ok: false, text: 'Could not pull names.' }); }
     setEnriching(false);
   };
@@ -124,8 +143,14 @@ function AllPayments({ embedded = false }) {
           </div>
         )}
         <div className={`flex gap-2 flex-wrap ${embedded ? 'ml-auto' : ''}`}>
-          <button onClick={runEnrich} disabled={enriching} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50" title="Look up the deal owner in Pipedrive for any payment showing pending">
-            <RefreshCw size={18} className={enriching ? 'animate-spin' : ''} /> {enriching ? 'Pulling...' : 'Pull consultant names'}
+          {remaining !== null && remaining > 0 && (
+            <span className="self-center text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 whitespace-nowrap">{remaining.toLocaleString()} left to enrich</span>
+          )}
+          {remaining === 0 && (
+            <span className="self-center text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700 whitespace-nowrap">All enriched</span>
+          )}
+          <button onClick={() => runEnrich(false)} disabled={enriching} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50" title="Look up the deal owner in Pipedrive for any payment showing pending">
+            <RefreshCw size={18} className={enriching ? 'animate-spin' : ''} /> {enriching ? (remaining != null ? `Enriching… ${remaining.toLocaleString()} left` : 'Enriching…') : 'Pull consultant names'}
           </button>
           <button onClick={runSync} disabled={syncing} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50">
             <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Syncing...' : 'Sync from Zoho'}
