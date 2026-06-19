@@ -42,8 +42,9 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
                 {item.type && <span className={`text-xs px-2 py-0.5 rounded-full ${
                   item.type === 'doc_fee' ? 'bg-amber-100 text-amber-700' :
                   item.type === 'partial' ? 'bg-purple-100 text-purple-700' :
-                  item.type === 'final' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-                }`}>{item.type === 'doc_fee' ? 'Doc Fee' : item.type === 'partial' ? 'Partial' : item.type === 'final' ? 'Final' : item.type}</span>}
+                  item.type === 'final' ? 'bg-green-100 text-green-700' :
+                  item.type === 'no_doc' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                }`}>{item.type === 'doc_fee' ? 'Doc Fee' : item.type === 'partial' ? 'Partial' : item.type === 'final' ? 'Final' : item.type === 'no_doc' ? 'No Doc Fee' : item.type}</span>}
                 {item.date && <span className="text-xs text-slate-400 ml-2">{fmtDate(item.date)}</span>}
                 {/* Payment journey for qualified docs */}
                 {item.payments && item.payments.length > 0 && (
@@ -637,8 +638,16 @@ export default function ConsultantBonus() {
             {c.meetsClosingStandard ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
           </div>
           <p className="text-3xl font-bold text-slate-800">{c.closingPct}%</p>
-          <p className="text-sm text-slate-500">Closing Rate</p>
+          <p className="text-sm text-slate-500"><Tip text="Deals that moved into Quoted (Ready to Quote) this month that paid a doc fee, divided by all deals that moved into Quoted. Click to see the deals.">Closing Rate</Tip></p>
           {!c.meetsClosingStandard && <p className="text-xs text-red-500 mt-1">Below 40% standard</p>}
+          <DrillButton onClick={() => setExpandedSection(expandedSection === 'close' ? null : 'close')} label="View quoted deals" />
+          {expandedSection === 'close' && c.closeDetail && (
+            <ClientPanel
+              title={`Closing Rate — ${c.docsPaid} of ${c.consultCount} quoted paid a doc fee = ${c.closingPct}%`}
+              items={c.closeDetail.map(d => ({ name: d.name, amount: d.amount, type: d.paidDocFee ? 'doc_fee' : 'no_doc' }))}
+              onClose={() => setExpandedSection(null)}
+            />
+          )}
         </div>
       </div>
 

@@ -424,6 +424,13 @@ exports.handler = async (event) => {
       const myDocsPaid = myConsultDealIds.filter(id => dealIdsWithDocFee.has(id)).length;
       const closingPct = myConsultCount > 0 ? Math.round((myDocsPaid / myConsultCount) * 100) : 0;
 
+      // Per-deal breakdown behind the closing % — which quoted deals paid a doc fee
+      const closeDetail = myConsultDealIds.map(id => ({
+        name: dealMeta[id]?.name || `Deal #${id}`,
+        amount: dealMeta[id]?.value || 0,
+        paidDocFee: dealIdsWithDocFee.has(id),
+      })).sort((a, b) => (b.paidDocFee === a.paidDocFee ? a.name.localeCompare(b.name) : (b.paidDocFee ? 1 : -1)));
+
       // === PAY-PAST-DOC-FEE RATE ===
       // Of clients who paid doc fee THIS month, how many also paid partial/final?
       const docFeeClientKeys = new Set(myPayments.filter(p => p.payment_type === 'doc_fee').map(p => p.pipedrive_deal_id || p.client_name));
@@ -589,7 +596,7 @@ exports.handler = async (event) => {
         affiliateDetail: producingAffiliates.map(([n, c]) => ({ name: n, clients: c })),
         affiliateBonus, affiliateBonusDetail,
         reviewCount, bbbReviews, reviewBonus,
-        closingPct, consultCount: myConsultCount, docsPaid: myDocsPaid,
+        closingPct, consultCount: myConsultCount, docsPaid: myDocsPaid, closeDetail,
         weeklyDocs: currentWeekDocs, weeks,
         payPastDocRate,
         docFeeClients: docFeeClientKeys.size,
