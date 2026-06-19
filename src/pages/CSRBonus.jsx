@@ -124,6 +124,21 @@ export default function CSRBonus() {
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold text-slate-800">Pipeline & Activity</div>
+              <div className="text-sm text-slate-500">{c.kpis?.newThisMonth ?? 0} new this month · {c.kpis?.totalDeals ?? 0} total deals</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(c.kpis?.byPipeline || {}).sort((a, b) => b[1] - a[1]).map(([pl, count]) => (
+                <span key={pl} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs">
+                  {pl} <span className="font-semibold text-slate-900">{count}</span>
+                </span>
+              ))}
+              {Object.keys(c.kpis?.byPipeline || {}).length === 0 && <span className="text-xs text-slate-400">No deals attributed yet.</span>}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between">
               <div className="font-semibold text-slate-800">Report Bonus</div>
               <div className="text-2xl font-bold text-emerald-600">{fmt(c.reportBonus.bonus)}</div>
@@ -150,8 +165,9 @@ export default function CSRBonus() {
                 Reports → Quote: <span className={c.conversionBonus?.rptsToQuoteRate >= 50 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>{c.conversionBonus?.rptsToQuoteRate ?? 0}%</span> <span className="text-slate-400">(need 50%)</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">
-                Quoted → Docs: <span className={c.conversionBonus?.quoteToDocsRate >= 40 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>{c.conversionBonus?.quoteToDocsRate ?? 0}%</span> <span className="text-slate-400">(need 40%)</span>
+                Quoted → Doc Fee: <span className={c.conversionBonus?.quoteToDocsRate >= 40 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>{c.conversionBonus?.quoteToDocsRate ?? 0}%</span> <span className="text-slate-400">(need 40%)</span>
               </div>
+              <div className="text-[11px] text-slate-400 mt-1">{c.conversionBonus?.reachedQuote ?? 0} quoted · {c.conversionBonus?.reachedDocs ?? 0} paid doc fee</div>
             </div>
 
             <div className={`bg-white rounded-xl border p-4 ${c.spotlight?.idiqTopConverter ? 'border-amber-300' : 'border-slate-200'}`}>

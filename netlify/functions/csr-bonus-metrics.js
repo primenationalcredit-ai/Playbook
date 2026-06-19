@@ -107,9 +107,24 @@ exports.handler = async (event) => {
     const nameToUserId = {};
     for (const u of csrUsers) if (u.name) nameToUserId[u.name.trim().toLowerCase()] = u.id;
 
+    // Doc fee conversions: which of these CS deals have a paid doc fee (from consultant_payments)
+    const dealIds = rows.map(r => r.deal_id).filter(Boolean);
+    const docFeeDealIds = new Set();
+    for (let i = 0; i < dealIds.length; i += 100) {
+      const chunk = dealIds.slice(i, i + 100);
+      try {
+        const pays = await supaGet('consultant_payments', `payment_type=eq.doc_fee&pipedrive_deal_id=in.(${chunk.join(',')})&select=pipedrive_deal_id`);
+        for (const p of pays) if (p.pipedrive_deal_id != null) docFeeDealIds.add(String(p.pipedrive_deal_id));
+      } catch (e) {}
+    }
+
     // Per-CSR tallies for the requested month
     const tally = {};
-    for (const name of CSR_STAFF) tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0 };
+    const ops = {};
+    for (const name of CSR_STAFF) {
+      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0 };
+      ops[name] = { allDeals: 0, newThisMonth: 0, byPipeline: {} };
+    }
 
     // Debug: what the data actually looks like
     const msSeen = {};            // distinct monitoring_site -> count
@@ -122,8 +137,17 @@ exports.handler = async (event) => {
       stageSeen[stageKey] = (stageSeen[stageKey] || 0) + 1;
 
       const cls = classify(ms);
-      if (!cls) continue;                       // no report value -> not a report
       const rep = r.call_center_rep_name;
+
+      // Operational KPIs: count ALL of a known CSR's deals (regardless of report/gate)
+      if (rep && ops[rep]) {
+        ops[rep].allDeals++;
+        if (String(r.deal_created_at || '').slice(0, 7) === month) ops[rep].newThisMonth++;
+        const pl = r.pipeline_name || 'Unknown';
+        ops[rep].byPipeline[pl] = (ops[rep].byPipeline[pl] || 0) + 1;
+      }
+
+      if (!cls) continue;                       // no report value -> not a report
       if (!rep || !tally[rep]) continue;        // must have a Call Center Rep who is a known CSR
 
       if (monthOf(r) !== month) { tally[rep].outOfMonth++; continue; }
@@ -132,10 +156,10 @@ exports.handler = async (event) => {
       tally[rep][cls]++;
       tally[rep].total++;
 
-      // Conversion: how far this month's report progressed (by current pipeline)
+      // Conversion: reached quote by pipeline; reached docs = doc fee actually paid
       const rank = pipelineRank(r.pipeline_name);
       if (rank >= QUOTE_RANK) tally[rep].reachedQuote++;
-      if (rank >= DOCS_RANK) tally[rep].reachedDocs++;
+      if (docFeeDealIds.has(String(r.deal_id))) tally[rep].reachedDocs++;
     }
 
     // Build per-CSR bonus result
@@ -180,6 +204,11 @@ exports.handler = async (event) => {
         reviewBonus: review,
         spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
         idiqRate: Math.round(idiqRate * 100),
+        kpis: {
+          totalDeals: ops[name].allDeals,
+          newThisMonth: ops[name].newThisMonth,
+          byPipeline: ops[name].byPipeline
+        },
         excluded: { outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
         basePay: BASE_PAY
       };
