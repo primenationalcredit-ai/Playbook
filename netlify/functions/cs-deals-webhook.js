@@ -150,6 +150,12 @@ exports.handler = async (event, context) => {
         dealRecord.monitoring_site_set_pipeline = maps.pipeline[String(deal.pipeline_id)] || null; // pipeline at the moment of the pull (the gate)
       }
 
+      // Track stage movement: stamp when the deal entered its current stage (time-in-stage / stuck tracking).
+      const prevStageId = previous ? previous.stage_id : null;
+      if (deal.stage_id && String(deal.stage_id) !== String(prevStageId ?? '')) {
+        dealRecord.stage_entered_at = new Date().toISOString();
+      }
+
       const upsertResponse = await fetch(
         `${SUPABASE_URL}/rest/v1/cs_deals?on_conflict=deal_id`,
         {

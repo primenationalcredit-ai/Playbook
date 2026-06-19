@@ -122,9 +122,11 @@ exports.handler = async (event) => {
     // Per-CSR tallies for the requested month
     const tally = {};
     const ops = {};
+    const dist = {};
     for (const name of CSR_STAFF) {
       tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [] };
       ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
+      dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
 
     // Debug: what the data actually looks like
@@ -139,6 +141,14 @@ exports.handler = async (event) => {
 
       const cls = classify(ms);
       const rep = r.call_center_rep_name;
+
+      // Current stage distribution: where ALL of a known CSR's deals sit right now
+      if (rep && dist[rep]) {
+        const stageKey = `${r.pipeline_name || 'Unknown'}${r.stage_name ? ' | ' + r.stage_name : ''}`;
+        dist[rep].total++;
+        dist[rep].byStage[stageKey] = (dist[rep].byStage[stageKey] || 0) + 1;
+        dist[rep].allDeals.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, stageKey });
+      }
 
       // Operational KPIs: funnel over THIS MONTH's deals for a known CSR (created this month)
       if (rep && ops[rep] && String(r.deal_created_at || '').slice(0, 7) === month) {
@@ -218,15 +228,23 @@ exports.handler = async (event) => {
         reviewBonus: review,
         spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
         idiqRate: Math.round(idiqRate * 100),
+        closingRate: t.total ? Math.round((t.reachedDocs / t.total) * 100) : 0,
         kpis: {
           newDeals: ops[name].newDeals,
           reachedReports: ops[name].reachedReports,
           reachedQuoted: ops[name].reachedQuoted,
           docFeeCollected: ops[name].docFeeCollected
         },
+        stageDistribution: {
+          total: dist[name].total,
+          stages: Object.entries(dist[name].byStage)
+            .map(([stage, count]) => ({ stage, count, pct: dist[name].total ? Math.round((count / dist[name].total) * 100) : 0 }))
+            .sort((a, b) => b.count - a.count)
+        },
         details: {
           reports: t.reportList,
           monthDeals: ops[name].monthDealList,
+          allDeals: dist[name].allDeals,
           reviews: reviewDetails
         },
         excluded: { outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
