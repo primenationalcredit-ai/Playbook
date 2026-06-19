@@ -95,7 +95,7 @@ exports.handler = async (event) => {
     const now = new Date();
     const month = params.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const rows = await supaGet('cs_deals', 'select=deal_id,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,monitoring_site_set_pipeline,deal_created_at,pipeline_name,stage_name');
+    const rows = await supaGet('cs_deals', 'select=deal_id,deal_title,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,monitoring_site_set_pipeline,deal_created_at,pipeline_name,stage_name');
 
     // Review data: reviews are assigned to a user (assigned_to = user id) in the IncomingReviews page.
     // Map each CSR name to their user id, then count this month's assigned reviews. BBB = location name contains "bbb".
@@ -103,7 +103,7 @@ exports.handler = async (event) => {
     let csrUsers = [];
     let reviews = [];
     try { csrUsers = await supaGet('users', 'department=eq.customer_support&select=id,name'); } catch (e) {}
-    try { reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=assigned_to,location_name`); } catch (e) {}
+    try { reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=assigned_to,location_name,reviewer_name,rating,review_date`); } catch (e) {}
     const nameToUserId = {};
     for (const u of csrUsers) if (u.name) nameToUserId[u.name.trim().toLowerCase()] = u.id;
 
@@ -122,8 +122,8 @@ exports.handler = async (event) => {
     const tally = {};
     const ops = {};
     for (const name of CSR_STAFF) {
-      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0 };
-      ops[name] = { allDeals: 0, newThisMonth: 0, byPipeline: {} };
+      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [] };
+      ops[name] = { allDeals: 0, newThisMonth: 0, byPipeline: {}, deals: [] };
     }
 
     // Debug: what the data actually looks like
@@ -141,10 +141,12 @@ exports.handler = async (event) => {
 
       // Operational KPIs: count ALL of a known CSR's deals (regardless of report/gate)
       if (rep && ops[rep]) {
+        const isNew = String(r.deal_created_at || '').slice(0, 7) === month;
         ops[rep].allDeals++;
-        if (String(r.deal_created_at || '').slice(0, 7) === month) ops[rep].newThisMonth++;
+        if (isNew) ops[rep].newThisMonth++;
         const pl = r.pipeline_name || 'Unknown';
         ops[rep].byPipeline[pl] = (ops[rep].byPipeline[pl] || 0) + 1;
+        ops[rep].deals.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: pl, stage: r.stage_name || null, site: r.monitoring_site || null, newThisMonth: isNew });
       }
 
       if (!cls) continue;                       // no report value -> not a report
@@ -158,8 +160,11 @@ exports.handler = async (event) => {
 
       // Conversion: reached quote by pipeline; reached docs = doc fee actually paid
       const rank = pipelineRank(r.pipeline_name);
-      if (rank >= QUOTE_RANK) tally[rep].reachedQuote++;
-      if (docFeeDealIds.has(String(r.deal_id))) tally[rep].reachedDocs++;
+      const reachedQuote = rank >= QUOTE_RANK;
+      const paidDocFee = docFeeDealIds.has(String(r.deal_id));
+      if (reachedQuote) tally[rep].reachedQuote++;
+      if (paidDocFee) tally[rep].reachedDocs++;
+      tally[rep].reportList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls, reachedQuote, paidDocFee });
     }
 
     // Build per-CSR bonus result
@@ -195,6 +200,13 @@ exports.handler = async (event) => {
         bonus: Math.max(0, reviewCount - 10) * 5 + bbbReviews * 50,
         meetsStandard: reviewCount >= 10
       };
+      const reviewDetails = myReviews.map(r => ({
+        reviewer: r.reviewer_name || 'Anonymous',
+        rating: r.rating || null,
+        location: r.location_name || '',
+        date: r.review_date || null,
+        bbb: (r.location_name || '').toLowerCase().includes('bbb')
+      }));
 
       csrs[name] = {
         month,
@@ -208,6 +220,11 @@ exports.handler = async (event) => {
           totalDeals: ops[name].allDeals,
           newThisMonth: ops[name].newThisMonth,
           byPipeline: ops[name].byPipeline
+        },
+        details: {
+          reports: t.reportList,
+          deals: ops[name].deals,
+          reviews: reviewDetails
         },
         excluded: { outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
         basePay: BASE_PAY
