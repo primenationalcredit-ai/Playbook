@@ -32,6 +32,20 @@ function computeReportBonus(idiqCount, totalReports) {
 // ---- Base pay (config) ----
 const BASE_PAY = { month1: 1000, ongoing: 1280 };
 
+// ---- Conversion Bonus rules ----
+// Pipeline progression order. A report "reached quote" at Quoted 2.0+, "reached docs" at SOLD+.
+const PIPELINE_RANK = { 'new leads': 1, 'reports': 2, 'quoted 2.0': 3, 'sold': 4, 'c.r.s.': 5, 'additional c.r.s.': 6 };
+const QUOTE_RANK = 3;   // Quoted 2.0
+const DOCS_RANK = 4;    // SOLD (Agreement SENT)
+const CONVERSION_BONUS = 50;
+const RPTS_TO_QUOTE_TARGET = 0.50;
+const QUOTE_TO_DOCS_TARGET = 0.40;
+function pipelineRank(name) { return PIPELINE_RANK[(name || '').trim().toLowerCase()] || 0; }
+
+// ---- Spotlight ----
+const SPOTLIGHT_TOP_CONVERTER = 50;   // highest IDIQ enrollment rate among qualified CSRs
+const SPOTLIGHT_ALL_STAR = 100;       // manual award
+
 async function supaGet(table, query) {
   // Paginate past the 1000-row cap
   const out = [];
@@ -85,7 +99,7 @@ exports.handler = async (event) => {
 
     // Per-CSR tallies for the requested month
     const tally = {};
-    for (const name of CSR_STAFF) tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, noAm: 0, outOfMonth: 0, gatedOut: 0 };
+    for (const name of CSR_STAFF) tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, noAm: 0, outOfMonth: 0, gatedOut: 0 };
 
     // Debug: what the data actually looks like
     const msSeen = {};            // distinct monitoring_site -> count
@@ -108,6 +122,11 @@ exports.handler = async (event) => {
 
       tally[rep][cls]++;
       tally[rep].total++;
+
+      // Conversion: how far this month's report progressed (by current pipeline)
+      const rank = pipelineRank(r.pipeline_name);
+      if (rank >= QUOTE_RANK) tally[rep].reachedQuote++;
+      if (rank >= DOCS_RANK) tally[rep].reachedDocs++;
     }
 
     // Build per-CSR bonus result
@@ -115,17 +134,51 @@ exports.handler = async (event) => {
     for (const name of CSR_STAFF) {
       const t = tally[name];
       const report = computeReportBonus(t.idiq, t.total);
+
+      // Conversion bonus
+      const rptsToQuoteRate = t.total > 0 ? t.reachedQuote / t.total : 0;
+      const quoteToDocsRate = t.reachedQuote > 0 ? t.reachedDocs / t.reachedQuote : 0;
+      const conversionQualified = rptsToQuoteRate >= RPTS_TO_QUOTE_TARGET && quoteToDocsRate >= QUOTE_TO_DOCS_TARGET;
+      const conversion = {
+        qualified: conversionQualified,
+        bonus: conversionQualified ? CONVERSION_BONUS : 0,
+        reachedQuote: t.reachedQuote,
+        reachedDocs: t.reachedDocs,
+        rptsToQuoteRate: Math.round(rptsToQuoteRate * 100),
+        quoteToDocsRate: Math.round(quoteToDocsRate * 100)
+      };
+
+      // IDIQ enrollment rate (for spotlight selection)
+      const idiqRate = t.total > 0 ? t.idiq / t.total : 0;
+
       csrs[name] = {
         month,
         reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total },
         reportBonus: report,
+        conversionBonus: conversion,
+        reviewBonus: null,   // pending a monthly per-CSR review source + BBB flag
+        spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
+        idiqRate: Math.round(idiqRate * 100),
         excluded: { noAccountManager: t.noAm, outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
-        // placeholders until gate is confirmed and conversion/review sources wired
-        conversionBonus: null,
-        reviewBonus: null,
-        spotlight: null,
         basePay: BASE_PAY
       };
+    }
+
+    // Spotlight: IDIQ Top Converter = highest IDIQ enrollment rate among qualified CSRs (>=50 total)
+    let topConverter = null, topRate = -1;
+    for (const name of CSR_STAFF) {
+      const c = csrs[name];
+      if (c.reportBonus.qualified && c.idiqRate > topRate) { topRate = c.idiqRate; topConverter = name; }
+    }
+    if (topConverter) {
+      csrs[topConverter].spotlight.idiqTopConverter = true;
+      csrs[topConverter].spotlight.bonus += SPOTLIGHT_TOP_CONVERTER;
+    }
+
+    // Total each CSR's bonus
+    for (const name of CSR_STAFF) {
+      const c = csrs[name];
+      c.totalBonus = (c.reportBonus.bonus || 0) + (c.conversionBonus.bonus || 0) + (c.spotlight.bonus || 0);
     }
 
     // Sort debug maps into arrays (desc by count)

@@ -81,6 +81,7 @@ export default function CSRBonus() {
                 <th className="text-right font-medium px-4 py-2">Total</th>
                 <th className="text-right font-medium px-4 py-2">Qualified</th>
                 <th className="text-right font-medium px-4 py-2">Report Bonus</th>
+                <th className="text-right font-medium px-4 py-2">Total Bonus</th>
               </tr>
             </thead>
             <tbody>
@@ -95,6 +96,7 @@ export default function CSRBonus() {
                     <td className="px-4 py-2 text-right">{r.reports.total}</td>
                     <td className="px-4 py-2 text-right">{r.reportBonus.qualified ? '✓' : '—'}</td>
                     <td className="px-4 py-2 text-right font-semibold text-emerald-600">{fmt(r.reportBonus.bonus)}</td>
+                    <td className="px-4 py-2 text-right font-bold text-emerald-700">{fmt(r.totalBonus)}</td>
                   </tr>
                 );
               })}
@@ -106,7 +108,13 @@ export default function CSRBonus() {
       {/* Selected CSR detail */}
       {c ? (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-800">{myName} — {month}</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-800">{myName} — {month}</h2>
+            <div className="text-right">
+              <div className="text-xs text-slate-500">Total Bonus</div>
+              <div className="text-2xl font-bold text-emerald-600">{fmt(c.totalBonus)}</div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="IDIQ Reports" value={c.reports.idiq} sub="pays per report past #35" accent="text-indigo-600" />
@@ -133,17 +141,33 @@ export default function CSRBonus() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="bg-white rounded-xl border border-dashed border-slate-300 p-4">
-              <div className="font-medium text-slate-700">Conversion Bonus</div>
-              <div className="text-sm text-slate-400 mt-1">$50 — 50% reports→quote and 40% quoted→docs. Coming soon.</div>
+            <div className={`bg-white rounded-xl border p-4 ${c.conversionBonus?.qualified ? 'border-emerald-200' : 'border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-slate-700">Conversion Bonus</div>
+                <div className={`font-bold ${c.conversionBonus?.qualified ? 'text-emerald-600' : 'text-slate-400'}`}>{fmt(c.conversionBonus?.bonus || 0)}</div>
+              </div>
+              <div className="text-xs text-slate-500 mt-2">
+                Reports → Quote: <span className={c.conversionBonus?.rptsToQuoteRate >= 50 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>{c.conversionBonus?.rptsToQuoteRate ?? 0}%</span> <span className="text-slate-400">(need 50%)</span>
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                Quoted → Docs: <span className={c.conversionBonus?.quoteToDocsRate >= 40 ? 'text-emerald-600 font-medium' : 'text-slate-600'}>{c.conversionBonus?.quoteToDocsRate ?? 0}%</span> <span className="text-slate-400">(need 40%)</span>
+              </div>
             </div>
+
+            <div className={`bg-white rounded-xl border p-4 ${c.spotlight?.idiqTopConverter ? 'border-amber-300' : 'border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-slate-700">Spotlight</div>
+                <div className={`font-bold ${c.spotlight?.bonus ? 'text-amber-600' : 'text-slate-400'}`}>{fmt(c.spotlight?.bonus || 0)}</div>
+              </div>
+              <div className="text-xs text-slate-500 mt-2">
+                {c.spotlight?.idiqTopConverter ? '🏆 IDIQ Top Converter (+$50)' : `IDIQ Top Converter — ${c.idiqRate ?? 0}% IDIQ rate`}
+              </div>
+              <div className="text-xs text-slate-400 mt-1">All-Star CSR (+$100) — manual award</div>
+            </div>
+
             <div className="bg-white rounded-xl border border-dashed border-slate-300 p-4">
               <div className="font-medium text-slate-700">Review Bonus</div>
-              <div className="text-sm text-slate-400 mt-1">+$5 per review past 10, +$50 per public BBB review. Coming soon.</div>
-            </div>
-            <div className="bg-white rounded-xl border border-dashed border-slate-300 p-4">
-              <div className="font-medium text-slate-700">Spotlight</div>
-              <div className="text-sm text-slate-400 mt-1">IDIQ Top Converter +$50, All-Star CSR +$100. Coming soon.</div>
+              <div className="text-sm text-slate-400 mt-1">+$5 per review past 10, +$50 per public BBB review. Needs a monthly per-CSR review source.</div>
             </div>
           </div>
 
