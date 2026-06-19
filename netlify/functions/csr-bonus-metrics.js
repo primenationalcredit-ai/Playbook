@@ -99,7 +99,7 @@ exports.handler = async (event) => {
 
     // Per-CSR tallies for the requested month
     const tally = {};
-    for (const name of CSR_STAFF) tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, noAm: 0, outOfMonth: 0, gatedOut: 0 };
+    for (const name of CSR_STAFF) tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0 };
 
     // Debug: what the data actually looks like
     const msSeen = {};            // distinct monitoring_site -> count
@@ -114,11 +114,10 @@ exports.handler = async (event) => {
       const cls = classify(ms);
       if (!cls) continue;                       // no report value -> not a report
       const rep = r.call_center_rep_name;
-      if (!rep || !tally[rep]) continue;        // only known CSRs
+      if (!rep || !tally[rep]) continue;        // must have a Call Center Rep who is a known CSR
 
       if (monthOf(r) !== month) { tally[rep].outOfMonth++; continue; }
-      if (!r.account_manager_name) { tally[rep].noAm++; continue; }   // AM required for credit
-      if (!gatePass(r)) { tally[rep].gatedOut++; continue; }          // must be in early pipeline/stage
+      if (!gatePass(r)) { tally[rep].gatedOut++; continue; }          // must be in an early pipeline at pull-time
 
       tally[rep][cls]++;
       tally[rep].total++;
@@ -159,7 +158,7 @@ exports.handler = async (event) => {
         reviewBonus: null,   // pending a monthly per-CSR review source + BBB flag
         spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
         idiqRate: Math.round(idiqRate * 100),
-        excluded: { noAccountManager: t.noAm, outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
+        excluded: { outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
         basePay: BASE_PAY
       };
     }

@@ -133,9 +133,9 @@ export default function CSRBonus() {
                 ? `${c.reportBonus.paidReports} paid IDIQ reports (past #35) × ${fmt(c.reportBonus.rate)} per report`
                 : `Not qualified yet — needs 50 total reports this month`}
             </div>
-            {(c.excluded.noAccountManager + c.excluded.gatedOut + c.excluded.outOfMonth) > 0 && (
+            {(c.excluded.gatedOut + c.excluded.outOfMonth) > 0 && (
               <div className="text-xs text-slate-400 mt-3 border-t border-slate-100 pt-2">
-                Not counted: {c.excluded.noAccountManager} no account manager · {c.excluded.gatedOut} outside New Leads/Reports/Quoted · {c.excluded.outOfMonth} dated outside this month
+                Not counted: {c.excluded.gatedOut} outside New Leads/Reports/Quoted 2.0 · {c.excluded.outOfMonth} dated outside this month
               </div>
             )}
           </div>
