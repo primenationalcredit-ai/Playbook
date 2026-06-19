@@ -458,6 +458,7 @@ exports.handler = async (event) => {
         const byName = !byId && docFeeNames.has(norm(dealMeta[id]?.name));
         return {
           name: dealMeta[id]?.name || `Deal #${id}`,
+          dealId: id,
           amount: dealMeta[id]?.value || 0,
           paidDocFee: byId || byName,
           matchBy: byId ? 'deal id' : (byName ? 'name (no deal id on invoice)' : null),

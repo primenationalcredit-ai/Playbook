@@ -6,6 +6,8 @@ import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, Me
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supaHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+const DEAL_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/deal/${id}`;
+const PERSON_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/person/${id}`;
 
 function Tip({ text, children }) {
   const [show, setShow] = React.useState(false);
@@ -602,7 +604,7 @@ export default function AMBonus() {
                     <div className="mt-1 max-h-48 overflow-y-auto">
                       {currentAMMetrics.stalledClients.map((c, i) => (
                         <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100 gap-2">
-                          <span className="text-slate-700">{c.name}</span>
+                          <span className="text-slate-700">{c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name}</span>
                           <span className="text-red-500 text-right">{c.reason || (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd} days past round end` : '')}</span>
                         </div>
                       ))}
@@ -629,7 +631,7 @@ export default function AMBonus() {
                     <div className="mt-1 max-h-48 overflow-y-auto">
                       {currentAMMetrics.roundDeals.map((d, i) => (
                         <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100">
-                          <span className="text-slate-700">{d.client} <span className="text-slate-400">#{d.deal_id}</span></span>
+                          <span className="text-slate-700">{d.client} {d.deal_id && <a href={DEAL_URL(d.deal_id)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">#{d.deal_id} ↗</a>}</span>
                           <span className="text-slate-500">{fmt(d.amount)} — {d.date}</span>
                         </div>
                       ))}

@@ -14,6 +14,7 @@ const fmtDate = (d) => {
   if (parts.length === 3) return `${parts[1]}-${parts[2]}-${parts[0].slice(2)}`;
   return d;
 };
+const DEAL_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/deal/${id}`;
 
 // Slide-out panel for client details
 function ClientPanel({ title, items, columns, onClose, payments }) {
@@ -34,7 +35,11 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
             items.map((item, i) => (
               <div key={i} className="bg-slate-50 rounded-lg p-3 border hover:border-blue-200">
                 <div className="flex justify-between items-start mb-1">
-                  <p className="font-medium text-slate-800">{item.name}</p>
+                  {item.dealId ? (
+                    <a href={DEAL_URL(item.dealId)} target="_blank" rel="noreferrer" className="font-medium text-blue-600 hover:underline">{item.name} ↗</a>
+                  ) : (
+                    <p className="font-medium text-slate-800">{item.name}</p>
+                  )}
                   {item.amount !== undefined && <p className="font-bold text-green-600">{fmt(item.amount)}</p>}
                   {item.totalPaid !== undefined && <p className="font-bold text-green-600">{fmt(item.totalPaid)}</p>}
                 </div>
@@ -656,7 +661,7 @@ export default function ConsultantBonus() {
           {expandedSection === 'close' && c.closeDetail && (
             <ClientPanel
               title={`Closing Rate — ${c.docsPaid} of ${c.consultCount} quoted paid a doc fee = ${c.closingPct}%`}
-              items={c.closeDetail.map(d => ({ name: d.matchBy === 'name (no deal id on invoice)' ? `${d.name}  ⚠ matched by name` : d.name, amount: d.amount, type: d.paidDocFee ? 'doc_fee' : 'no_doc' }))}
+              items={c.closeDetail.map(d => ({ name: d.matchBy === 'name (no deal id on invoice)' ? `${d.name}  ⚠ matched by name` : d.name, dealId: d.dealId, amount: d.amount, type: d.paidDocFee ? 'doc_fee' : 'no_doc' }))}
               onClose={() => setExpandedSection(null)}
             />
           )}
