@@ -111,11 +111,15 @@ exports.handler = async (event) => {
       }
     } catch(e) { console.log('Consults error:', e.message); }
 
-    // Build set of deal IDs that have doc_fee payments in Zoho
+    // Build set of deal IDs that have doc_fee payments in Zoho, plus a name index
+    // (some Zoho invoices have no deal ID on them, so we fall back to client name)
     const dealIdsWithDocFee = new Set();
+    const docFeeNames = new Set();
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     for (const p of allPayments) {
-      if (p.payment_type === 'doc_fee' && p.pipedrive_deal_id) {
-        dealIdsWithDocFee.add(p.pipedrive_deal_id);
+      if (p.payment_type === 'doc_fee') {
+        if (p.pipedrive_deal_id) dealIdsWithDocFee.add(p.pipedrive_deal_id);
+        if (p.client_name) docFeeNames.add(norm(p.client_name));
       }
     }
 
@@ -421,15 +425,21 @@ exports.handler = async (event) => {
       });
       const myConsultCount = myConsultData.reduce((sum, [_, v]) => sum + v.total, 0);
       const myConsultDealIds = myConsultData.flatMap(([_, v]) => v.dealIds);
-      const myDocsPaid = myConsultDealIds.filter(id => dealIdsWithDocFee.has(id)).length;
+      const isPaid = (id) => dealIdsWithDocFee.has(id) || docFeeNames.has(norm(dealMeta[id]?.name));
+      const myDocsPaid = myConsultDealIds.filter(isPaid).length;
       const closingPct = myConsultCount > 0 ? Math.round((myDocsPaid / myConsultCount) * 100) : 0;
 
-      // Per-deal breakdown behind the closing % — which quoted deals paid a doc fee
-      const closeDetail = myConsultDealIds.map(id => ({
-        name: dealMeta[id]?.name || `Deal #${id}`,
-        amount: dealMeta[id]?.value || 0,
-        paidDocFee: dealIdsWithDocFee.has(id),
-      })).sort((a, b) => (b.paidDocFee === a.paidDocFee ? a.name.localeCompare(b.name) : (b.paidDocFee ? 1 : -1)));
+      // Per-deal breakdown behind the closing % — which quoted deals paid a doc fee, and how they matched
+      const closeDetail = myConsultDealIds.map(id => {
+        const byId = dealIdsWithDocFee.has(id);
+        const byName = !byId && docFeeNames.has(norm(dealMeta[id]?.name));
+        return {
+          name: dealMeta[id]?.name || `Deal #${id}`,
+          amount: dealMeta[id]?.value || 0,
+          paidDocFee: byId || byName,
+          matchBy: byId ? 'deal id' : (byName ? 'name (no deal id on invoice)' : null),
+        };
+      }).sort((a, b) => (b.paidDocFee === a.paidDocFee ? a.name.localeCompare(b.name) : (b.paidDocFee ? 1 : -1)));
 
       // === PAY-PAST-DOC-FEE RATE ===
       // Of clients who paid doc fee THIS month, how many also paid partial/final?

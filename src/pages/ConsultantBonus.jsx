@@ -644,7 +644,7 @@ export default function ConsultantBonus() {
           {expandedSection === 'close' && c.closeDetail && (
             <ClientPanel
               title={`Closing Rate — ${c.docsPaid} of ${c.consultCount} quoted paid a doc fee = ${c.closingPct}%`}
-              items={c.closeDetail.map(d => ({ name: d.name, amount: d.amount, type: d.paidDocFee ? 'doc_fee' : 'no_doc' }))}
+              items={c.closeDetail.map(d => ({ name: d.matchBy === 'name (no deal id on invoice)' ? `${d.name}  ⚠ matched by name` : d.name, amount: d.amount, type: d.paidDocFee ? 'doc_fee' : 'no_doc' }))}
               onClose={() => setExpandedSection(null)}
             />
           )}
