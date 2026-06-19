@@ -5,6 +5,25 @@
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY || '328f4866f7d86c2bfbee1ed8b5c1895a1f6444d0';
+const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepairusa';
+const MOVED_TO_QUOTED_FILTER = 523848; // "deals moved to Quoted 2.0 this month"
+
+// Fetch the set of deal IDs returned by a Pipedrive filter.
+async function fetchFilterDealIds(filterId) {
+  const ids = new Set();
+  let start = 0;
+  for (let i = 0; i < 20; i++) {
+    const url = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?api_token=${PIPEDRIVE_API_KEY}&filter_id=${filterId}&start=${start}&limit=500`;
+    const r = await fetch(url);
+    if (!r.ok) break;
+    const d = await r.json();
+    for (const deal of (d.data || [])) ids.add(String(deal.id));
+    if (!(d.additional_data && d.additional_data.pagination && d.additional_data.pagination.more_items_in_collection)) break;
+    start += 500;
+  }
+  return ids;
+}
 
 const CSR_STAFF = ['Kenneth Larios', 'Vic Baltodano', 'Reni', 'Araceli Carrion Garcia', 'Jenifer Venegas', 'CJ'];
 
@@ -120,6 +139,11 @@ exports.handler = async (event) => {
       } catch (e) {}
     }
 
+    // Reports-to-Quoted: deals that moved to Quoted 2.0 this month (Pipedrive filter). Falls back to current pipeline if unavailable.
+    let movedToQuoted = new Set();
+    try { movedToQuoted = await fetchFilterDealIds(MOVED_TO_QUOTED_FILTER); } catch (e) {}
+    const useQuotedFilter = movedToQuoted.size > 0;
+
     // Per-CSR tallies for the requested month
     const tally = {};
     const ops = {};
@@ -171,9 +195,9 @@ exports.handler = async (event) => {
       tally[rep][cls]++;
       tally[rep].total++;
 
-      // Conversion: reached quote by pipeline; reached docs = doc fee actually paid
+      // Conversion: reached quote = moved to Quoted 2.0 this month (filter), else current pipeline; reached docs = doc fee paid
       const rank = pipelineRank(r.pipeline_name);
-      const reachedQuote = rank >= QUOTE_RANK;
+      const reachedQuote = useQuotedFilter ? movedToQuoted.has(String(r.deal_id)) : (rank >= QUOTE_RANK);
       const paidDocFee = docFeeDealIds.has(String(r.deal_id));
       if (reachedQuote) tally[rep].reachedQuote++;
       if (paidDocFee) tally[rep].reachedDocs++;
@@ -321,6 +345,9 @@ exports.handler = async (event) => {
         csrs,
         debug: {
           totalDeals: rows.length,
+          movedToQuotedFilter: MOVED_TO_QUOTED_FILTER,
+          movedToQuotedCount: movedToQuoted.size,
+          usingQuotedFilter: useQuotedFilter,
           distinctMonitoringSites,
           distinctStages
         }
