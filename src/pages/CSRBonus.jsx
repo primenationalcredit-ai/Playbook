@@ -96,7 +96,7 @@ export default function CSRBonus() {
   const openMonthDeals = (label, filterFn) => {
     const rows = (c?.details?.monthDeals || []).filter(filterFn).map((d) => ({
       title: d.title,
-      sub: [d.pipeline, d.stage, d.docFee ? 'doc fee collected' : null].filter(Boolean).join(' · '),
+      sub: [d.created ? `created ${String(d.created).slice(0, 10)}` : null, d.pipeline, d.stage, d.docFee ? 'doc fee collected' : null].filter(Boolean).join(' · '),
       href: DEAL_URL(d.dealId),
       tag: d.docFee ? 'Doc Fee' : ''
     }));

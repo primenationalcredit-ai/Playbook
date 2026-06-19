@@ -158,7 +158,7 @@ exports.handler = async (event) => {
         if (dealRank >= REPORTS_RANK) ops[rep].reachedReports++;
         if (dealRank >= QUOTE_RANK) ops[rep].reachedQuoted++;
         if (hasDocFee) ops[rep].docFeeCollected++;
-        ops[rep].monthDealList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, rank: dealRank, docFee: hasDocFee });
+        ops[rep].monthDealList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, rank: dealRank, docFee: hasDocFee, created: r.deal_created_at || null });
       }
 
       if (!cls) continue;                       // no report value -> not a report
