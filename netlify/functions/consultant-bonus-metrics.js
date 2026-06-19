@@ -58,12 +58,17 @@ exports.handler = async (event) => {
     const targetMonth = params.month || currentMonth;
     const monthLabel = new Date(targetMonth + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
     const monthStart = `${targetMonth}-01`;
+    // Only read a rolling window of history (not the full multi-year table).
+    // Covers current-month sales plus the look-backs the bonus logic needs (90-day reactivation, prior-month qualified docs).
+    const [wy, wm] = targetMonth.split('-').map(Number);
+    const wd = new Date(wy, wm - 1 - 12, 1);
+    const windowStart = `${wd.getFullYear()}-${String(wd.getMonth() + 1).padStart(2, '0')}-01`;
 
     // Get consultants
     const consultants = await supaGet('users', 'department=eq.credit_consultants&select=id,name,email,is_va');
 
-    // Get ALL payments (all months) for cross-referencing client journeys
-    const allPayments = await supaGet('consultant_payments', 'select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org');
+    // Get payments for the rolling window (paged past the 1000-row cap) for cross-referencing client journeys
+    const allPayments = await supaGet('consultant_payments', `payment_date=gte.${windowStart}&select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org`);
 
     // Build a master client map: deal_id → all payment types ever
     const masterClientMap = {};
