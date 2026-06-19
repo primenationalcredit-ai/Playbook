@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import ConsultantBonus from './ConsultantBonus';
 import AMBonus from './AMBonus';
 import CSRBonus from './CSRBonus';
+import CreditTeamBonus from './CreditTeamBonus';
 
 // One tracker for every role. Admins/leadership see all tabs; everyone else sees only their own
 // department's view, which each child component already locks to the current user.
@@ -10,6 +11,7 @@ const ROLE_TABS = [
   { key: 'consultants', label: 'Consultants', dept: 'credit_consultants', Comp: ConsultantBonus },
   { key: 'account_managers', label: 'Account Managers', dept: 'account_managers', Comp: AMBonus },
   { key: 'csrs', label: 'CSRs', dept: 'customer_support', Comp: CSRBonus },
+  { key: 'credit_team', label: 'Credit Team', dept: 'credit_team', Comp: CreditTeamBonus },
 ];
 
 export default function BonusTracker() {
