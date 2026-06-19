@@ -8,10 +8,9 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const CSR_STAFF = ['Kenneth Larios', 'Vic Baltodano', 'Reni', 'Araceli Carrion Garcia', 'Jenifer Venegas', 'CJ'];
 
-// ---- CONFIG: which pipeline/stage names count a report (early-stage only, before later CRS rounds) ----
-// Matched case-insensitively (substring) against BOTH pipeline_name and stage_name.
-// Adjust to the real Pipedrive names once confirmed from the debug block.
-const REPORT_STAGE_GATE = ['new leads', 'reports', 'quoted'];
+// ---- CONFIG: stages that count a report (early stages, before later CRS rounds) ----
+// Matched (case-insensitive, exact) against the stage the deal was in WHEN the monitoring site was set.
+const REPORT_STAGE_GATE = ['new leads', 'reports', 'quoted 2.0'];
 
 // ---- Report Bonus rules ----
 const FIRST_PAID_REPORT = 35;        // first 35 IDIQ reports don't pay
@@ -57,8 +56,9 @@ function monthOf(row) {
   return d ? String(d).slice(0, 7) : null;
 }
 function gatePass(row) {
-  const hay = `${(row.pipeline_name || '').toLowerCase()} | ${(row.stage_name || '').toLowerCase()}`;
-  return REPORT_STAGE_GATE.some(g => hay.includes(g));
+  // Prefer the stage recorded when the monitoring site was set; fall back to current stage.
+  const stage = (row.monitoring_site_set_stage || row.stage_name || '').trim().toLowerCase();
+  return REPORT_STAGE_GATE.includes(stage);
 }
 function classify(ms) {
   const s = (ms || '').toLowerCase();
@@ -81,7 +81,7 @@ exports.handler = async (event) => {
     const now = new Date();
     const month = params.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const rows = await supaGet('cs_deals', 'select=deal_id,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,deal_created_at,pipeline_name,stage_name');
+    const rows = await supaGet('cs_deals', 'select=deal_id,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,deal_created_at,pipeline_name,stage_name');
 
     // Per-CSR tallies for the requested month
     const tally = {};

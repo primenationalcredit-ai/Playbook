@@ -147,7 +147,10 @@ exports.handler = async (event, context) => {
         synced_at: new Date().toISOString()
       };
       // Only set the timestamp when the value actually changed, so we don't overwrite the original set-date on later updates.
-      if (monitoringSiteChanged) dealRecord.monitoring_site_set_at = new Date().toISOString();
+      if (monitoringSiteChanged) {
+        dealRecord.monitoring_site_set_at = new Date().toISOString();
+        dealRecord.monitoring_site_set_stage = maps.stage[String(deal.stage_id)] || null; // stage at the moment of the pull
+      }
 
       const upsertResponse = await fetch(
         `${SUPABASE_URL}/rest/v1/cs_deals?on_conflict=deal_id`,
