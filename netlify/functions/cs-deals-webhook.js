@@ -9,6 +9,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Call Center Rep field on Person
 const CALL_CENTER_REP_FIELD = 'fee42f0cb3d515239d602de62533887bfd58d384';
+const MONITORING_SITE_FIELD = 'b8676d1cd8672d9a4214867037af2c94d8367c5e';
 
 // CS-relevant pipelines
 const CS_PIPELINES = [21, 37, 42, 45, 7];
@@ -84,6 +85,8 @@ exports.handler = async (event, context) => {
       }
 
       // Upsert deal into Supabase
+      const msRaw = deal[MONITORING_SITE_FIELD];
+      const monitoringSite = msRaw && typeof msRaw === 'object' ? (msRaw.name || msRaw.value || null) : (msRaw || null);
       const dealRecord = {
         deal_id: deal.id,
         person_id: personId || null,
@@ -96,6 +99,7 @@ exports.handler = async (event, context) => {
         deal_value: deal.value || 0,
         call_center_rep_id: callCenterRepId,
         call_center_rep_name: callCenterRepName,
+        monitoring_site: monitoringSite,
         deal_created_at: deal.add_time || null,
         deal_updated_at: deal.update_time || null,
         synced_at: new Date().toISOString()

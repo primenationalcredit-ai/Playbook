@@ -12,6 +12,8 @@ const CS_DEALS_FILTER = 136445;
 
 // Call Center Rep field on Person
 const CALL_CENTER_REP_FIELD = 'fee42f0cb3d515239d602de62533887bfd58d384';
+// Monitoring Site (1) field on Deal — distinguishes IDIQ vs SmartCredit reports
+const MONITORING_SITE_FIELD = 'b8676d1cd8672d9a4214867037af2c94d8367c5e';
 
 exports.handler = async (event, context) => {
   const headers = {
@@ -98,6 +100,10 @@ exports.handler = async (event, context) => {
         }
       }
 
+      // Monitoring Site (1) — value can be a string or an option object
+      const msRaw = deal[MONITORING_SITE_FIELD];
+      const monitoringSite = msRaw && typeof msRaw === 'object' ? (msRaw.name || msRaw.value || null) : (msRaw || null);
+
       // Prepare deal record
       dealsToInsert.push({
         deal_id: deal.id,
@@ -111,6 +117,7 @@ exports.handler = async (event, context) => {
         deal_value: deal.value || 0,
         call_center_rep_id: callCenterRepId,
         call_center_rep_name: callCenterRepName,
+        monitoring_site: monitoringSite,
         deal_created_at: deal.add_time || null,
         deal_updated_at: deal.update_time || null,
         synced_at: new Date().toISOString()
