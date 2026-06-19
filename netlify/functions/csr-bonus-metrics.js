@@ -51,7 +51,9 @@ async function supaGet(table, query) {
 }
 
 function monthOf(row) {
-  const d = row.monitoring_site_set_at || row.deal_created_at || null;
+  // Date a report strictly by when the monitoring site was set (when it was pulled).
+  // Backfilled deals have no set-date and intentionally do not count — tracking starts fresh.
+  const d = row.monitoring_site_set_at || null;
   return d ? String(d).slice(0, 7) : null;
 }
 function gatePass(row) {

@@ -12,6 +12,31 @@ const CALL_CENTER_REP_FIELD = 'fee42f0cb3d515239d602de62533887bfd58d384';
 const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const MONITORING_SITE_FIELD = 'b8676d1cd8672d9a4214867037af2c94d8367c5e';
 
+// Cached id->name maps (monitoring-site options, stages, pipelines). Refreshed hourly on warm invocations.
+let _maps = null, _mapsAt = 0;
+async function loadMaps(baseUrl) {
+  if (_maps && Date.now() - _mapsAt < 3600000) return _maps;
+  const maps = { ms: {}, stage: {}, pipeline: {} };
+  try {
+    const r = await fetch(`${baseUrl}/dealFields?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
+    if (r.ok) {
+      const f = await r.json();
+      const field = (f.data || []).find(x => x.key === MONITORING_SITE_FIELD);
+      for (const opt of (field && field.options ? field.options : [])) maps.ms[String(opt.id)] = opt.label;
+    }
+  } catch (e) {}
+  try {
+    const r = await fetch(`${baseUrl}/stages?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
+    if (r.ok) { const s = await r.json(); for (const st of (s.data || [])) maps.stage[String(st.id)] = st.name; }
+  } catch (e) {}
+  try {
+    const r = await fetch(`${baseUrl}/pipelines?api_token=${PIPEDRIVE_API_KEY}`);
+    if (r.ok) { const p = await r.json(); for (const pl of (p.data || [])) maps.pipeline[String(pl.id)] = pl.name; }
+  } catch (e) {}
+  _maps = maps; _mapsAt = Date.now();
+  return maps;
+}
+
 // CS-relevant pipelines
 const CS_PIPELINES = [21, 37, 42, 45, 7];
 
@@ -93,20 +118,23 @@ exports.handler = async (event, context) => {
       }
 
       // Upsert deal into Supabase
+      const maps = await loadMaps(baseUrl);
       const msRaw = deal[MONITORING_SITE_FIELD];
-      const monitoringSite = msRaw && typeof msRaw === 'object' ? (msRaw.name || msRaw.value || null) : (msRaw || null);
-      // Stamp the date the monitoring site value was set/changed (this is when the report was pulled).
+      const msId = msRaw && typeof msRaw === 'object' ? (msRaw.id || msRaw.value) : msRaw;
+      const monitoringSite = (msId !== null && msId !== undefined && msId !== '')
+        ? (maps.ms[String(msId)] || String(msId)) : null;
+      // Detect a real change by comparing the underlying option id (this is when the report was pulled).
       const prevMsRaw = previous ? previous[MONITORING_SITE_FIELD] : null;
-      const prevMonitoringSite = prevMsRaw && typeof prevMsRaw === 'object' ? (prevMsRaw.name || prevMsRaw.value || null) : (prevMsRaw || null);
-      const monitoringSiteChanged = monitoringSite && monitoringSite !== prevMonitoringSite;
+      const prevMsId = prevMsRaw && typeof prevMsRaw === 'object' ? (prevMsRaw.id || prevMsRaw.value) : prevMsRaw;
+      const monitoringSiteChanged = (msId !== null && msId !== undefined && msId !== '') && String(msId) !== String(prevMsId ?? '');
       const dealRecord = {
         deal_id: deal.id,
         person_id: personId || null,
         deal_title: deal.title || null,
         pipeline_id: deal.pipeline_id || null,
-        pipeline_name: deal.pipeline?.name || null,
+        pipeline_name: maps.pipeline[String(deal.pipeline_id)] || null,
         stage_id: deal.stage_id || null,
-        stage_name: deal.stage?.name || null,
+        stage_name: maps.stage[String(deal.stage_id)] || null,
         deal_status: deal.status || 'open',
         deal_value: deal.value || 0,
         call_center_rep_id: callCenterRepId,

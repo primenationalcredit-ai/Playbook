@@ -17,6 +17,28 @@ const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 // Monitoring Site (1) field on Deal — distinguishes IDIQ vs SmartCredit reports
 const MONITORING_SITE_FIELD = 'b8676d1cd8672d9a4214867037af2c94d8367c5e';
 
+// Build id->name maps for the monitoring-site options, stages, and pipelines (deal lists only return IDs).
+async function loadMaps(baseUrl) {
+  const maps = { ms: {}, stage: {}, pipeline: {} };
+  try {
+    const r = await fetch(`${baseUrl}/dealFields?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
+    if (r.ok) {
+      const f = await r.json();
+      const field = (f.data || []).find(x => x.key === MONITORING_SITE_FIELD);
+      for (const opt of (field && field.options ? field.options : [])) maps.ms[String(opt.id)] = opt.label;
+    }
+  } catch (e) {}
+  try {
+    const r = await fetch(`${baseUrl}/stages?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
+    if (r.ok) { const s = await r.json(); for (const st of (s.data || [])) maps.stage[String(st.id)] = st.name; }
+  } catch (e) {}
+  try {
+    const r = await fetch(`${baseUrl}/pipelines?api_token=${PIPEDRIVE_API_KEY}`);
+    if (r.ok) { const p = await r.json(); for (const pl of (p.data || [])) maps.pipeline[String(pl.id)] = pl.name; }
+  } catch (e) {}
+  return maps;
+}
+
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -31,6 +53,7 @@ exports.handler = async (event) => {
     const startAt = parseInt(params.start) || 0;
     const PAGE = Math.min(parseInt(params.limit) || 40, 100);
     const baseUrl = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1`;
+    const maps = await loadMaps(baseUrl);
 
     // Fetch ONE page of deals from the filter
     const url = `${baseUrl}/deals?api_token=${PIPEDRIVE_API_KEY}&filter_id=${CS_DEALS_FILTER}&start=${startAt}&limit=${PAGE}`;
@@ -74,18 +97,20 @@ exports.handler = async (event) => {
         }
       }
 
-      // Monitoring Site (1) — value can be a string or an option object
+      // Monitoring Site (1) — resolve the option id to its label
       const msRaw = deal[MONITORING_SITE_FIELD];
-      const monitoringSite = msRaw && typeof msRaw === 'object' ? (msRaw.name || msRaw.value || null) : (msRaw || null);
+      const msId = msRaw && typeof msRaw === 'object' ? (msRaw.id || msRaw.value) : msRaw;
+      const monitoringSite = (msId !== null && msId !== undefined && msId !== '')
+        ? (maps.ms[String(msId)] || String(msId)) : null;
 
       dealsToInsert.push({
         deal_id: deal.id,
         person_id: personId || null,
         deal_title: deal.title || null,
         pipeline_id: deal.pipeline_id || null,
-        pipeline_name: deal.pipeline ? deal.pipeline.name : null,
+        pipeline_name: maps.pipeline[String(deal.pipeline_id)] || null,
         stage_id: deal.stage_id || null,
-        stage_name: deal.stage ? deal.stage.name : null,
+        stage_name: maps.stage[String(deal.stage_id)] || null,
         deal_status: deal.status || 'open',
         deal_value: deal.value || 0,
         call_center_rep_id: callCenterRepId,
