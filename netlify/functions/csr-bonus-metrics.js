@@ -108,6 +108,11 @@ exports.handler = async (event) => {
     const nameToUserId = {};
     for (const u of csrUsers) if (u.name) nameToUserId[u.name.trim().toLowerCase()] = u.id;
 
+    // All-Star CSR award (manual, +$100, one per month) stored in bonus_awards
+    let allStarAwards = [];
+    try { allStarAwards = await supaGet('bonus_awards', `bonus_type=eq.all_star_csr&awarded_month=eq.${month}&select=consultant_name`); } catch (e) {}
+    const allStarSet = new Set(allStarAwards.map(a => (a.consultant_name || '').trim().toLowerCase()));
+
     // Doc fee conversions: which of these CS deals have a paid doc fee (from consultant_payments)
     const dealIds = rows.map(r => r.deal_id).filter(Boolean);
     const docFeeDealIds = new Set();
@@ -220,13 +225,14 @@ exports.handler = async (event) => {
         bbb: (r.location_name || '').toLowerCase().includes('bbb')
       }));
 
+      const isAllStar = allStarSet.has(name.trim().toLowerCase());
       csrs[name] = {
         month,
         reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total },
         reportBonus: report,
         conversionBonus: conversion,
         reviewBonus: review,
-        spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
+        spotlight: { idiqTopConverter: false, allStar: isAllStar, bonus: isAllStar ? SPOTLIGHT_ALL_STAR : 0 },
         idiqRate: Math.round(idiqRate * 100),
         closingRate: t.total ? Math.round((t.reachedDocs / t.total) * 100) : 0,
         kpis: {

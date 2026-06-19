@@ -121,6 +121,18 @@ export default function CSRBonus() {
     setDrill({ label: 'Reviews', rows });
   };
 
+  const currentAllStar = names.find((n) => data.csrs[n]?.spotlight?.allStar) || '';
+  const setAllStar = async (csrName) => {
+    try {
+      await fetch('/.netlify/functions/csr-set-allstar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month, csr: csrName || null, action: csrName ? 'set' : 'clear' })
+      });
+      load(month);
+    } catch (e) { /* no-op */ }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -129,6 +141,13 @@ export default function CSRBonus() {
           <p className="text-sm text-slate-500">{data.payout}</p>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && (
+            <select value={currentAllStar} onChange={(e) => setAllStar(e.target.value)}
+              className="border border-amber-300 bg-amber-50 rounded-lg px-3 py-1.5 text-sm text-amber-800" title="All-Star CSR (+$100), one per month">
+              <option value="">⭐ All-Star: none</option>
+              {names.map((n) => <option key={n} value={n}>⭐ All-Star: {n}</option>)}
+            </select>
+          )}
           {isAdmin && names.length > 0 && (
             <select value={selected || ''} onChange={(e) => setSelected(e.target.value)}
               className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm">
@@ -238,7 +257,7 @@ export default function CSRBonus() {
               <div className="text-xs text-slate-500 mt-2">
                 {c.spotlight?.idiqTopConverter ? '🏆 IDIQ Top Converter (+$50)' : `IDIQ Top Converter — ${c.idiqRate ?? 0}% IDIQ rate`}
               </div>
-              <div className="text-xs text-slate-400 mt-1">All-Star CSR (+$100) — manual award</div>
+              <div className="text-xs text-slate-400 mt-1">{c.spotlight?.allStar ? '⭐ All-Star CSR (+$100)' : 'All-Star CSR (+$100) — manual award'}</div>
             </div>
 
             <div onClick={openReviews} className={`bg-white rounded-xl border p-4 cursor-pointer hover:border-indigo-300 transition ${c.reviewBonus?.bonus ? 'border-emerald-200' : 'border-slate-200'}`}>
