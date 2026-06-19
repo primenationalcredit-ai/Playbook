@@ -88,6 +88,8 @@ function Layout() {
     ...(isInOnboarding ? [{ path: '/onboarding', icon: ClipboardList, label: 'Onboarding', highlight: true }] : []),
     { path: '/playbook', icon: ClipboardList, label: 'My Playbook' },
     { path: '/team', icon: Users, label: 'Team View' },
+    ...((currentUser?.department === 'credit_consultants' || currentUser?.department === 'account_managers' || currentUser?.department === 'customer_support')
+      ? [{ path: '/bonus-tracker', icon: Trophy, label: 'My Bonuses' }] : []),
     { path: '/training', icon: GraduationCap, label: 'Training' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
@@ -115,8 +117,7 @@ function Layout() {
     { path: '/playbook', icon: ClipboardList, label: 'My Playbook' },
     { path: '/quick-links', icon: Link, label: 'Quick Links' },
     { path: '/scorecards', icon: Target, label: 'Score Cards' },
-    { path: '/bonus-tracker', icon: Trophy, label: 'Bonus Tracker' },
-    { path: '/am-bonus-tracker', icon: Award, label: 'AM Bonuses' },
+    { path: '/bonus-tracker', icon: Trophy, label: 'Bonus & Payment Tracker' },
     { path: '/team', icon: Users, label: 'Team View' },
     { path: '/training', icon: GraduationCap, label: 'Training' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },

@@ -42,6 +42,7 @@ import BackupSettings from './pages/BackupSettings';
 import DOOPaysheet from './pages/DOOPaysheet';
 import ConsultantBonus from './pages/ConsultantBonus';
 import AMBonus from './pages/AMBonus';
+import BonusTracker from './pages/BonusTracker';
 import ClientPipeline from './pages/ClientPipeline';
 import EnrollmentSurvey from './pages/EnrollmentSurvey';
 import CompletionSurvey from './pages/CompletionSurvey';
@@ -130,8 +131,8 @@ function App() {
         <Route path="calendar" element={<Calendar />} />
         <Route path="onboarding" element={<Onboarding />} />
         <Route path="scorecards" element={<Scorecards />} />
-        <Route path="bonus-tracker" element={<ConsultantBonus />} />
-        <Route path="am-bonus-tracker" element={<AMBonus />} />
+        <Route path="bonus-tracker" element={<BonusTracker />} />
+        <Route path="am-bonus-tracker" element={<BonusTracker />} />
         <Route path="affiliates" element={<Affiliates />} />
         <Route path="settings" element={<Settings />} />
         <Route path="projects" element={<LeadershipProjects />} />
