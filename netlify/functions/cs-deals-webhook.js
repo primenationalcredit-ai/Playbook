@@ -9,6 +9,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Call Center Rep field on Person
 const CALL_CENTER_REP_FIELD = 'fee42f0cb3d515239d602de62533887bfd58d384';
+const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const MONITORING_SITE_FIELD = 'b8676d1cd8672d9a4214867037af2c94d8367c5e';
 
 // CS-relevant pipelines
@@ -57,6 +58,8 @@ exports.handler = async (event, context) => {
 
       let callCenterRepId = null;
       let callCenterRepName = null;
+      let accountManagerId = null;
+      let accountManagerName = null;
 
       if (personId) {
         try {
@@ -70,6 +73,11 @@ exports.handler = async (event, context) => {
               if (repField) {
                 callCenterRepId = typeof repField === 'object' ? repField.id || repField.value : repField;
                 callCenterRepName = typeof repField === 'object' ? repField.name : repField;
+              }
+              const amField = personData.data[ACCOUNT_MANAGER_FIELD];
+              if (amField) {
+                accountManagerId = typeof amField === 'object' ? amField.id || amField.value : amField;
+                accountManagerName = typeof amField === 'object' ? amField.name : amField;
               }
             }
           }
@@ -87,6 +95,10 @@ exports.handler = async (event, context) => {
       // Upsert deal into Supabase
       const msRaw = deal[MONITORING_SITE_FIELD];
       const monitoringSite = msRaw && typeof msRaw === 'object' ? (msRaw.name || msRaw.value || null) : (msRaw || null);
+      // Stamp the date the monitoring site value was set/changed (this is when the report was pulled).
+      const prevMsRaw = previous ? previous[MONITORING_SITE_FIELD] : null;
+      const prevMonitoringSite = prevMsRaw && typeof prevMsRaw === 'object' ? (prevMsRaw.name || prevMsRaw.value || null) : (prevMsRaw || null);
+      const monitoringSiteChanged = monitoringSite && monitoringSite !== prevMonitoringSite;
       const dealRecord = {
         deal_id: deal.id,
         person_id: personId || null,
@@ -99,11 +111,15 @@ exports.handler = async (event, context) => {
         deal_value: deal.value || 0,
         call_center_rep_id: callCenterRepId,
         call_center_rep_name: callCenterRepName,
+        account_manager_id: accountManagerId,
+        account_manager_name: accountManagerName,
         monitoring_site: monitoringSite,
         deal_created_at: deal.add_time || null,
         deal_updated_at: deal.update_time || null,
         synced_at: new Date().toISOString()
       };
+      // Only set the timestamp when the value actually changed, so we don't overwrite the original set-date on later updates.
+      if (monitoringSiteChanged) dealRecord.monitoring_site_set_at = new Date().toISOString();
 
       const upsertResponse = await fetch(
         `${SUPABASE_URL}/rest/v1/cs_deals?on_conflict=deal_id`,
