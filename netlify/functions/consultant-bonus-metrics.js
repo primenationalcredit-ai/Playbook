@@ -70,6 +70,10 @@ exports.handler = async (event) => {
     // Get payments for the rolling window (paged past the 1000-row cap) for cross-referencing client journeys
     const allPayments = await supaGet('consultant_payments', `payment_date=gte.${windowStart}&select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org`);
 
+    // Full affiliate payment history (all time, small subset, few columns) so the reactivation kicker
+    // and new-affiliate-launch can measure dormancy beyond the rolling window.
+    const affiliateHistory = await supaGet('consultant_payments', `is_affiliate_deal=eq.true&select=referrer_org,payment_date,payment_month,consultant_name&order=payment_date.asc`);
+
     // Build a master client map: deal_id → all payment types ever
     const masterClientMap = {};
     for (const p of allPayments) {
@@ -138,7 +142,7 @@ exports.handler = async (event) => {
     for (const p of allPayments) {
       if (p.payment_type === 'doc_fee') {
         if (p.pipedrive_deal_id) dealIdsWithDocFee.add(p.pipedrive_deal_id);
-        if (p.client_name) docFeeNames.add(norm(p.client_name));
+        else if (p.client_name) docFeeNames.add(norm(p.client_name)); // name fallback ONLY for orphan payments with no deal id, so a linked payment can't be borrowed by a same-named different deal
       }
     }
 
@@ -332,20 +336,20 @@ exports.handler = async (event) => {
       let reactivationCount = 0;
       const reactivatedOrgs = [];
       
-      // Build affiliate org payment history from ALL months
+      // Build affiliate org payment history from FULL affiliate history (not just the rolling window)
       const orgPaymentHistory = {};
-      for (const p of allPayments) {
-        if (!p.is_affiliate_deal || !p.referrer_org) continue;
+      for (const p of affiliateHistory) {
+        if (!p.referrer_org) continue;
         // Match to this consultant
         const pFirst = (p.consultant_name || '').split(' ')[0].toLowerCase();
         if (pFirst !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
-        
+
         if (!orgPaymentHistory[p.referrer_org]) orgPaymentHistory[p.referrer_org] = [];
         orgPaymentHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month });
       }
-      
+
       for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
-        const thisMonthPayments = payments.filter(p => p.month === targetMonth);
+        const thisMonthPayments = payments.filter(p => p.month === targetMonth).sort((a, b) => a.date.localeCompare(b.date));
         const priorPayments = payments.filter(p => p.month < targetMonth).sort((a, b) => b.date.localeCompare(a.date));
         
         if (thisMonthPayments.length > 0 && priorPayments.length > 0) {
