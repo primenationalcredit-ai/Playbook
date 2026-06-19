@@ -625,12 +625,24 @@ export default function ConsultantBonus() {
         <div className="bg-white rounded-xl p-4 border shadow-sm">
           <DollarSign size={18} className="text-green-500 mb-2" />
           <p className="text-3xl font-bold text-slate-800">{fmtInt(c.totalSales)}</p>
-          <p className="text-sm text-slate-500"><Tip text="Total payments received this month from all clients, pulled live from Zoho Invoice.">MTD Sales</Tip></p>
+          <p className="text-sm text-slate-500"><Tip text="Total payments received this month from all clients, pulled live from Zoho Invoice. Click to see every payment.">MTD Sales</Tip></p>
+          <DrillButton onClick={() => setExpandedSection(expandedSection === 'mtd' ? null : 'mtd')} label="View payments" />
+          {expandedSection === 'mtd' && c.clientDetail?.mtdList && (
+            <ClientPanel title={`MTD Sales — ${c.clientDetail.mtdList.length} payments = ${fmtInt(c.totalSales)}`} items={c.clientDetail.mtdList} onClose={() => setExpandedSection(null)} />
+          )}
         </div>
         <div className="bg-white rounded-xl p-4 border shadow-sm">
           <Users size={18} className="text-purple-500 mb-2" />
           <p className="text-3xl font-bold text-slate-800">{c.producingAffiliates}</p>
-          <p className="text-sm text-slate-500"><Tip text="Affiliate organizations that sent you 3 or more qualified clients this month (a qualified client paid their doc fee and at least a partial). Standard is 5 active affiliates per month.">Active Affiliates</Tip></p>
+          <p className="text-sm text-slate-500"><Tip text="Affiliate organizations that sent you 3 or more qualified clients this month (a qualified client paid their doc fee and at least a partial). Standard is 5 active affiliates per month. Click to see all affiliate orgs and their client counts.">Active Affiliates</Tip></p>
+          <DrillButton onClick={() => setExpandedSection(expandedSection === 'affiliates' ? null : 'affiliates')} label="View affiliates" />
+          {expandedSection === 'affiliates' && c.clientDetail?.affiliateOrgList && (
+            <ClientPanel
+              title={`Affiliate Orgs — ${c.producingAffiliates} active (3+ qualified clients)`}
+              items={c.clientDetail.affiliateOrgList.map(o => ({ name: `${o.name} — ${o.clients} qualified client${o.clients !== 1 ? 's' : ''}`, type: o.producing ? 'final' : 'no_doc' }))}
+              onClose={() => setExpandedSection(null)}
+            />
+          )}
           {c.producingAffiliates < 5 && <p className="text-xs text-purple-500 mt-1">{5 - c.producingAffiliates} more to bonus threshold</p>}
         </div>
         <div className="bg-white rounded-xl p-4 border shadow-sm">
@@ -685,6 +697,10 @@ export default function ConsultantBonus() {
                   );
                 })}
               </div>
+            )}
+            <DrillButton onClick={() => setExpandedSection(expandedSection === 'accel' ? null : 'accel')} label="View qualified docs" />
+            {expandedSection === 'accel' && c.clientDetail?.qualifiedList && (
+              <ClientPanel title={`Qualified Docs driving the Accelerator (${c.qualifiedDocs})`} items={c.clientDetail.qualifiedList} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 

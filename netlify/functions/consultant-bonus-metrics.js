@@ -655,6 +655,10 @@ exports.handler = async (event) => {
         meetsReviewStandard: reviewCount >= 10,
         // CLIENT DETAIL for drill-down
         clientDetail: {
+          mtdList: myPayments.map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.is_affiliate_deal ? p.referrer_org : null }))
+            .sort((a, b) => String(b.date).localeCompare(String(a.date))),
+          affiliateOrgList: Object.entries(affiliateMap).map(([orgName, count]) => ({ name: orgName, clients: count, producing: count >= 3 }))
+            .sort((a, b) => b.clients - a.clients),
           organicClients: myPayments.filter(p => !p.is_affiliate_deal).map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date })),
           affiliateClients: myPayments.filter(p => p.is_affiliate_deal).map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org })),
           docFeeList: myPayments.filter(p => p.payment_type === 'doc_fee').map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date })),
