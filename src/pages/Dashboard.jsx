@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import AdminKpiOverview from '../components/AdminKpiOverview';
 import { format } from 'date-fns';
 import {
   CheckCircle2,
@@ -151,6 +152,9 @@ function Dashboard() {
           {format(new Date(), 'EEEE, MMMM d, yyyy')}
         </p>
       </div>
+
+      {/* Admin: company-wide KPI overview */}
+      {isAdmin && <AdminKpiOverview />}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
