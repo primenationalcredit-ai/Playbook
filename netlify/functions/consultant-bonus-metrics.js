@@ -27,10 +27,24 @@ function calcAccelerator(qd) {
 
 async function supaGet(table, query) {
   const sep = query ? '&' : '';
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}${sep}limit=10000`, {
-    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Range': '0-9999' }
-  });
-  return res.ok ? await res.json() : [];
+  const pageSize = 1000; // Supabase caps each request, so page through all rows
+  let all = [], offset = 0;
+  while (true) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}${sep}limit=${pageSize}&offset=${offset}`, {
+      headers: {
+        'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Range-Unit': 'items', 'Range': `${offset}-${offset + pageSize - 1}`,
+      },
+    });
+    if (!res.ok) break;
+    const batch = await res.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all = all.concat(batch);
+    if (batch.length < pageSize) break;
+    offset += pageSize;
+    if (offset > 200000) break; // safety
+  }
+  return all;
 }
 
 exports.handler = async (event) => {

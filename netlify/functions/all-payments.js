@@ -16,11 +16,21 @@ exports.handler = async (event) => {
     if (event.httpMethod === 'GET') {
       const month = (event.queryStringParameters || {}).month || 'all';
       const filter = month && month !== 'all' ? `payment_month=eq.${month}&` : '';
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?${filter}order=payment_date.desc&select=*`, {
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Range: '0-9999' },
-      });
-      const data = await res.json();
-      return { statusCode: 200, headers, body: JSON.stringify({ payments: Array.isArray(data) ? data : [] }) };
+      const pageSize = 1000; // Supabase caps each request; page through all rows
+      let payments = [], offset = 0;
+      while (true) {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?${filter}order=payment_date.desc&select=*&limit=${pageSize}&offset=${offset}`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Range-Unit': 'items', Range: `${offset}-${offset + pageSize - 1}` },
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) break;
+        payments = payments.concat(data);
+        if (data.length < pageSize) break;
+        offset += pageSize;
+        if (offset > 200000) break;
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ payments }) };
     }
 
     if (event.httpMethod === 'POST') {
