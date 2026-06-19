@@ -103,15 +103,11 @@ exports.handler = async (event) => {
     const monthStart = `${month}-01`;
     let csrUsers = [];
     let reviews = [];
-    try { csrUsers = await supaGet('users', 'department=eq.customer_support&select=id,name'); } catch (e) {}
+    try { csrUsers = await supaGet('users', 'department=eq.customer_support&select=id,name,hire_date'); } catch (e) {}
     try { reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=assigned_to,location_name,reviewer_name,rating,review_date`); } catch (e) {}
     const nameToUserId = {};
-    for (const u of csrUsers) if (u.name) nameToUserId[u.name.trim().toLowerCase()] = u.id;
-
-    // All-Star CSR award (manual, +$100, one per month) stored in bonus_awards
-    let allStarAwards = [];
-    try { allStarAwards = await supaGet('bonus_awards', `bonus_type=eq.all_star_csr&awarded_month=eq.${month}&select=consultant_name`); } catch (e) {}
-    const allStarSet = new Set(allStarAwards.map(a => (a.consultant_name || '').trim().toLowerCase()));
+    const nameToHire = {};
+    for (const u of csrUsers) if (u.name) { nameToUserId[u.name.trim().toLowerCase()] = u.id; nameToHire[u.name.trim().toLowerCase()] = u.hire_date || null; }
 
     // Doc fee conversions: which of these CS deals have a paid doc fee (from consultant_payments)
     const dealIds = rows.map(r => r.deal_id).filter(Boolean);
@@ -253,7 +249,11 @@ exports.handler = async (event) => {
           reviews: reviewDetails
         },
         excluded: { outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
-        basePay: BASE_PAY
+        basePay: (() => {
+          const hire = nameToHire[name.trim().toLowerCase()] || null;
+          const isMonth1 = hire ? String(hire).slice(0, 7) === month : false;
+          return { amount: isMonth1 ? BASE_PAY.month1 : BASE_PAY.ongoing, isMonth1, hireDate: hire, month1: BASE_PAY.month1, ongoing: BASE_PAY.ongoing };
+        })()
       };
     }
 
@@ -269,7 +269,9 @@ exports.handler = async (event) => {
     }
 
     // Spotlight: All-Star CSR = top performer across volume (reports + docs + reviews), conversion, and reviews.
-    // Each component is normalized to the team's best, equally weighted. A manual award (bonus_awards) overrides.
+    // During the current (in-progress) month it's a running leader ("in the hunt"); it finalizes at month-end.
+    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const provisional = month === currentMonthStr;
     const arr = CSR_STAFF.map(n => csrs[n]);
     const volOf = (c) => c.reports.total + c.conversionBonus.reachedDocs + c.reviewBonus.count;
     const convOf = (c) => (c.conversionBonus.rptsToQuoteRate + c.conversionBonus.quoteToDocsRate) / 2;
@@ -283,17 +285,19 @@ exports.handler = async (event) => {
       c.spotlight.allStarScore = Math.round(((volume / maxVol) + (conv / maxConv) + (rev / maxRev)) / 3 * 100);
       c.spotlight.allStarParts = { volume, conversion: Math.round(conv), reviews: rev };
     }
-    const manualOverride = CSR_STAFF.find(n => allStarSet.has(n.trim().toLowerCase()));
-    let autoWinner = null, bestScore = -1;
+    let leader = null, bestScore = -1;
     for (const name of CSR_STAFF) {
       const c = csrs[name];
-      if (c.spotlight.allStarParts.volume > 0 && c.spotlight.allStarScore > bestScore) { bestScore = c.spotlight.allStarScore; autoWinner = name; }
+      if (c.spotlight.allStarParts.volume > 0 && c.spotlight.allStarScore > bestScore) { bestScore = c.spotlight.allStarScore; leader = name; }
     }
-    const allStarWinner = manualOverride || autoWinner;
-    if (allStarWinner) {
-      csrs[allStarWinner].spotlight.allStar = true;
-      csrs[allStarWinner].spotlight.allStarManual = !!manualOverride;
-      csrs[allStarWinner].spotlight.bonus += SPOTLIGHT_ALL_STAR;
+    if (leader) {
+      if (provisional) {
+        // running leader only — not won yet, no bonus added
+        csrs[leader].spotlight.inTheHunt = true;
+      } else {
+        csrs[leader].spotlight.allStar = true;
+        csrs[leader].spotlight.bonus += SPOTLIGHT_ALL_STAR;
+      }
     }
 
     // Total each CSR's bonus

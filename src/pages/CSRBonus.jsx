@@ -121,18 +121,6 @@ export default function CSRBonus() {
     setDrill({ label: 'Reviews', rows });
   };
 
-  const currentAllStar = names.find((n) => data.csrs[n]?.spotlight?.allStarManual) || '';
-  const setAllStar = async (csrName) => {
-    try {
-      await fetch('/.netlify/functions/csr-set-allstar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month, csr: csrName || null, action: csrName ? 'set' : 'clear' })
-      });
-      load(month);
-    } catch (e) { /* no-op */ }
-  };
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -141,13 +129,6 @@ export default function CSRBonus() {
           <p className="text-sm text-slate-500">{data.payout}</p>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && (
-            <select value={currentAllStar} onChange={(e) => setAllStar(e.target.value)}
-              className="border border-amber-300 bg-amber-50 rounded-lg px-3 py-1.5 text-sm text-amber-800" title="All-Star CSR (+$100). Auto-picks the top performer; choose a name to override.">
-              <option value="">⭐ All-Star: auto</option>
-              {names.map((n) => <option key={n} value={n}>⭐ All-Star: {n} (override)</option>)}
-            </select>
-          )}
           {isAdmin && names.length > 0 && (
             <select value={selected || ''} onChange={(e) => setSelected(e.target.value)}
               className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm">
@@ -259,8 +240,10 @@ export default function CSRBonus() {
               </div>
               <div className="text-xs text-slate-400 mt-1">
                 {c.spotlight?.allStar
-                  ? `⭐ All-Star CSR (+$100)${c.spotlight?.allStarManual ? ' — manual' : ''}`
-                  : `All-Star CSR (+$100) — score ${c.spotlight?.allStarScore ?? 0}/100`}
+                  ? '⭐ All-Star CSR Winner (+$100)'
+                  : c.spotlight?.inTheHunt
+                    ? `🔥 In the hunt — current All-Star leader (score ${c.spotlight?.allStarScore ?? 0}/100, not final until month-end)`
+                    : `All-Star CSR (+$100) — score ${c.spotlight?.allStarScore ?? 0}/100`}
               </div>
             </div>
 
@@ -278,7 +261,9 @@ export default function CSRBonus() {
 
           <div className="bg-white rounded-xl border border-slate-200 p-4">
             <div className="font-medium text-slate-700">Base Pay</div>
-            <div className="text-sm text-slate-500 mt-1">Month 1 (training) {fmt(c.basePay.month1)} · Month 2 onward {fmt(c.basePay.ongoing)} per month</div>
+            <div className="text-sm text-slate-500 mt-1">
+              {fmt(c.basePay.amount)} this month{c.basePay.isMonth1 ? ' (Month 1 training rate)' : ''} · ongoing {fmt(c.basePay.ongoing)}/mo
+            </div>
           </div>
 
           {c.reports.total === 0 && (
