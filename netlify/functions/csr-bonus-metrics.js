@@ -37,6 +37,7 @@ const BASE_PAY = { month1: 1000, ongoing: 1280 };
 const PIPELINE_RANK = { 'new leads': 1, 'reports': 2, 'quoted 2.0': 3, 'sold': 4, 'c.r.s.': 5, 'additional c.r.s.': 6 };
 const QUOTE_RANK = 3;   // Quoted 2.0
 const DOCS_RANK = 4;    // SOLD (Agreement SENT)
+const REPORTS_RANK = 2; // Reports pipeline
 const CONVERSION_BONUS = 50;
 const RPTS_TO_QUOTE_TARGET = 0.50;
 const QUOTE_TO_DOCS_TARGET = 0.40;
@@ -123,7 +124,7 @@ exports.handler = async (event) => {
     const ops = {};
     for (const name of CSR_STAFF) {
       tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [] };
-      ops[name] = { allDeals: 0, newThisMonth: 0, byPipeline: {}, deals: [] };
+      ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
     }
 
     // Debug: what the data actually looks like
@@ -139,14 +140,15 @@ exports.handler = async (event) => {
       const cls = classify(ms);
       const rep = r.call_center_rep_name;
 
-      // Operational KPIs: count ALL of a known CSR's deals (regardless of report/gate)
-      if (rep && ops[rep]) {
-        const isNew = String(r.deal_created_at || '').slice(0, 7) === month;
-        ops[rep].allDeals++;
-        if (isNew) ops[rep].newThisMonth++;
-        const pl = r.pipeline_name || 'Unknown';
-        ops[rep].byPipeline[pl] = (ops[rep].byPipeline[pl] || 0) + 1;
-        ops[rep].deals.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: pl, stage: r.stage_name || null, site: r.monitoring_site || null, newThisMonth: isNew });
+      // Operational KPIs: funnel over THIS MONTH's deals for a known CSR (created this month)
+      if (rep && ops[rep] && String(r.deal_created_at || '').slice(0, 7) === month) {
+        const dealRank = pipelineRank(r.pipeline_name);
+        const hasDocFee = docFeeDealIds.has(String(r.deal_id));
+        ops[rep].newDeals++;
+        if (dealRank >= REPORTS_RANK) ops[rep].reachedReports++;
+        if (dealRank >= QUOTE_RANK) ops[rep].reachedQuoted++;
+        if (hasDocFee) ops[rep].docFeeCollected++;
+        ops[rep].monthDealList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, rank: dealRank, docFee: hasDocFee });
       }
 
       if (!cls) continue;                       // no report value -> not a report
@@ -217,13 +219,14 @@ exports.handler = async (event) => {
         spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
         idiqRate: Math.round(idiqRate * 100),
         kpis: {
-          totalDeals: ops[name].allDeals,
-          newThisMonth: ops[name].newThisMonth,
-          byPipeline: ops[name].byPipeline
+          newDeals: ops[name].newDeals,
+          reachedReports: ops[name].reachedReports,
+          reachedQuoted: ops[name].reachedQuoted,
+          docFeeCollected: ops[name].docFeeCollected
         },
         details: {
           reports: t.reportList,
-          deals: ops[name].deals,
+          monthDeals: ops[name].monthDealList,
           reviews: reviewDetails
         },
         excluded: { outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },

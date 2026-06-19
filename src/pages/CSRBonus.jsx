@@ -93,12 +93,12 @@ export default function CSRBonus() {
     }));
     setDrill({ label, rows });
   };
-  const openDeals = (label, filterFn) => {
-    const rows = (c?.details?.deals || []).filter(filterFn).map((d) => ({
+  const openMonthDeals = (label, filterFn) => {
+    const rows = (c?.details?.monthDeals || []).filter(filterFn).map((d) => ({
       title: d.title,
-      sub: [d.pipeline, d.stage, d.site].filter(Boolean).join(' · '),
+      sub: [d.pipeline, d.stage, d.docFee ? 'doc fee collected' : null].filter(Boolean).join(' · '),
       href: DEAL_URL(d.dealId),
-      tag: d.newThisMonth ? 'New' : ''
+      tag: d.docFee ? 'Doc Fee' : ''
     }));
     setDrill({ label, rows });
   };
@@ -185,23 +185,13 @@ export default function CSRBonus() {
             <StatCard label="Total Reports" value={c.reports.total} sub={c.reportBonus.qualified ? 'qualified (≥50)' : 'need 50 to qualify'} accent={c.reportBonus.qualified ? 'text-emerald-600' : 'text-amber-600'} onClick={() => openReports('All reports', () => true)} />
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="font-semibold text-slate-800">Pipeline & Activity</div>
-              <div className="text-sm text-slate-500">
-                <button onClick={() => openDeals('New this month', (d) => d.newThisMonth)} className="text-indigo-600 hover:underline">{c.kpis?.newThisMonth ?? 0} new this month</button>
-                <span className="text-slate-300"> · </span>
-                <button onClick={() => openDeals('All deals', () => true)} className="text-indigo-600 hover:underline">{c.kpis?.totalDeals ?? 0} total deals</button>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(c.kpis?.byPipeline || {}).sort((a, b) => b[1] - a[1]).map(([pl, count]) => (
-                <button key={pl} onClick={() => openDeals(pl, (d) => d.pipeline === pl)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-indigo-100 text-slate-700 text-xs transition">
-                  {pl} <span className="font-semibold text-slate-900">{count}</span>
-                </button>
-              ))}
-              {Object.keys(c.kpis?.byPipeline || {}).length === 0 && <span className="text-xs text-slate-400">No deals attributed yet.</span>}
+          <div>
+            <div className="text-sm font-semibold text-slate-700 mb-2">This Month's Activity</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatCard label="New Deals" value={c.kpis?.newDeals ?? 0} sub="created this month" onClick={() => openMonthDeals('New deals this month', () => true)} />
+              <StatCard label="Reached Reports" value={c.kpis?.reachedReports ?? 0} sub="in Reports or beyond" onClick={() => openMonthDeals('Reached Reports', (d) => d.rank >= 2)} />
+              <StatCard label="Reached Quoted" value={c.kpis?.reachedQuoted ?? 0} sub="in Quoted 2.0 or beyond" onClick={() => openMonthDeals('Reached Quoted', (d) => d.rank >= 3)} />
+              <StatCard label="Doc Fee Collected" value={c.kpis?.docFeeCollected ?? 0} sub="paid a doc fee" accent="text-emerald-600" onClick={() => openMonthDeals('Doc fee collected', (d) => d.docFee)} />
             </div>
           </div>
 
