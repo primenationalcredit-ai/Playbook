@@ -70,11 +70,8 @@ exports.handler = async (event, context) => {
     if (eventType === 'added.deal' || eventType === 'updated.deal') {
       const deal = current;
       
-      // Check if this is a CS-relevant pipeline
-      if (!CS_PIPELINES.includes(deal.pipeline_id)) {
-        console.log(`CS Webhook: Deal ${deal.id} not in CS pipeline, skipping`);
-        return { statusCode: 200, headers, body: JSON.stringify({ skipped: true }) };
-      }
+      // Capture any deal that has a Call Center Rep, regardless of pipeline.
+      // (The report bonus gates by pull-time pipeline later; we don't want to miss New Leads/Reports here.)
 
       // Get person's Call Center Rep
       const personId = deal.person_id && typeof deal.person_id === 'object'
