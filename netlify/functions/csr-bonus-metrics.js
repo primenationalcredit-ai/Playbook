@@ -63,9 +63,9 @@ function gatePass(row) {
 function classify(ms) {
   const s = (ms || '').toLowerCase();
   if (!s) return null;
-  if (s.includes('identity')) return 'idiq';
-  if (s.includes('smart')) return 'smart';
-  return 'other';
+  if (s.includes('smart')) return 'smart';                          // Smart Credit, incl. "Smart Credit (Client Sent Reports)"
+  if (s.includes('identity') || s.includes('client sent')) return 'idiq'; // Identity IQ, "Identity Iq (Client Sent Reports)", and "Client sent credit reports to us"
+  return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 50 only
 }
 
 exports.handler = async (event) => {
