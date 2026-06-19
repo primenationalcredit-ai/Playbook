@@ -61,9 +61,18 @@ function AllPayments({ embedded = false }) {
     setSyncing(true); setMsg(null);
     try {
       const syncMonth = month === 'all' ? monthKey(new Date()) : month;
-      await fetch(`/.netlify/functions/zoho-payment-sync?month=${syncMonth}`);
+      let url = `/.netlify/functions/zoho-payment-sync?month=${syncMonth}`;
+      let totalNew = 0, pages = 0;
+      while (url && pages < 300) {
+        const r = await fetch(url);
+        const d = await r.json().catch(() => ({}));
+        totalNew += (d.newRecords || 0);
+        pages++;
+        url = d.nextUrl || null;
+        if (pages % 5 === 0) await load(); // show progress as pages come in
+      }
       await load();
-      setMsg({ ok: true, text: month === 'all' ? `Synced ${syncMonth} from Zoho.` : 'Synced from Zoho.' });
+      setMsg({ ok: true, text: `Synced ${syncMonth}: ${totalNew} new payment${totalNew === 1 ? '' : 's'} across ${pages} page${pages === 1 ? '' : 's'}.` });
     } catch (e) { setMsg({ ok: false, text: 'Sync failed.' }); }
     setSyncing(false);
   };
@@ -72,24 +81,25 @@ function AllPayments({ embedded = false }) {
     if (enriching) return;
     setEnriching(true);
     if (!auto) setMsg(null);
-    let total = 0, rounds = 0, rem = 1;
+    let total = 0, rounds = 0, rem = 1, stalled = false;
     try {
       while (rem > 0 && rounds < 800) {
         const r = await fetch(`/.netlify/functions/payment-enrich`);
         const d = await r.json().catch(() => ({}));
-        total += (d.enriched || 0);
+        const got = d.enriched || 0;
+        total += got;
         rem = typeof d.remaining === 'number' ? d.remaining : 0;
         setRemaining(rem);
         rounds++;
-        if (!d.enriched && !rem) break;
+        if (got === 0) { stalled = rem > 0; break; } // no progress — remaining rows can't be matched right now
         if (rounds % 10 === 0) await load(); // refresh the list periodically so names appear as they fill
       }
       await load();
       setMsg({
         ok: true,
         text: total
-          ? `Filled in ${total} consultant name${total === 1 ? '' : 's'}.${rem ? ` ${rem.toLocaleString()} still pending.` : ' All caught up.'}`
-          : (rem ? `${rem.toLocaleString()} still pending.` : 'All caught up. Nothing to enrich.'),
+          ? `Filled in ${total} consultant name${total === 1 ? '' : 's'}.${rem ? (stalled ? ` ${rem.toLocaleString()} couldn't be matched (deleted or merged deals).` : ` ${rem.toLocaleString()} still pending.`) : ' All caught up.'}`
+          : (rem ? `${rem.toLocaleString()} couldn't be matched — their Pipedrive deals are likely deleted or merged.` : 'All caught up. Nothing to enrich.'),
       });
     } catch (e) { setMsg({ ok: false, text: 'Could not pull names.' }); }
     setEnriching(false);
