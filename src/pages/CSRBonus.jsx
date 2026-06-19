@@ -194,40 +194,6 @@ export default function CSRBonus() {
             <StatCard label="Total Reports" value={c.reports.total} sub={c.reportBonus.qualified ? 'qualified (≥50)' : 'need 50 to qualify'} accent={c.reportBonus.qualified ? 'text-emerald-600' : 'text-amber-600'} onClick={() => openReports('All reports', () => true)} />
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-semibold text-slate-700">This Month's Activity</div>
-              <div className="text-sm text-slate-500">Closing rate: <span className="font-semibold text-slate-800">{c.closingRate ?? 0}%</span> <span className="text-slate-400">(doc fees ÷ reports pulled)</span></div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatCard label="New Deals" value={c.kpis?.newDeals ?? 0} sub="created this month" onClick={() => openMonthDeals('New deals this month', () => true)} />
-              <StatCard label="Reached Reports" value={c.kpis?.reachedReports ?? 0} sub="in Reports or beyond" onClick={() => openMonthDeals('Reached Reports', (d) => d.rank >= 2)} />
-              <StatCard label="Reached Quoted" value={c.kpis?.reachedQuoted ?? 0} sub="in Quoted 2.0 or beyond" onClick={() => openMonthDeals('Reached Quoted', (d) => d.rank >= 3)} />
-              <StatCard label="Doc Fee Collected" value={c.kpis?.docFeeCollected ?? 0} sub="paid a doc fee" accent="text-emerald-600" onClick={() => openMonthDeals('Doc fee collected', (d) => d.docFee)} />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="font-semibold text-slate-800">Where Deals Sit Now</div>
-              <div className="text-sm text-slate-500">{c.stageDistribution?.total ?? 0} total deals</div>
-            </div>
-            <div className="space-y-2">
-              {(c.stageDistribution?.stages || []).map((s) => (
-                <button key={s.stage} onClick={() => openStageDeals(s.stage)} className="w-full group">
-                  <div className="flex items-center justify-between text-xs mb-0.5">
-                    <span className="text-slate-700 group-hover:text-indigo-600 text-left truncate pr-2">{s.stage}</span>
-                    <span className="text-slate-500 shrink-0">{s.count} · {s.pct}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div className="h-full bg-indigo-400 group-hover:bg-indigo-500 transition-colors" style={{ width: `${s.pct}%` }} />
-                  </div>
-                </button>
-              ))}
-              {(c.stageDistribution?.stages || []).length === 0 && <div className="text-xs text-slate-400">No deals attributed yet.</div>}
-            </div>
-          </div>
-
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between">
               <div className="font-semibold text-slate-800">Report Bonus</div>
