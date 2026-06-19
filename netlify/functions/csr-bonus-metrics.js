@@ -8,9 +8,9 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const CSR_STAFF = ['Kenneth Larios', 'Vic Baltodano', 'Reni', 'Araceli Carrion Garcia', 'Jenifer Venegas', 'CJ'];
 
-// ---- CONFIG: stages that count a report (early stages, before later CRS rounds) ----
-// Matched (case-insensitive, exact) against the stage the deal was in WHEN the monitoring site was set.
-const REPORT_STAGE_GATE = ['new leads', 'reports', 'quoted 2.0'];
+// ---- CONFIG: pipelines that count a report (early pipelines, before later CRS rounds) ----
+// Matched (case-insensitive, exact) against the PIPELINE the deal was in WHEN the monitoring site was set.
+const REPORT_PIPELINE_GATE = ['new leads', 'reports', 'quoted 2.0'];
 
 // ---- Report Bonus rules ----
 const FIRST_PAID_REPORT = 35;        // first 35 IDIQ reports don't pay
@@ -56,9 +56,9 @@ function monthOf(row) {
   return d ? String(d).slice(0, 7) : null;
 }
 function gatePass(row) {
-  // Prefer the stage recorded when the monitoring site was set; fall back to current stage.
-  const stage = (row.monitoring_site_set_stage || row.stage_name || '').trim().toLowerCase();
-  return REPORT_STAGE_GATE.includes(stage);
+  // Prefer the pipeline recorded when the monitoring site was set; fall back to current pipeline.
+  const pipeline = (row.monitoring_site_set_pipeline || row.pipeline_name || '').trim().toLowerCase();
+  return REPORT_PIPELINE_GATE.includes(pipeline);
 }
 function classify(ms) {
   const s = (ms || '').toLowerCase();
@@ -81,7 +81,7 @@ exports.handler = async (event) => {
     const now = new Date();
     const month = params.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const rows = await supaGet('cs_deals', 'select=deal_id,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,deal_created_at,pipeline_name,stage_name');
+    const rows = await supaGet('cs_deals', 'select=deal_id,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,monitoring_site_set_pipeline,deal_created_at,pipeline_name,stage_name');
 
     // Per-CSR tallies for the requested month
     const tally = {};
@@ -139,7 +139,7 @@ exports.handler = async (event) => {
         success: true,
         month,
         payout: 'Calculated at month-end, paid on the 15th of the following month',
-        gateConfig: REPORT_STAGE_GATE,
+        gateConfig: REPORT_PIPELINE_GATE,
         csrs,
         debug: {
           totalDeals: rows.length,

@@ -149,7 +149,8 @@ exports.handler = async (event, context) => {
       // Only set the timestamp when the value actually changed, so we don't overwrite the original set-date on later updates.
       if (monitoringSiteChanged) {
         dealRecord.monitoring_site_set_at = new Date().toISOString();
-        dealRecord.monitoring_site_set_stage = maps.stage[String(deal.stage_id)] || null; // stage at the moment of the pull
+        dealRecord.monitoring_site_set_stage = maps.stage[String(deal.stage_id)] || null;        // stage at the moment of the pull
+        dealRecord.monitoring_site_set_pipeline = maps.pipeline[String(deal.pipeline_id)] || null; // pipeline at the moment of the pull (the gate)
       }
 
       const upsertResponse = await fetch(
