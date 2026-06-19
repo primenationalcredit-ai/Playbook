@@ -97,6 +97,16 @@ exports.handler = async (event) => {
 
     const rows = await supaGet('cs_deals', 'select=deal_id,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,monitoring_site_set_pipeline,deal_created_at,pipeline_name,stage_name');
 
+    // Review data: reviews are assigned to a user (assigned_to = user id) in the IncomingReviews page.
+    // Map each CSR name to their user id, then count this month's assigned reviews. BBB = location name contains "bbb".
+    const monthStart = `${month}-01`;
+    let csrUsers = [];
+    let reviews = [];
+    try { csrUsers = await supaGet('users', 'department=eq.customer_support&select=id,name'); } catch (e) {}
+    try { reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=assigned_to,location_name`); } catch (e) {}
+    const nameToUserId = {};
+    for (const u of csrUsers) if (u.name) nameToUserId[u.name.trim().toLowerCase()] = u.id;
+
     // Per-CSR tallies for the requested month
     const tally = {};
     for (const name of CSR_STAFF) tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0 };
@@ -150,12 +160,24 @@ exports.handler = async (event) => {
       // IDIQ enrollment rate (for spotlight selection)
       const idiqRate = t.total > 0 ? t.idiq / t.total : 0;
 
+      // Review bonus: assigned reviews this month, +$5 each past 10, +$50 per BBB review
+      const uid = nameToUserId[name.trim().toLowerCase()];
+      const myReviews = uid ? reviews.filter(r => r.assigned_to === uid) : [];
+      const reviewCount = myReviews.length;
+      const bbbReviews = myReviews.filter(r => (r.location_name || '').toLowerCase().includes('bbb')).length;
+      const review = {
+        count: reviewCount,
+        bbb: bbbReviews,
+        bonus: Math.max(0, reviewCount - 10) * 5 + bbbReviews * 50,
+        meetsStandard: reviewCount >= 10
+      };
+
       csrs[name] = {
         month,
         reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total },
         reportBonus: report,
         conversionBonus: conversion,
-        reviewBonus: null,   // pending a monthly per-CSR review source + BBB flag
+        reviewBonus: review,
         spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
         idiqRate: Math.round(idiqRate * 100),
         excluded: { outOfMonth: t.outOfMonth, gatedOut: t.gatedOut },
@@ -177,7 +199,7 @@ exports.handler = async (event) => {
     // Total each CSR's bonus
     for (const name of CSR_STAFF) {
       const c = csrs[name];
-      c.totalBonus = (c.reportBonus.bonus || 0) + (c.conversionBonus.bonus || 0) + (c.spotlight.bonus || 0);
+      c.totalBonus = (c.reportBonus.bonus || 0) + (c.conversionBonus.bonus || 0) + (c.spotlight.bonus || 0) + (c.reviewBonus?.bonus || 0);
     }
 
     // Sort debug maps into arrays (desc by count)

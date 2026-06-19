@@ -165,9 +165,15 @@ export default function CSRBonus() {
               <div className="text-xs text-slate-400 mt-1">All-Star CSR (+$100) — manual award</div>
             </div>
 
-            <div className="bg-white rounded-xl border border-dashed border-slate-300 p-4">
-              <div className="font-medium text-slate-700">Review Bonus</div>
-              <div className="text-sm text-slate-400 mt-1">+$5 per review past 10, +$50 per public BBB review. Needs a monthly per-CSR review source.</div>
+            <div className={`bg-white rounded-xl border p-4 ${c.reviewBonus?.bonus ? 'border-emerald-200' : 'border-slate-200'}`}>
+              <div className="flex items-center justify-between">
+                <div className="font-medium text-slate-700">Review Bonus</div>
+                <div className={`font-bold ${c.reviewBonus?.bonus ? 'text-emerald-600' : 'text-slate-400'}`}>{fmt(c.reviewBonus?.bonus || 0)}</div>
+              </div>
+              <div className="text-xs text-slate-500 mt-2">
+                {c.reviewBonus?.count ?? 0} reviews{(c.reviewBonus?.count ?? 0) > 10 ? ` (${c.reviewBonus.count - 10} past 10 × $5)` : ' (need 11+ to earn)'}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">{c.reviewBonus?.bbb ?? 0} BBB review{(c.reviewBonus?.bbb ?? 0) === 1 ? '' : 's'} × $50</div>
             </div>
           </div>
 
