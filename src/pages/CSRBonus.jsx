@@ -121,7 +121,7 @@ export default function CSRBonus() {
     setDrill({ label: 'Reviews', rows });
   };
 
-  const currentAllStar = names.find((n) => data.csrs[n]?.spotlight?.allStar) || '';
+  const currentAllStar = names.find((n) => data.csrs[n]?.spotlight?.allStarManual) || '';
   const setAllStar = async (csrName) => {
     try {
       await fetch('/.netlify/functions/csr-set-allstar', {
@@ -143,9 +143,9 @@ export default function CSRBonus() {
         <div className="flex items-center gap-2">
           {isAdmin && (
             <select value={currentAllStar} onChange={(e) => setAllStar(e.target.value)}
-              className="border border-amber-300 bg-amber-50 rounded-lg px-3 py-1.5 text-sm text-amber-800" title="All-Star CSR (+$100), one per month">
-              <option value="">⭐ All-Star: none</option>
-              {names.map((n) => <option key={n} value={n}>⭐ All-Star: {n}</option>)}
+              className="border border-amber-300 bg-amber-50 rounded-lg px-3 py-1.5 text-sm text-amber-800" title="All-Star CSR (+$100). Auto-picks the top performer; choose a name to override.">
+              <option value="">⭐ All-Star: auto</option>
+              {names.map((n) => <option key={n} value={n}>⭐ All-Star: {n} (override)</option>)}
             </select>
           )}
           {isAdmin && names.length > 0 && (
@@ -257,7 +257,11 @@ export default function CSRBonus() {
               <div className="text-xs text-slate-500 mt-2">
                 {c.spotlight?.idiqTopConverter ? '🏆 IDIQ Top Converter (+$50)' : `IDIQ Top Converter — ${c.idiqRate ?? 0}% IDIQ rate`}
               </div>
-              <div className="text-xs text-slate-400 mt-1">{c.spotlight?.allStar ? '⭐ All-Star CSR (+$100)' : 'All-Star CSR (+$100) — manual award'}</div>
+              <div className="text-xs text-slate-400 mt-1">
+                {c.spotlight?.allStar
+                  ? `⭐ All-Star CSR (+$100)${c.spotlight?.allStarManual ? ' — manual' : ''}`
+                  : `All-Star CSR (+$100) — score ${c.spotlight?.allStarScore ?? 0}/100`}
+              </div>
             </div>
 
             <div onClick={openReviews} className={`bg-white rounded-xl border p-4 cursor-pointer hover:border-indigo-300 transition ${c.reviewBonus?.bonus ? 'border-emerald-200' : 'border-slate-200'}`}>

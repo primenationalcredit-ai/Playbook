@@ -225,14 +225,13 @@ exports.handler = async (event) => {
         bbb: (r.location_name || '').toLowerCase().includes('bbb')
       }));
 
-      const isAllStar = allStarSet.has(name.trim().toLowerCase());
       csrs[name] = {
         month,
         reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total },
         reportBonus: report,
         conversionBonus: conversion,
         reviewBonus: review,
-        spotlight: { idiqTopConverter: false, allStar: isAllStar, bonus: isAllStar ? SPOTLIGHT_ALL_STAR : 0 },
+        spotlight: { idiqTopConverter: false, allStar: false, bonus: 0 },
         idiqRate: Math.round(idiqRate * 100),
         closingRate: t.total ? Math.round((t.reachedDocs / t.total) * 100) : 0,
         kpis: {
@@ -267,6 +266,34 @@ exports.handler = async (event) => {
     if (topConverter) {
       csrs[topConverter].spotlight.idiqTopConverter = true;
       csrs[topConverter].spotlight.bonus += SPOTLIGHT_TOP_CONVERTER;
+    }
+
+    // Spotlight: All-Star CSR = top performer across volume (reports + docs + reviews), conversion, and reviews.
+    // Each component is normalized to the team's best, equally weighted. A manual award (bonus_awards) overrides.
+    const arr = CSR_STAFF.map(n => csrs[n]);
+    const volOf = (c) => c.reports.total + c.conversionBonus.reachedDocs + c.reviewBonus.count;
+    const convOf = (c) => (c.conversionBonus.rptsToQuoteRate + c.conversionBonus.quoteToDocsRate) / 2;
+    const revOf = (c) => c.reviewBonus.count;
+    const maxVol = Math.max(1, ...arr.map(volOf));
+    const maxConv = Math.max(1, ...arr.map(convOf));
+    const maxRev = Math.max(1, ...arr.map(revOf));
+    for (const name of CSR_STAFF) {
+      const c = csrs[name];
+      const volume = volOf(c), conv = convOf(c), rev = revOf(c);
+      c.spotlight.allStarScore = Math.round(((volume / maxVol) + (conv / maxConv) + (rev / maxRev)) / 3 * 100);
+      c.spotlight.allStarParts = { volume, conversion: Math.round(conv), reviews: rev };
+    }
+    const manualOverride = CSR_STAFF.find(n => allStarSet.has(n.trim().toLowerCase()));
+    let autoWinner = null, bestScore = -1;
+    for (const name of CSR_STAFF) {
+      const c = csrs[name];
+      if (c.spotlight.allStarParts.volume > 0 && c.spotlight.allStarScore > bestScore) { bestScore = c.spotlight.allStarScore; autoWinner = name; }
+    }
+    const allStarWinner = manualOverride || autoWinner;
+    if (allStarWinner) {
+      csrs[allStarWinner].spotlight.allStar = true;
+      csrs[allStarWinner].spotlight.allStarManual = !!manualOverride;
+      csrs[allStarWinner].spotlight.bonus += SPOTLIGHT_ALL_STAR;
     }
 
     // Total each CSR's bonus
