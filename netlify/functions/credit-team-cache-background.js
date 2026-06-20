@@ -10,6 +10,7 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const CRS_PIPELINE_ID = 45;
+const ROUND1_STARTED_FILTER = 523849; // CRS deals where RD 1 Start/End is set
 const F = {
   rd1: '6979c70df67f42c28dfcff39284ae17d564d600f',
   rd3: '8d681007c089ee4c7390c02ee2f027ca60374708',
@@ -37,8 +38,8 @@ exports.handler = async () => {
   try {
     let start = 0, more = true, pages = 0;
     const out = [];
-    while (more && pages < 300) {
-      const r = await pdGet(`/deals?pipeline_id=${CRS_PIPELINE_ID}&status=open&start=${start}&limit=500`);
+    while (more && pages < 60) {
+      const r = await pdGet(`/deals?filter_id=${ROUND1_STARTED_FILTER}&start=${start}&limit=500`);
       for (const d of (r.data || [])) {
         const a = d[F.rd1] || null;   // RD1 start
         const c = d[F.rd3] || null;   // RD3 start
