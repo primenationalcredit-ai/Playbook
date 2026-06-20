@@ -7,6 +7,8 @@ const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY || '328f4866f7d86c2bfbee
 const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepairusa';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const { GoogleAuth } = require('google-auth-library');
+const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID || '1ABQEwlRRLYTszraGaLSDli1MxRZE4adAemWm9UF9aHw';
 
 const CRS_PIPELINE_ID = 45;
 const REPORTS_RECEIVED_FILTER = 134716;
@@ -54,6 +56,38 @@ async function supaGet(pathQuery) {
   });
   if (!res.ok) return [];
   return res.json();
+}
+
+// Round 3 Results Rate from the Master Dispute Tracking sheet (Data tab).
+// A row where column C ("Starting Rounds and Round Result") = 3 records that client's Round 3 result;
+// column N ("Total Items Removed from this letter") > 0 means results were achieved.
+async function fetchRound3ResultsRate(month) {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let key = process.env.GOOGLE_PRIVATE_KEY;
+  const keyB64 = process.env.GOOGLE_PRIVATE_KEY_B64;
+  if (keyB64) { try { key = Buffer.from(keyB64, 'base64').toString('utf8'); } catch (e) {} }
+  else if (key) { key = key.split('\\n').join('\n'); }
+  if (!email || !key) return null;
+  const auth = new GoogleAuth({ credentials: { client_email: email, private_key: key }, scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'] });
+  const client = await auth.getClient();
+  const token = await client.getAccessToken();
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${encodeURIComponent('Data!A:Z')}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token.token}` } });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const rows = data.values || [];
+  let den = 0, num = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || Number(r[2]) !== 3) continue;       // Round 3 result row
+    const d = new Date(r[0]);
+    if (Number.isNaN(d.getTime())) continue;
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (ym !== month) continue;
+    den++;
+    if (Number(r[13]) > 0) num++;
+  }
+  return { rate: den > 0 ? Math.round((num / den) * 100) : null, num, den };
 }
 
 exports.handler = async (event) => {
@@ -118,12 +152,19 @@ exports.handler = async (event) => {
     // On-Time R1 is the same condition as Day 4+ delays: zero delays past 3 business days = 100% on time.
     const ontimeR1Rate = day4Count === 0 ? 100 : 0;
 
-    // --- Round 3 Results Rate (manual until a source is wired) ---
-    let manualResults = null;
+    // --- Round 3 Results Rate (live from the Master Dispute Tracking sheet; manual fallback) ---
+    let results = null, resultsSource = 'manual', resultsDetail = {};
     try {
-      const rows = await supaGet(`credit_team_bonus?month=eq.${month}&select=round3_results_rate`);
-      if (rows[0] && rows[0].round3_results_rate != null) manualResults = Number(rows[0].round3_results_rate);
+      const r3 = await fetchRound3ResultsRate(month);
+      if (r3) { results = r3.rate; resultsSource = 'auto'; resultsDetail = { gotResults: r3.num, completed: r3.den }; }
     } catch (e) {}
+    if (results == null && resultsSource === 'manual') {
+      try {
+        const rows = await supaGet(`credit_team_bonus?month=eq.${month}&select=round3_results_rate`);
+        if (rows[0] && rows[0].round3_results_rate != null) results = Number(rows[0].round3_results_rate);
+      } catch (e) {}
+    }
+    const manualResults = results;
 
     // --- Members ---
     let members = [];
@@ -139,8 +180,8 @@ exports.handler = async (event) => {
         met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal } },
       fourth_round: { value: fourthRoundRate, standard: STD.fourth_round, unit: '%', source: 'auto',
         met: fourthRoundRate >= STD.fourth_round, detail: { startedR4: r4Num, eligible: r4Den } },
-      round3_results: { value: manualResults, standard: STD.round3_results, unit: '%', source: 'manual',
-        met: manualResults != null && manualResults >= STD.round3_results, detail: {} },
+      round3_results: { value: manualResults, standard: STD.round3_results, unit: '%', source: resultsSource,
+        met: manualResults != null && manualResults >= STD.round3_results, detail: resultsDetail },
     };
 
     const allMet = Object.values(metrics).every((x) => x.met === true);

@@ -133,6 +133,7 @@ export default function CreditTeamBonus() {
                     {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.eligible} R3-complete clients started a 4th round`}
                     {m.key === 'day4_delay' && `${m.detail.overdue} overdue of ${m.detail.queue} in the Reports Received queue`}
                     {m.key === 'ontime_r1' && `${m.detail.lateSends} R1 send${m.detail.lateSends === 1 ? '' : 's'} currently past 3 business days`}
+                    {m.key === 'round3_results' && m.detail.completed != null && `${m.detail.gotResults} of ${m.detail.completed} Round 3 completions had items removed`}
                   </p>
                 )}
               </div>
