@@ -1,38 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { CheckCircle, XCircle, Trophy, Save, Users, AlertTriangle } from 'lucide-react';
+import { CheckCircle, XCircle, Trophy, Save, Users, AlertTriangle, Zap } from 'lucide-react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supaHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
 
-const POOL = 300;
 const fmt = (n) => '$' + Math.round(n || 0).toLocaleString();
 
-// The five core operational metrics. All must pass for the team to earn the pool.
-const METRICS = [
-  { key: 'round3_cohort_rate', label: 'Round 3 Cohort Rate (120 Days)', unit: '%', standard: 20, cmp: 'gte',
-    desc: 'Percentage of clients progressing into Round 3 within the 120-day window.' },
-  { key: 'ontime_r1_rate', label: 'On-Time Starts (R1)', unit: '%', standard: 100, cmp: 'gte',
-    desc: 'Round 1 files started within expected timing thresholds. Standard is 100%.' },
-  { key: 'day4_delay_count', label: 'Day 4+ Delay Count', unit: '', standard: 0, cmp: 'eq',
-    desc: 'Sends delayed beyond 3 business days. Standard is zero.', live: true },
-  { key: 'fourth_round_rate', label: '4th Round Started %', unit: '%', standard: 25, cmp: 'gte',
-    desc: 'Percentage of eligible clients progressing into a 4th round when appropriate.' },
-  { key: 'round3_results_rate', label: 'Round 3 Results Rate', unit: '%', standard: 80, cmp: 'gte',
-    desc: 'Effectiveness and consistency of results achieved during Round 3.' },
-];
-
-const standardText = (m) => (m.cmp === 'eq' ? `= ${m.standard}${m.unit}` : `\u2265 ${m.standard}${m.unit}`);
-
-function passes(m, v) {
-  if (v === null || v === undefined || v === '') return null; // not entered yet
-  const n = Number(v);
-  if (Number.isNaN(n)) return null;
-  if (m.cmp === 'gte') return n >= m.standard;
-  if (m.cmp === 'eq') return n === m.standard;
-  return false;
-}
+// Labels + descriptions keyed to what the metrics function returns.
+const META = {
+  round3_cohort: { label: 'Round 3 Cohort Rate (120 Days)', desc: 'Of clients 120+ days into the program, the share that reached Round 3 within 120 days.', cmp: 'gte' },
+  ontime_r1: { label: 'On-Time Starts (R1)', desc: 'Round 1 files started within the 3-business-day timing standard. Standard is 100%.', cmp: 'gte' },
+  day4_delay: { label: 'Day 4+ Delay Count', desc: 'Sends delayed beyond 3 business days. Standard is zero.', cmp: 'eq' },
+  fourth_round: { label: '4th Round Started %', desc: 'Of clients who completed Round 3, the share that started a 4th round.', cmp: 'gte' },
+  round3_results: { label: 'Round 3 Results Rate', desc: 'Of clients who completed Round 3, the share that achieved results. Manual entry until a source is wired.', cmp: 'gte' },
+};
+const ORDER = ['round3_cohort', 'ontime_r1', 'day4_delay', 'fourth_round', 'round3_results'];
+const stdText = (m) => (META[m.key]?.cmp === 'eq' ? `= ${m.standard}${m.unit}` : `\u2265 ${m.standard}${m.unit}`);
 
 export default function CreditTeamBonus() {
   const { currentUser } = useApp();
@@ -42,72 +27,54 @@ export default function CreditTeamBonus() {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [values, setValues] = useState({});      // saved metric values for the month
-  const [draft, setDraft] = useState({});         // admin edit buffer
-  const [members, setMembers] = useState([]);
-  const [liveDay4, setLiveDay4] = useState(null); // current overdue count (reference)
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [resultsDraft, setResultsDraft] = useState('');
   const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState(null);
 
-  const load = async (m) => {
+  const load = async (mo) => {
     setLoading(true);
     try {
-      const [rowRes, userRes] = await Promise.all([
-        fetch(`${SUPABASE_URL}/rest/v1/credit_team_bonus?month=eq.${m}&select=*`, { headers: supaHeaders }),
-        fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.credit_team&select=id,name&order=name`, { headers: supaHeaders }),
-      ]);
-      const rows = rowRes.ok ? await rowRes.json() : [];
-      const row = rows[0] || {};
-      const v = {};
-      METRICS.forEach((mt) => { v[mt.key] = row[mt.key] ?? null; });
-      setValues(v);
-      setDraft(v);
-      setSavedAt(row.updated_at || null);
-      setMembers(userRes.ok ? await userRes.json() : []);
-    } catch (e) {
-      setValues({}); setDraft({}); setMembers([]);
-    }
-    // Live reference for the Day 4+ row (current queue snapshot, not month-scoped)
-    fetch('/.netlify/functions/credit-team-metrics')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setLiveDay4(d?.rawCounts?.overdueDeals ?? d?.metrics?.disputeTurnaround?.details?.overdue ?? null); })
-      .catch(() => {});
+      const res = await fetch(`/.netlify/functions/credit-team-bonus-metrics?month=${mo}`);
+      const d = res.ok ? await res.json() : null;
+      setData(d);
+      setResultsDraft(d?.metrics?.round3_results?.value ?? '');
+    } catch (e) { setData(null); }
     setLoading(false);
   };
 
   useEffect(() => { load(month); }, [month]);
 
-  const save = async () => {
+  const saveResults = async () => {
     setSaving(true);
     try {
-      const payload = { month, updated_at: new Date().toISOString() };
-      METRICS.forEach((mt) => { payload[mt.key] = draft[mt.key] === '' || draft[mt.key] === null || draft[mt.key] === undefined ? null : Number(draft[mt.key]); });
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/credit_team_bonus`, {
+      const val = resultsDraft === '' || resultsDraft == null ? null : Number(resultsDraft);
+      await fetch(`${SUPABASE_URL}/rest/v1/credit_team_bonus`, {
         method: 'POST',
         headers: { ...supaHeaders, Prefer: 'resolution=merge-duplicates,return=representation' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ month, round3_results_rate: val, updated_at: new Date().toISOString() }),
       });
-      if (res.ok) await load(month);
+      await load(month);
     } catch (e) { /* no-op */ }
     setSaving(false);
   };
 
   if (loading) return <div className="p-6 text-center text-slate-500">Loading Credit Team bonus\u2026</div>;
+  if (!data || data.error) return <div className="p-6 text-center text-rose-500">Could not load metrics{data?.error ? `: ${data.error}` : ''}.</div>;
 
-  const results = METRICS.map((m) => ({ m, ok: passes(m, values[m.key]) }));
-  const allEntered = results.every((r) => r.ok !== null);
-  const allMet = allEntered && results.every((r) => r.ok === true);
-  const memberCount = members.length || 3;
-  const perMember = POOL / memberCount;
-  const dirty = METRICS.some((mt) => String(draft[mt.key] ?? '') !== String(values[mt.key] ?? ''));
+  const metrics = ORDER.map((key) => ({ key, ...data.metrics[key] }));
+  const allMet = data.allMet;
+  const memberCount = data.members?.length || 3;
+  const perMember = data.perMember || 100;
+  const metCount = metrics.filter((m) => m.met).length;
+  const resultsDirty = String(resultsDraft ?? '') !== String(data.metrics.round3_results.value ?? '');
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Credit Team Bonus</h2>
-          <p className="text-sm text-slate-500">Elite Team Performance \u2014 ${POOL} pool, all five operational metrics must be met.</p>
+          <p className="text-sm text-slate-500">Elite Team Performance \u2014 ${data.pool} pool, all five operational metrics must be met.</p>
         </div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
           className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm" />
@@ -120,60 +87,66 @@ export default function CreditTeamBonus() {
             <Trophy size={28} className={allMet ? 'text-green-600' : 'text-slate-300'} />
             <div>
               <div className="font-semibold text-slate-800">
-                {allMet ? 'Bonus earned this month' : allEntered ? 'Not all metrics met \u2014 no bonus this month' : 'Awaiting metric entry'}
+                {allMet ? 'Bonus earned this month' : `Not yet \u2014 ${metCount} of 5 metrics met`}
               </div>
               <div className="text-sm text-slate-500">
                 {allMet
-                  ? `${fmt(POOL)} pool \u00f7 ${memberCount} members = ${fmt(perMember)} each`
-                  : `${results.filter((r) => r.ok === true).length} of ${METRICS.length} metrics met. All five are required.`}
+                  ? `${fmt(data.pool)} pool \u00f7 ${memberCount} members = ${fmt(perMember)} each`
+                  : 'All five metrics are required for the team to earn the pool.'}
               </div>
             </div>
           </div>
-          <div className={`text-2xl font-bold ${allMet ? 'text-green-600' : 'text-slate-300'}`}>{fmt(allMet ? POOL : 0)}</div>
+          <div className={`text-2xl font-bold ${allMet ? 'text-green-600' : 'text-slate-300'}`}>{fmt(allMet ? data.pool : 0)}</div>
         </div>
       </div>
 
       {/* Metric scorecard */}
       <div className="bg-white rounded-xl border shadow-sm divide-y">
-        <div className="p-4 border-b flex items-center justify-between">
-          <h3 className="font-bold text-slate-800">Core Operational Metrics</h3>
-          {isAdmin && (
-            <button onClick={save} disabled={saving || !dirty}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${dirty && !saving ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400'}`}>
-              <Save size={15} /> {saving ? 'Saving\u2026' : 'Save month'}
-            </button>
-          )}
-        </div>
-        {results.map(({ m, ok }) => (
-          <div key={m.key} className="p-4 flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                {ok === true && <CheckCircle size={18} className="text-green-500 shrink-0" />}
-                {ok === false && <XCircle size={18} className="text-rose-500 shrink-0" />}
-                {ok === null && <span className="w-[18px] h-[18px] rounded-full border-2 border-slate-200 shrink-0" />}
-                <span className="font-medium text-slate-800">{m.label}</span>
-                <span className="text-xs text-slate-400">Standard {standardText(m)}</span>
-              </div>
-              <p className="text-xs text-slate-500 mt-1 ml-6">{m.desc}</p>
-              {m.live && liveDay4 != null && (
-                <p className="text-xs text-amber-600 mt-1 ml-6 flex items-center gap-1">
-                  <AlertTriangle size={12} /> Live queue reference: {liveDay4} deal{liveDay4 === 1 ? '' : 's'} currently past 3 business days
-                </p>
-              )}
-            </div>
-            <div className="shrink-0 text-right">
-              {isAdmin ? (
-                <div className="flex items-center gap-1 justify-end">
-                  <input type="number" value={draft[m.key] ?? ''} onChange={(e) => setDraft({ ...draft, [m.key]: e.target.value })}
-                    className="w-24 border border-slate-300 rounded-lg px-2 py-1 text-sm text-right" placeholder="\u2014" />
-                  {m.unit && <span className="text-sm text-slate-400">{m.unit}</span>}
+        <div className="p-4 border-b"><h3 className="font-bold text-slate-800">Core Operational Metrics</h3></div>
+        {metrics.map((m) => {
+          const meta = META[m.key];
+          const entered = m.value != null;
+          return (
+            <div key={m.key} className="p-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {m.met && <CheckCircle size={18} className="text-green-500 shrink-0" />}
+                  {!m.met && entered && <XCircle size={18} className="text-rose-500 shrink-0" />}
+                  {!entered && <span className="w-[18px] h-[18px] rounded-full border-2 border-slate-200 shrink-0" />}
+                  <span className="font-medium text-slate-800">{meta.label}</span>
+                  <span className="text-xs text-slate-400">Standard {stdText(m)}</span>
+                  {m.source === 'auto'
+                    ? <span className="text-[10px] uppercase tracking-wide bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded flex items-center gap-1"><Zap size={10} /> Auto</span>
+                    : <span className="text-[10px] uppercase tracking-wide bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">Manual</span>}
                 </div>
-              ) : (
-                <span className="text-lg font-semibold text-slate-800">{values[m.key] ?? '\u2014'}{values[m.key] != null ? m.unit : ''}</span>
-              )}
+                <p className="text-xs text-slate-500 mt-1 ml-6">{meta.desc}</p>
+                {m.source === 'auto' && m.detail && (
+                  <p className="text-xs text-slate-400 mt-1 ml-6">
+                    {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} clients past 120 days reached Round 3`}
+                    {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.eligible} R3-complete clients started a 4th round`}
+                    {m.key === 'day4_delay' && `${m.detail.overdue} overdue of ${m.detail.queue} in the Reports Received queue`}
+                    {m.key === 'ontime_r1' && `${m.detail.onTime} on time of ${m.detail.queue} in the Reports Received queue`}
+                  </p>
+                )}
+              </div>
+              <div className="shrink-0 text-right">
+                {m.source === 'manual' && isAdmin ? (
+                  <div className="flex items-center gap-1 justify-end">
+                    <input type="number" value={resultsDraft ?? ''} onChange={(e) => setResultsDraft(e.target.value)}
+                      className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm text-right" placeholder="\u2014" />
+                    <span className="text-sm text-slate-400">%</span>
+                    <button onClick={saveResults} disabled={saving || !resultsDirty}
+                      className={`ml-1 p-1.5 rounded-lg ${resultsDirty && !saving ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400'}`} title="Save">
+                      <Save size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-lg font-semibold text-slate-800">{entered ? `${m.value}${m.unit}` : '\u2014'}</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Members + payout */}
@@ -184,7 +157,7 @@ export default function CreditTeamBonus() {
           <span className="text-sm text-slate-400">({memberCount})</span>
         </div>
         <div className="divide-y">
-          {(members.length ? members : [{ id: 'placeholder', name: 'Credit Team members (set department = Credit Team in Admin Users)' }]).map((u) => (
+          {(data.members?.length ? data.members : [{ id: 'placeholder', name: 'Set department = Credit Team in Admin Users to list members' }]).map((u) => (
             <div key={u.id} className="p-4 flex items-center justify-between">
               <span className="text-slate-700">{u.name}</span>
               <span className={`font-semibold ${allMet ? 'text-green-600' : 'text-slate-300'}`}>{fmt(allMet ? perMember : 0)}</span>
@@ -193,10 +166,9 @@ export default function CreditTeamBonus() {
         </div>
       </div>
 
-      <p className="text-xs text-slate-400">
-        Payout is calculated at month-end and paid on the 15th of the following month. The team bonus is all-or-nothing:
-        every one of the five metrics must meet its standard for the pool to be earned.
-        {savedAt ? ` Last saved ${new Date(savedAt).toLocaleString()}.` : ''}
+      <p className="text-xs text-slate-400 flex items-start gap-1">
+        <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+        Auto metrics read live from Pipedrive round dates and the Reports Received queue. Round 3 Results is manual until a results source is wired. Team bonus is all-or-nothing and paid on the 15th of the following month.
       </p>
     </div>
   );
