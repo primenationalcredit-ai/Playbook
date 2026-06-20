@@ -23,7 +23,7 @@ const F = {
 const RD3_END = '8d681007c089ee4c7390c02ee2f027ca60374708_until';
 
 // Standards
-const STD = { round3_cohort: 20, ontime_r1: 100, day4_delay: 0, fourth_round: 25, round3_results: 80 };
+const STD = { round3_cohort: 80, ontime_r1: 100, day4_delay: 0, fourth_round: 25, round3_results: 80 };
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -99,7 +99,8 @@ exports.handler = async (event) => {
     const [y, m] = month.split('-').map(Number);
     const monthEnd = new Date(Date.UTC(y, m, 0, 23, 59, 59));
     const asOf = monthEnd < now ? monthEnd : now;        // don't measure into the future
-    const cohortCutoff = new Date(asOf.getTime() - 120 * 86400000); // RD1 start on/before this = 120+ days old
+    const cohortNewest = new Date(asOf.getTime() - 120 * 86400000); // started at least 120 days ago (should be in R3)
+    const cohortOldest = new Date(asOf.getTime() - 210 * 86400000); // but no older than 210 days (recent rolling cohort)
 
     // --- Read cached CRS round dates (filled by credit-team-cache-background) ---
     const SITE = process.env.URL || 'https://cute-cat-d9631c.netlify.app';
@@ -121,7 +122,7 @@ exports.handler = async (event) => {
     let cohortDen = 0, cohortNum = 0, r4Den = 0, r4Num = 0;
     for (const x of cacheDeals) {
       const rd1 = parseDate(x.a), rd3 = parseDate(x.c), rd3end = parseDate(x.e), rd4 = parseDate(x.d);
-      if (rd1 && rd1 <= cohortCutoff) { cohortDen++; if (rd3 && daysBetween(rd1, rd3) <= 120) cohortNum++; }
+      if (rd1 && rd1 <= cohortNewest && rd1 >= cohortOldest) { cohortDen++; if (rd3) cohortNum++; }
       if (rd3end && rd3end <= asOf) { r4Den++; if (rd4) r4Num++; }
     }
     const round3CohortRate = cohortDen > 0 ? Math.round((cohortNum / cohortDen) * 100) : 0;
@@ -162,7 +163,7 @@ exports.handler = async (event) => {
 
     const metrics = {
       round3_cohort: { value: round3CohortRate, standard: STD.round3_cohort, unit: '%', source: 'auto',
-        met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen } },
+        met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen, stalled: cohortDen - cohortNum } },
       ontime_r1: { value: ontimeR1Rate, standard: STD.ontime_r1, unit: '%', source: 'auto',
         met: ontimeR1Rate >= STD.ontime_r1, detail: { lateSends: day4Count, queue: queueTotal } },
       day4_delay: { value: day4Count, standard: STD.day4_delay, unit: '', source: 'auto',
@@ -186,7 +187,7 @@ exports.handler = async (event) => {
           cacheComplete: cache ? cache.complete : false,
           cachePagesScanned: cache ? cache.pagesScanned : null,
           cacheAgeMin: ageMs === Infinity ? null : Math.round(ageMs / 60000),
-          cohortCutoff: cohortCutoff.toISOString().slice(0, 10), asOf: asOf.toISOString().slice(0, 10),
+          cohortWindow: `${cohortOldest.toISOString().slice(0, 10)} to ${cohortNewest.toISOString().slice(0, 10)}`, asOf: asOf.toISOString().slice(0, 10),
         },
       }),
     };

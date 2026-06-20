@@ -10,7 +10,7 @@ const fmt = (n) => '$' + Math.round(n || 0).toLocaleString();
 
 // Labels + descriptions keyed to what the metrics function returns.
 const META = {
-  round3_cohort: { label: 'Round 3 Cohort Rate (120 Days)', desc: 'Of clients 120+ days into the program, the share that reached Round 3 within 120 days.', cmp: 'gte' },
+  round3_cohort: { label: 'Round 3 Cohort Rate (Stall Rate)', desc: 'Of clients who started 120 to 210 days ago (old enough to be in Round 3), the share that actually reached Round 3. The rest stalled.', cmp: 'gte' },
   ontime_r1: { label: 'On-Time Starts (R1)', desc: 'Round 1 files started within the 3-business-day timing standard. Standard is 100%.', cmp: 'gte' },
   day4_delay: { label: 'Day 4+ Delay Count', desc: 'Sends delayed beyond 3 business days. Standard is zero.', cmp: 'eq' },
   fourth_round: { label: '4th Round Started %', desc: 'Of clients who completed Round 3, the share that started a 4th round.', cmp: 'gte' },
@@ -129,7 +129,7 @@ export default function CreditTeamBonus() {
                 <p className="text-xs text-slate-500 mt-1 ml-6">{meta.desc}</p>
                 {m.source === 'auto' && m.detail && (
                   <p className="text-xs text-slate-400 mt-1 ml-6">
-                    {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} clients past 120 days reached Round 3`}
+                    {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} reached Round 3 · ${m.detail.stalled} stalled (started 120 to 210 days ago)`}
                     {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.eligible} R3-complete clients started a 4th round`}
                     {m.key === 'day4_delay' && `${m.detail.overdue} overdue of ${m.detail.queue} in the Reports Received queue`}
                     {m.key === 'ontime_r1' && `${m.detail.lateSends} R1 send${m.detail.lateSends === 1 ? '' : 's'} currently past 3 business days`}
