@@ -12,6 +12,7 @@ const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID || '1ABQEwlRRLYTszraGaLSDli1
 
 const CRS_PIPELINE_ID = 45;
 const REPORTS_RECEIVED_FILTER = 134716;
+const R1_DUE_FILTER = 17093; // Round 1 deals due by the 5th business day; should be empty by 5pm CST
 const POOL = 300;
 
 // Daterange custom fields: start lives at the key, end at `${key}_until`.
@@ -128,19 +129,31 @@ exports.handler = async (event) => {
     const round3CohortRate = cohortDen > 0 ? Math.round((cohortNum / cohortDen) * 100) : 0;
     const fourthRoundRate = r4Den > 0 ? Math.round((r4Num / r4Den) * 100) : 0;
 
-    // --- Day 4+ delays + On-Time R1 (Reports Received queue) ---
-    let day4Count = 0, queueOnTime = 0, queueTotal = 0;
+    // --- Day 4+ Delay (all rounds): deals in Reports Received past the 4-business-day window ---
+    let day4Count = 0, queueTotal = 0;
     try {
       const rr = await pdGet(`/deals?filter_id=${REPORTS_RECEIVED_FILTER}&start=0&limit=500`);
       (rr.data || []).forEach((deal) => {
         queueTotal++;
         const t = deal.stage_change_time || deal.update_time || deal.add_time;
         const bd = t ? businessDaysDiff(new Date(t.replace(' ', 'T') + 'Z'), now) : 0;
-        if (bd > 3) day4Count++; else queueOnTime++;
+        if (bd > 4) day4Count++;
       });
     } catch (e) { /* leave zeros */ }
-    // On-Time R1 is the same condition as Day 4+ delays: zero delays past 3 business days = 100% on time.
-    const ontimeR1Rate = day4Count === 0 ? 100 : 0;
+
+    // --- On-Time R1: filter 17093 holds Round 1 deals due by the 5th business day; should be empty by 5pm CST ---
+    let r1DueCount = 0;
+    try {
+      let s = 0, m2 = true, p = 0;
+      while (m2 && p < 10) {
+        const r1 = await pdGet(`/deals?filter_id=${R1_DUE_FILTER}&start=${s}&limit=500`);
+        r1DueCount += (r1.data || []).length;
+        m2 = r1.additional_data && r1.additional_data.pagination && r1.additional_data.pagination.more_items_in_collection;
+        s = (r1.additional_data && r1.additional_data.pagination && r1.additional_data.pagination.next_start) || (s + 500);
+        p++;
+      }
+    } catch (e) { /* leave zero */ }
+    const ontimeR1Rate = r1DueCount === 0 ? 100 : 0;
 
     // --- Round 3 Results Rate (live from the Master Dispute Tracking sheet; manual fallback) ---
     let results = null, resultsSource = 'manual', resultsDetail = {};
@@ -165,7 +178,7 @@ exports.handler = async (event) => {
       round3_cohort: { value: round3CohortRate, standard: STD.round3_cohort, unit: '%', source: 'auto',
         met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen, stalled: cohortDen - cohortNum } },
       ontime_r1: { value: ontimeR1Rate, standard: STD.ontime_r1, unit: '%', source: 'auto',
-        met: ontimeR1Rate >= STD.ontime_r1, detail: { lateSends: day4Count, queue: queueTotal } },
+        met: ontimeR1Rate >= STD.ontime_r1, detail: { dueOrLate: r1DueCount } },
       day4_delay: { value: day4Count, standard: STD.day4_delay, unit: '', source: 'auto',
         met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal } },
       fourth_round: { value: fourthRoundRate, standard: STD.fourth_round, unit: '%', source: 'auto',
