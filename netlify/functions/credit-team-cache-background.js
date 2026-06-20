@@ -37,7 +37,7 @@ exports.handler = async () => {
   try {
     let start = 0, more = true, pages = 0;
     const out = [];
-    while (more && pages < 120) {
+    while (more && pages < 300) {
       const r = await pdGet(`/deals?pipeline_id=${CRS_PIPELINE_ID}&status=open&start=${start}&limit=500`);
       for (const d of (r.data || [])) {
         const a = d[F.rd1] || null;   // RD1 start

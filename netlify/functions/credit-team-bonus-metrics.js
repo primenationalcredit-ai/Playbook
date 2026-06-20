@@ -184,6 +184,7 @@ exports.handler = async (event) => {
         debug: {
           cacheDeals: cacheDeals.length,
           cacheComplete: cache ? cache.complete : false,
+          cachePagesScanned: cache ? cache.pagesScanned : null,
           cacheAgeMin: ageMs === Infinity ? null : Math.round(ageMs / 60000),
           cohortCutoff: cohortCutoff.toISOString().slice(0, 10), asOf: asOf.toISOString().slice(0, 10),
         },
