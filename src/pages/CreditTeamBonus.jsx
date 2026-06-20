@@ -13,7 +13,7 @@ const META = {
   round3_cohort: { label: 'Round 3 Cohort Rate (Stall Rate)', desc: 'Of clients who started 120 to 210 days ago (old enough to be in Round 3), the share that actually reached Round 3. The rest stalled.', cmp: 'gte' },
   ontime_r1: { label: 'On-Time Starts (R1)', desc: 'Round 1 disputes must be submitted by the 5th business day. The submission filter should be empty by 5pm CST. Standard is 100% (none left).', cmp: 'gte' },
   day4_delay: { label: 'Day 4+ Delay Count', desc: 'After each round (1, 2, or 3), the team has 4 business days to send the next round and clear the deal out of Reports Received. Counts deals past that window.', cmp: 'eq' },
-  fourth_round: { label: '4th Round Started %', desc: 'Of clients whose Round 3 results were sent in the last 30 days, the share that started a 4th round (RD 4 Start filled in). Rolling.', cmp: 'gte' },
+  fourth_round: { label: '4th Round Started %', desc: 'Of clients who ended Round 3 in the last 90 days, the share that started a 4th round. We keep this low, so the target is a ceiling.', cmp: 'lte' },
   round3_results: { label: 'Round 3 Results Rate', desc: 'Of clients who completed Round 3, the share that achieved results. Manual entry until a source is wired.', cmp: 'gte' },
 };
 const ORDER = ['round3_cohort', 'ontime_r1', 'day4_delay', 'fourth_round', 'round3_results'];
@@ -130,7 +130,7 @@ export default function CreditTeamBonus() {
                 {m.source === 'auto' && m.detail && (
                   <p className="text-xs text-slate-400 mt-1 ml-6">
                     {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} reached Round 3 · ${m.detail.stalled} stalled (started 120 to 210 days ago)`}
-                    {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.resultsSent30d} clients (Round 3 results sent in last 30 days) started a 4th round`}
+                    {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.endedR3In90d} clients who ended Round 3 in the last 90 days started a 4th round`}
                     {m.key === 'day4_delay' && `${m.detail.overdue} deal${m.detail.overdue === 1 ? '' : 's'} past 4 business days in Reports Received (queue of ${m.detail.queue})`}
                     {m.key === 'ontime_r1' && `${m.detail.dueOrLate} Round 1 deal${m.detail.dueOrLate === 1 ? '' : 's'} still in the submission filter`}
                     {m.key === 'round3_results' && m.detail.completed != null && `${m.detail.gotResults} of ${m.detail.completed} Round 3 completions had items removed`}

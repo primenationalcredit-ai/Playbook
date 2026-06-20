@@ -119,23 +119,15 @@ exports.handler = async (event) => {
     const warming = !cache || !cache.deals;
     const cacheDeals = (cache && cache.deals) || [];
 
-    // --- Metric 1: Round 3 Cohort Rate (from cached round dates) ---
-    let cohortDen = 0, cohortNum = 0;
+    // --- Metric 1: Round 3 Cohort Rate / Metric 4: 4th Round Started % (both from cached round dates) ---
+    let cohortDen = 0, cohortNum = 0, r4Den = 0, r4Num = 0;
+    const r3EndWindowStart = new Date(asOf.getTime() - 90 * 86400000); // 4th round: Round 3 ended in last 90 days
     for (const x of cacheDeals) {
-      const rd1 = parseDate(x.a), rd3 = parseDate(x.c);
+      const rd1 = parseDate(x.a), rd3 = parseDate(x.c), rd3end = parseDate(x.e), rd4 = parseDate(x.d);
       if (rd1 && rd1 <= cohortNewest && rd1 >= cohortOldest) { cohortDen++; if (rd3) cohortNum++; }
+      if (rd3end && rd3end >= r3EndWindowStart && rd3end <= asOf) { r4Den++; if (rd4) r4Num++; }
     }
     const round3CohortRate = cohortDen > 0 ? Math.round((cohortNum / cohortDen) * 100) : 0;
-
-    // --- Metric 4: 4th Round Started % (from credit_team_status stamps) ---
-    // Denominator: deals whose Round 3 results were sent in the last 30 days. Numerator: of those, RD4 started.
-    let r4Den = 0, r4Num = 0;
-    const sentWindowStart = new Date(asOf.getTime() - 30 * 86400000);
-    try {
-      const stamps = await supaGet(`credit_team_status?r3_results_sent_at=gte.${sentWindowStart.toISOString()}&r3_results_sent_at=lte.${asOf.toISOString()}&select=rd4_started`);
-      r4Den = stamps.length;
-      r4Num = stamps.filter((s) => s.rd4_started).length;
-    } catch (e) {}
     const fourthRoundRate = r4Den > 0 ? Math.round((r4Num / r4Den) * 100) : 0;
 
     // --- Day 4+ Delay (all rounds): deals in Reports Received past the 4-business-day window ---
@@ -191,7 +183,7 @@ exports.handler = async (event) => {
       day4_delay: { value: day4Count, standard: STD.day4_delay, unit: '', source: 'auto',
         met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal } },
       fourth_round: { value: fourthRoundRate, standard: STD.fourth_round, unit: '%', source: 'auto',
-        met: fourthRoundRate >= STD.fourth_round, detail: { startedR4: r4Num, resultsSent30d: r4Den } },
+        met: fourthRoundRate <= STD.fourth_round, detail: { startedR4: r4Num, endedR3In90d: r4Den } },
       round3_results: { value: manualResults, standard: STD.round3_results, unit: '%', source: resultsSource,
         met: manualResults != null && manualResults >= STD.round3_results, detail: resultsDetail },
     };
