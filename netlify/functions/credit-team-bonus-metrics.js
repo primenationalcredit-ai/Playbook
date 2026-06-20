@@ -68,15 +68,19 @@ exports.handler = async (event) => {
     const cohortCutoff = new Date(asOf.getTime() - 120 * 86400000); // RD1 start on/before this = 120+ days old
 
     // --- Pull active CRS deals (paginated) with round date fields ---
-    let start = 0, more = true, pages = 0;
+    const scanStart = Date.now();
+    const BUDGET_MS = 8500;
+    let start = 0, more = true, pages = 0, truncated = false;
     const deals = [];
-    while (more && pages < 15) {
+    while (more && pages < 80) {
       const r = await pdGet(`/deals?pipeline_id=${CRS_PIPELINE_ID}&status=open&start=${start}&limit=500`);
       (r.data || []).forEach((d) => deals.push(d));
       more = r.additional_data && r.additional_data.pagination && r.additional_data.pagination.more_items_in_collection;
       start = (r.additional_data && r.additional_data.pagination && r.additional_data.pagination.next_start) || (start + 500);
       pages++;
+      if (more && Date.now() - scanStart > BUDGET_MS) { truncated = true; break; }
     }
+    if (more && pages >= 80) truncated = true;
 
     // --- Metric 1: Round 3 Cohort Rate (reached R3 within 120 days, among clients 120+ days old) ---
     let cohortDen = 0, cohortNum = 0;
@@ -111,7 +115,8 @@ exports.handler = async (event) => {
         if (bd > 3) day4Count++; else queueOnTime++;
       });
     } catch (e) { /* leave zeros */ }
-    const ontimeR1Rate = day4Count === 0 ? 100 : (queueTotal > 0 ? Math.round((queueOnTime / queueTotal) * 100) : 0);
+    // On-Time R1 is the same condition as Day 4+ delays: zero delays past 3 business days = 100% on time.
+    const ontimeR1Rate = day4Count === 0 ? 100 : 0;
 
     // --- Round 3 Results Rate (manual until a source is wired) ---
     let manualResults = null;
@@ -129,7 +134,7 @@ exports.handler = async (event) => {
       round3_cohort: { value: round3CohortRate, standard: STD.round3_cohort, unit: '%', source: 'auto',
         met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen } },
       ontime_r1: { value: ontimeR1Rate, standard: STD.ontime_r1, unit: '%', source: 'auto',
-        met: ontimeR1Rate >= STD.ontime_r1, detail: { onTime: queueOnTime, queue: queueTotal } },
+        met: ontimeR1Rate >= STD.ontime_r1, detail: { lateSends: day4Count, queue: queueTotal } },
       day4_delay: { value: day4Count, standard: STD.day4_delay, unit: '', source: 'auto',
         met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal } },
       fourth_round: { value: fourthRoundRate, standard: STD.fourth_round, unit: '%', source: 'auto',
@@ -145,8 +150,8 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        month, metrics, allMet, pool: POOL, perMember, members,
-        debug: { crsDealsScanned: deals.length, pages, cohortCutoff: cohortCutoff.toISOString().slice(0, 10), asOf: asOf.toISOString().slice(0, 10) },
+        month, metrics, allMet, pool: POOL, perMember, members, truncated,
+        debug: { crsDealsScanned: deals.length, pages, truncated, cohortCutoff: cohortCutoff.toISOString().slice(0, 10), asOf: asOf.toISOString().slice(0, 10) },
       }),
     };
   } catch (error) {

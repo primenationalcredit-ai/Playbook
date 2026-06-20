@@ -80,6 +80,13 @@ export default function CreditTeamBonus() {
           className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm" />
       </div>
 
+      {data.truncated && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 flex items-start gap-2">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          The pipeline is large enough that this scan was partial, so the Round 3 Cohort and 4th Round numbers are not final yet. Working on a cached full scan to fix this.
+        </div>
+      )}
+
       {/* Eligibility banner */}
       <div className={`rounded-xl border p-5 ${allMet ? 'bg-green-50 border-green-200' : 'bg-slate-50 border-slate-200'}`}>
         <div className="flex items-center justify-between flex-wrap gap-3">
@@ -125,7 +132,7 @@ export default function CreditTeamBonus() {
                     {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} clients past 120 days reached Round 3`}
                     {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.eligible} R3-complete clients started a 4th round`}
                     {m.key === 'day4_delay' && `${m.detail.overdue} overdue of ${m.detail.queue} in the Reports Received queue`}
-                    {m.key === 'ontime_r1' && `${m.detail.onTime} on time of ${m.detail.queue} in the Reports Received queue`}
+                    {m.key === 'ontime_r1' && `${m.detail.lateSends} R1 send${m.detail.lateSends === 1 ? '' : 's'} currently past 3 business days`}
                   </p>
                 )}
               </div>
