@@ -80,10 +80,10 @@ export default function CreditTeamBonus() {
           className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm" />
       </div>
 
-      {data.truncated && (
+      {data.warming && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 flex items-start gap-2">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-          The pipeline is large enough that this scan was partial, so the Round 3 Cohort and 4th Round numbers are not final yet. Working on a cached full scan to fix this.
+          First-time pipeline scan is running in the background. The Round 3 Cohort and 4th Round numbers will populate in a minute, refresh the page shortly.
         </div>
       )}
 

@@ -101,39 +101,28 @@ exports.handler = async (event) => {
     const asOf = monthEnd < now ? monthEnd : now;        // don't measure into the future
     const cohortCutoff = new Date(asOf.getTime() - 120 * 86400000); // RD1 start on/before this = 120+ days old
 
-    // --- Pull active CRS deals (paginated) with round date fields ---
-    const scanStart = Date.now();
-    const BUDGET_MS = 8500;
-    let start = 0, more = true, pages = 0, truncated = false;
-    const deals = [];
-    while (more && pages < 80) {
-      const r = await pdGet(`/deals?pipeline_id=${CRS_PIPELINE_ID}&status=open&start=${start}&limit=500`);
-      (r.data || []).forEach((d) => deals.push(d));
-      more = r.additional_data && r.additional_data.pagination && r.additional_data.pagination.more_items_in_collection;
-      start = (r.additional_data && r.additional_data.pagination && r.additional_data.pagination.next_start) || (start + 500);
-      pages++;
-      if (more && Date.now() - scanStart > BUDGET_MS) { truncated = true; break; }
+    // --- Read cached CRS round dates (filled by credit-team-cache-background) ---
+    const SITE = process.env.URL || 'https://cute-cat-d9631c.netlify.app';
+    let cache = null;
+    try {
+      const cr = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.credit_team_round_dates&select=cache_value,updated_at`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+      if (cr.ok) { const rows = await cr.json(); if (rows[0]) { cache = JSON.parse(rows[0].cache_value); cache._updatedAt = rows[0].updated_at; } }
+    } catch (e) {}
+
+    // Lazily refresh if the cache is missing or older than 6 hours (fire-and-forget).
+    const ageMs = cache && cache.scannedAt ? (Date.now() - new Date(cache.scannedAt).getTime()) : Infinity;
+    if (ageMs > 6 * 3600 * 1000) {
+      fetch(`${SITE}/.netlify/functions/credit-team-cache-background`, { method: 'POST' }).catch(() => {});
     }
-    if (more && pages >= 80) truncated = true;
+    const warming = !cache || !cache.deals;
+    const cacheDeals = (cache && cache.deals) || [];
 
-    // --- Metric 1: Round 3 Cohort Rate (reached R3 within 120 days, among clients 120+ days old) ---
-    let cohortDen = 0, cohortNum = 0;
-    // --- Metric 3: 4th Round Started % (of clients whose R3 ended, how many started R4) ---
-    let r4Den = 0, r4Num = 0;
-    for (const d of deals) {
-      const rd1 = parseDate(d[F.rd1Start]);
-      const rd3 = parseDate(d[F.rd3Start]);
-      const rd3end = parseDate(d[RD3_END]);
-      const rd4 = parseDate(d[F.rd4Start]);
-
-      if (rd1 && rd1 <= cohortCutoff) {
-        cohortDen++;
-        if (rd3 && daysBetween(rd1, rd3) <= 120) cohortNum++;
-      }
-      if (rd3end && rd3end <= asOf) {
-        r4Den++;
-        if (rd4) r4Num++;
-      }
+    // --- Metric 1: Round 3 Cohort Rate / Metric 3: 4th Round Started % (from cache) ---
+    let cohortDen = 0, cohortNum = 0, r4Den = 0, r4Num = 0;
+    for (const x of cacheDeals) {
+      const rd1 = parseDate(x.a), rd3 = parseDate(x.c), rd3end = parseDate(x.e), rd4 = parseDate(x.d);
+      if (rd1 && rd1 <= cohortCutoff) { cohortDen++; if (rd3 && daysBetween(rd1, rd3) <= 120) cohortNum++; }
+      if (rd3end && rd3end <= asOf) { r4Den++; if (rd4) r4Num++; }
     }
     const round3CohortRate = cohortDen > 0 ? Math.round((cohortNum / cohortDen) * 100) : 0;
     const fourthRoundRate = r4Den > 0 ? Math.round((r4Num / r4Den) * 100) : 0;
@@ -191,8 +180,13 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        month, metrics, allMet, pool: POOL, perMember, members, truncated,
-        debug: { crsDealsScanned: deals.length, pages, truncated, cohortCutoff: cohortCutoff.toISOString().slice(0, 10), asOf: asOf.toISOString().slice(0, 10) },
+        month, metrics, allMet, pool: POOL, perMember, members, warming,
+        debug: {
+          cacheDeals: cacheDeals.length,
+          cacheComplete: cache ? cache.complete : false,
+          cacheAgeMin: ageMs === Infinity ? null : Math.round(ageMs / 60000),
+          cohortCutoff: cohortCutoff.toISOString().slice(0, 10), asOf: asOf.toISOString().slice(0, 10),
+        },
       }),
     };
   } catch (error) {
