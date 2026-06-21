@@ -612,7 +612,6 @@ export default function ConsultantBonus() {
         )}
         </div>);
       })()}
-      })()}
 
       {tab === 'bonuses' && (<>
       {/* Key Metrics Grid */}
@@ -714,7 +713,7 @@ export default function ConsultantBonus() {
             <div className="flex items-center gap-3">
               <Award size={20} className={c.docClub ? 'text-blue-500' : 'text-slate-300'} />
               <div>
-                <p className="font-medium text-slate-800"><Tip text="One-time monthly bonus for hitting doc milestones: $100 at 60 docs, $200 at 75, $350 at 90. Highest tier only, does not stack.">Doc Club Milestone</Tip></p>
+                <p className="font-medium text-slate-800"><Tip text="One-time monthly bonus for hitting Qualified Doc milestones: $100 at 60 Qualified Docs, $200 at 75, $350 at 90. Highest tier only, does not stack.">Doc Club Milestone</Tip></p>
                 <p className="text-sm text-slate-500">{c.docClub ? c.docClub.label : c.qualifiedDocs < 60 ? `${c.qualifiedDocs} of 60 (${60 - c.qualifiedDocs} to go)` : 'No milestone hit'}</p>
               </div>
             </div>
