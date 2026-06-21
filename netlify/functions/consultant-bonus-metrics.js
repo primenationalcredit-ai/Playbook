@@ -208,6 +208,50 @@ exports.handler = async (event) => {
     monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
     const weekStartStr = monday.toISOString().split('T')[0];
 
+    // --- Qualified-doc rule (invoice amounts) ---
+    // A client qualifies if they paid a doc fee this month AND, across their NON-doc invoices,
+    // the invoices paid in full cover at least what is still owed. That captures: a partial paid
+    // in full and >= the final, or the final/full balance paid in full. A token partial payment
+    // against a still-open balance does NOT qualify. If no invoices are on file for the deal we
+    // fall back to the older "has a partial/final ever" check so synced-late clients aren't dropped.
+    const EPS = 1; // balances under $1 count as paid in full
+    const invoicesForDeal = (dealId) => (!dealId ? [] : invoiceData.filter((inv) => String(inv.pipedrive_deal_id) === String(dealId)));
+    function qualifyClient(client) {
+      const invs = invoicesForDeal(client.dealId);
+      const docPay = (client.payments || []).find((p) => p.payment_type === 'doc_fee');
+      const docAmt = docPay ? parseFloat(docPay.amount) || 0 : 0;
+
+      if (invs.length === 0) {
+        const key = client.dealId || client.name;
+        const mr = masterClientMap[key];
+        const adv = mr && (mr.types.has('partial') || mr.types.has('final') || mr.types.has('paid_in_full'));
+        return { qualified: !!adv, reason: adv ? null : 'no partial or final payment on file', paid: 0, owed: 0 };
+      }
+
+      // Drop the doc-fee invoice (closest total to the doc payment; else the smallest invoice)
+      let docIdx = -1, best = Infinity;
+      invs.forEach((inv, i) => {
+        const t = parseFloat(inv.total) || 0;
+        const diff = Math.abs(t - docAmt);
+        if (docAmt > 0 && diff <= 1 && diff < best) { best = diff; docIdx = i; }
+      });
+      if (docIdx === -1) { let min = Infinity; invs.forEach((inv, i) => { const t = parseFloat(inv.total) || 0; if (t < min) { min = t; docIdx = i; } }); }
+      const nonDoc = invs.filter((_, i) => i !== docIdx);
+
+      if (nonDoc.length === 0) return { qualified: false, reason: 'doc fee only, no balance invoice yet', paid: 0, owed: 0 };
+
+      let paidInFull = 0, owed = 0, billed = 0;
+      for (const inv of nonDoc) {
+        const total = parseFloat(inv.total) || 0;
+        const bal = parseFloat(inv.balance) || 0;
+        billed += total; owed += bal;
+        if (bal <= EPS) paidInFull += total;
+      }
+      const qualified = owed <= EPS ? true : paidInFull >= owed;
+      const reason = qualified ? null : `$${Math.round(owed)} of $${Math.round(billed)} balance still owed`;
+      return { qualified, reason, paid: Math.round(billed - owed), owed: Math.round(owed) };
+    }
+
     const results = {};
 
     for (const consultant of consultants) {
@@ -275,29 +319,27 @@ exports.handler = async (event) => {
 
       const clients = Object.values(clientMap);
       
-      // === QUALIFIED DOCS (cross-month journey) ===
-      // A qualified doc = client who paid doc fee THIS month AND has partial/final in ANY month
+      // === QUALIFIED DOCS (invoice-amount rule) ===
       let qualifiedDocs = 0;
       let docFeeOnlyCount = 0;
       const qualifiedClients = [];
-      
+      const notQualifiedClients = [];
+
       for (const client of clients) {
-        if (!client.hasDocFee) continue; // Only count clients who paid doc fee this month
-        const key = client.dealId || client.name;
-        const masterRecord = masterClientMap[key];
-        
-        if (masterRecord && (masterRecord.types.has('partial') || masterRecord.types.has('final') || masterRecord.types.has('paid_in_full'))) {
+        if (!client.hasDocFee) continue; // Only clients who paid a doc fee this month
+        const q = qualifyClient(client);
+        if (q.qualified) {
           qualifiedDocs++;
           qualifiedClients.push(client);
         } else {
           docFeeOnlyCount++;
+          notQualifiedClients.push({ name: client.name, dealId: client.dealId, reason: q.reason, paid: q.paid, owed: q.owed });
         }
       }
-      
-      // Also count clients who didn't pay doc fee this month but paid partial/final
-      // These became qualified in a prior month, contributing to THIS month's payment revenue
+
+      // Clients who paid partial/final this month without a doc fee this month (qualified in a prior month)
       const priorMonthQualified = clients.filter(c => !c.hasDocFee && (c.hasPartial || c.hasFinal));
-      
+
       const docFeeOnlyClients = clients.filter(c => c.hasDocFee && !qualifiedClients.includes(c));
 
       // === ACCELERATOR ===
@@ -660,6 +702,7 @@ exports.handler = async (event) => {
         meetsReviewStandard: reviewCount >= 10,
         // CLIENT DETAIL for drill-down
         clientDetail: {
+          notQualifiedList: notQualifiedClients.map(c => ({ name: c.name, dealId: c.dealId, reason: c.reason, paid: c.paid, owed: c.owed })),
           mtdList: myPayments.map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.is_affiliate_deal ? p.referrer_org : null }))
             .sort((a, b) => String(b.date).localeCompare(String(a.date))),
           affiliateOrgList: Object.entries(affiliateMap).map(([orgName, count]) => ({ name: orgName, clients: count, producing: count >= 3 }))

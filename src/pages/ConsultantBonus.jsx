@@ -51,6 +51,12 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
                   item.type === 'no_doc' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                 }`}>{item.type === 'doc_fee' ? 'Doc Fee' : item.type === 'partial' ? 'Partial' : item.type === 'final' ? 'Final' : item.type === 'no_doc' ? 'No Doc Fee' : item.type}</span>}
                 {item.date && <span className="text-xs text-slate-400 ml-2">{fmtDate(item.date)}</span>}
+                {item.reason && (
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Not Qualified</span>
+                    <span className="text-xs text-slate-500">{item.reason}</span>
+                  </div>
+                )}
                 {/* Payment journey for qualified docs */}
                 {item.payments && item.payments.length > 0 && (
                   <div className="mt-2 border-t pt-2">
@@ -80,16 +86,23 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
 // Tooltip - shows instantly on hover, tap on mobile
 function Tip({ text, children }) {
   const [show, setShow] = React.useState(false);
+  const [pos, setPos] = React.useState({ top: 0, left: 0 });
+  const ref = React.useRef(null);
+  const place = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ top: r.top, left: r.left + r.width / 2 });
+  };
   return (
-    <span className="relative inline-flex items-center gap-1" 
-      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)} 
-      onClick={(e) => { e.stopPropagation(); setShow(!show); }}>
+    <span ref={ref} className="relative inline-flex items-center gap-1"
+      onMouseEnter={() => { place(); setShow(true); }} onMouseLeave={() => setShow(false)}
+      onClick={(e) => { e.stopPropagation(); place(); setShow(!show); }}>
       <span className="border-b border-dotted border-slate-400 cursor-help">{children}</span>
       {show && (
-        <span className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[200] leading-relaxed" 
-          style={{minWidth:'200px', maxWidth:'300px', whiteSpace:'normal'}}>
+        <span className="fixed px-3 py-2 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[200] leading-relaxed"
+          style={{ top: pos.top - 8, left: pos.left, transform: 'translate(-50%, -100%)', minWidth: '200px', maxWidth: '300px', whiteSpace: 'normal', pointerEvents: 'none' }}>
           {text}
-          <span className="absolute top-full left-4 border-4 border-transparent border-t-slate-900"></span>
         </span>
       )}
     </span>
@@ -619,10 +632,10 @@ export default function ConsultantBonus() {
         <div className="bg-white rounded-xl p-4 border shadow-sm">
           <Target size={18} className="text-blue-500 mb-2" />
           <p className="text-3xl font-bold text-slate-800">{c.qualifiedDocs}</p>
-          <p className="text-sm text-slate-500"><Tip text="Clients who paid doc fee this month AND have also paid a partial or final payment. This number drives the Accelerator bonus.">Qualified Docs</Tip></p>
+          <p className="text-sm text-slate-500"><Tip text="Clients who paid a doc fee this month and either paid their balance in full, or paid a partial in full that is at least the final amount. A token partial against a still-open balance does not count. Drives the Accelerator and Doc Club.">Qualified Docs</Tip></p>
           <DrillButton onClick={() => setExpandedSection(expandedSection === 'qualified' ? null : 'qualified')} label="View clients" />
           {expandedSection === 'qualified' && c.clientDetail && (
-            <ClientPanel title="Qualified Docs — Payment Journey" items={c.clientDetail.qualifiedList} onClose={() => setExpandedSection(null)} />
+            <ClientPanel title="Qualified Docs — Payment Journey" items={[...(c.clientDetail.qualifiedList||[]), ...(c.clientDetail.notQualifiedList||[])]} onClose={() => setExpandedSection(null)} />
           )}
           {docsToNext > 0 && <p className="text-xs text-blue-500 mt-1">{c.qualifiedDocs} of {c.qualifiedDocs + docsToNext} → {nextTierLabel}</p>}
         </div>
@@ -704,7 +717,7 @@ export default function ConsultantBonus() {
             )}
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'accel' ? null : 'accel')} label="View qualified docs" />
             {expandedSection === 'accel' && c.clientDetail?.qualifiedList && (
-              <ClientPanel title={`Qualified Docs driving the Accelerator (${c.qualifiedDocs})`} items={c.clientDetail.qualifiedList} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title={`Qualified Docs driving the Accelerator (${c.qualifiedDocs})`} items={[...(c.clientDetail.qualifiedList||[]), ...(c.clientDetail.notQualifiedList||[])]} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 
