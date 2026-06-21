@@ -14,7 +14,7 @@ const fmtDate = (d) => {
   if (parts.length === 3) return `${parts[1]}-${parts[2]}-${parts[0].slice(2)}`;
   return d;
 };
-const DEAL_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/deal/${id}`;
+const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
 
 // Slide-out panel for client details
 function ClientPanel({ title, items, columns, onClose, payments }) {
@@ -33,7 +33,7 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
         <div className="p-5 space-y-3">
           {items.length === 0 ? <p className="text-slate-400 text-center py-8">No records</p> :
             items.map((item, i) => (
-              <div key={i} className="bg-slate-50 rounded-lg p-3 border hover:border-blue-200">
+              <div key={i} className={`bg-slate-50 rounded-lg p-3 border ${item.onClick ? 'hover:border-blue-300 cursor-pointer' : 'hover:border-blue-200'}`} onClick={item.onClick || undefined}>
                 <div className="flex justify-between items-start mb-1">
                   {item.dealId ? (
                     <a href={DEAL_URL(item.dealId)} target="_blank" rel="noreferrer" className="font-medium text-blue-600 hover:underline">{item.name} ↗</a>
@@ -74,6 +74,7 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
                     </div>
                   </div>
                 )}
+                {item.onClick && <p className="text-xs text-blue-600 mt-2">View {item.clientCount != null ? item.clientCount : ''} client{item.clientCount === 1 ? '' : 's'} →</p>}
               </div>
             ))
           }
@@ -122,6 +123,7 @@ export default function ConsultantBonus() {
   const [selectedConsultant, setSelectedConsultant] = useState(null);
   const [tab, setTab] = useState('bonuses');
   const [expandedSection, setExpandedSection] = useState(null);
+  const [sprintWeek, setSprintWeek] = useState(null);
   const [lbTab, setLbTab] = useState('overview');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -777,15 +779,15 @@ export default function ConsultantBonus() {
               <div className="flex items-center gap-3">
                 <Gift size={20} className={c.newAffiliateLaunchCount > 0 ? 'text-indigo-500' : 'text-slate-300'} />
                 <div>
-                  <p className="font-medium text-slate-800"><Tip text="$75 one-time bonus when a brand new affiliate sends 3 or more qualified clients within their first 60 days. One-time per affiliate, never repeats.">New Affiliate Launch</Tip></p>
-                  <p className="text-sm text-slate-500">{c.newAffiliateLaunchCount || 0} new affiliates with 3+ clients in 60 days × $75</p>
+                  <p className="font-medium text-slate-800"><Tip text="$75 one-time bonus when a brand new affiliate sends 3 or more qualified clients within their first 60 days. One-time per affiliate, never repeats. The list also shows new affiliates with 1-2 clients so far so you can reach out and ask for more referrals.">New Affiliate Launch</Tip></p>
+                  <p className="text-sm text-slate-500">{c.newAffiliateLaunchCount || 0} earning ($75 each){(c.newAffiliateAllOrgs?.length || 0) > (c.newAffiliateLaunchCount || 0) ? ` · ${(c.newAffiliateAllOrgs.length - (c.newAffiliateLaunchCount || 0))} new affiliate${(c.newAffiliateAllOrgs.length - (c.newAffiliateLaunchCount || 0)) === 1 ? '' : 's'} not yet at 3` : ''}</p>
                 </div>
               </div>
               <p className={`text-lg font-bold ${c.newAffiliateLaunchBonus > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{fmt(c.newAffiliateLaunchBonus || 0)}</p>
             </div>
-            {c.newAffiliateLaunchCount > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'newaffiliate' ? null : 'newaffiliate')} label={`View ${c.newAffiliateLaunchCount} new affiliates`} />}
-            {expandedSection === 'newaffiliate' && c.newAffiliateOrgs && (
-              <ClientPanel title="New Affiliate Launches (org created in last 60 days, 3+ clients)" items={c.newAffiliateOrgs.map(o => ({ name: o.name, amount: 75, type: `${o.clients} clients · org created ${o.daysSinceCreated ?? o.daysSinceFirst}d ago`, date: o.firstDate }))} onClose={() => setExpandedSection(null)} />
+            {c.newAffiliateAllOrgs?.length > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'newaffiliate' ? null : 'newaffiliate')} label={`View ${c.newAffiliateAllOrgs.length} new affiliate${c.newAffiliateAllOrgs.length === 1 ? '' : 's'}`} />}
+            {expandedSection === 'newaffiliate' && c.newAffiliateAllOrgs && (
+              <ClientPanel title="New Affiliates (org created in last 60 days)" items={c.newAffiliateAllOrgs.map(o => ({ name: o.name, amount: o.qualifies ? 75 : undefined, type: `${o.clients} client${o.clients === 1 ? '' : 's'} · org created ${o.daysSinceCreated}d ago`, date: o.firstDate, reason: o.qualifies ? null : `${o.clients} of 3 clients — reach out for more referrals` }))} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 
@@ -810,6 +812,12 @@ export default function ConsultantBonus() {
                   </div>
                 ))}
               </div>
+            )}
+            {c.clientDetail?.affiliateClients?.length > 0 && (
+              <DrillButton onClick={() => setExpandedSection(expandedSection === 'affclients' ? null : 'affclients')} label="View clients" />
+            )}
+            {expandedSection === 'affclients' && c.clientDetail?.affiliateClients && (
+              <ClientPanel title="Affiliate Clients by Org" items={c.clientDetail.affiliateClients} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 
@@ -865,8 +873,13 @@ export default function ConsultantBonus() {
                 const winner = data.weeklyWinners?.find(ww => ww.week === w.week);
                 const won = !!(winner?.complete && winner?.winner === c.name);
                 const leading = !!(!winner?.complete && winner?.leader === c.name);
-                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress' };
-              })} onClose={() => setExpandedSection(null)} />
+                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
+              })} onClose={() => { setExpandedSection(null); setSprintWeek(null); }} />
+            )}
+            {sprintWeek && (
+              <ClientPanel title={`Week ${sprintWeek.week} Doc Fees (${fmtDate(sprintWeek.start)} — ${fmtDate(sprintWeek.end)})`}
+                items={(sprintWeek.clients || []).map(cl => ({ name: cl.name, amount: cl.amount, dealId: cl.dealId, date: cl.date, type: 'doc_fee' }))}
+                onClose={() => setSprintWeek(null)} />
             )}
           </div>
 

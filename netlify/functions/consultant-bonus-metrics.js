@@ -413,7 +413,8 @@ exports.handler = async (event) => {
       // === NEW AFFILIATE LAUNCH ($75 one-time for new affiliate with 3+ clients in first 60 days) ===
       let newAffiliateLaunchCount = 0;
       const newAffiliateOrgs = [];
-      
+      const newAffiliateAllOrgs = []; // every new affiliate (org created <=60 days) with 1+ client, qualifying or not
+
       for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
         const allOrgPayments = payments.sort((a, b) => a.date.localeCompare(b.date));
         // "New" = the affiliate's Pipedrive ORG was created within the last 60 days.
@@ -432,10 +433,13 @@ exports.handler = async (event) => {
               orgClients.add(p.pipedrive_deal_id || p.client_name);
             }
           }
-          if (orgClients.size >= 3) {
-            if (!awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
+          const count = orgClients.size;
+          if (count >= 1) {
+            const qualifies = count >= 3;
+            newAffiliateAllOrgs.push({ name: orgName, clients: count, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies });
+            if (qualifies && !awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
               newAffiliateLaunchCount++;
-              newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, orgCreated: addTime, clients: orgClients.size, daysSinceCreated });
+              newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, orgCreated: addTime, clients: count, daysSinceCreated });
             }
           }
         }
@@ -537,16 +541,17 @@ exports.handler = async (event) => {
       while (wStart.getDay() !== 1 && wStart < now) wStart.setDate(wStart.getDate() + 1);
       if (wStart > mStart) { // partial first week
         const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() - 1);
-        const weekDocs = myPayments.filter(p => p.payment_type === 'doc_fee' && p.payment_date >= monthStart && p.payment_date <= wEnd.toISOString().split('T')[0]).length;
-        weeks.push({ week: 1, start: monthStart, end: wEnd.toISOString().split('T')[0], docs: weekDocs });
+        const wEndStr = wEnd.toISOString().split('T')[0];
+        const weekPays = myPayments.filter(p => p.payment_type === 'doc_fee' && p.payment_date >= monthStart && p.payment_date <= wEndStr);
+        weeks.push({ week: 1, start: monthStart, end: wEndStr, docs: weekPays.length, clients: weekPays.map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date, dealId: p.pipedrive_deal_id })) });
       }
       let weekNum = weeks.length + 1;
       while (wStart <= now && wStart.getMonth() === mStart.getMonth()) {
         const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 6);
         const endStr = wEnd.toISOString().split('T')[0];
         const startStr = wStart.toISOString().split('T')[0];
-        const weekDocs = myPayments.filter(p => p.payment_type === 'doc_fee' && p.payment_date >= startStr && p.payment_date <= endStr).length;
-        weeks.push({ week: weekNum, start: startStr, end: endStr, docs: weekDocs });
+        const weekPays = myPayments.filter(p => p.payment_type === 'doc_fee' && p.payment_date >= startStr && p.payment_date <= endStr);
+        weeks.push({ week: weekNum, start: startStr, end: endStr, docs: weekPays.length, clients: weekPays.map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date, dealId: p.pipedrive_deal_id })) });
         weekNum++;
         wStart.setDate(wStart.getDate() + 7);
       }
@@ -667,7 +672,7 @@ exports.handler = async (event) => {
         accelerator, docClub, docClubBonus,
         pifCount, pifBonus, pifClients,
         reactivationCount, reactivationBonus, reactivatedOrgs,
-        newAffiliateLaunchCount, newAffiliateLaunchBonus, newAffiliateOrgs,
+        newAffiliateLaunchCount, newAffiliateLaunchBonus, newAffiliateOrgs, newAffiliateAllOrgs,
         producingAffiliates: producingAffiliates.length,
         affiliateDetail: producingAffiliates.map(([n, c]) => ({ name: n, clients: c })),
         affiliateBonus, affiliateBonusDetail,
