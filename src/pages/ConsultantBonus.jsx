@@ -435,8 +435,11 @@ export default function ConsultantBonus() {
               <th className="text-left px-3 py-2">Consultant</th>
               <th className="text-center px-3 py-2 bg-blue-50"><Tip text="Total sales this month">MTD Sales</Tip></th>
               <th className="text-center px-3 py-2 bg-indigo-50"><Tip text="Total sales year to date">YTD Sales</Tip></th>
+              <th className="text-center px-3 py-2 bg-indigo-50"><Tip text="Affiliate-referred revenue year to date. Compare to YTD Sales to see how much of the year came from affiliates.">YTD Affiliate $</Tip></th>
               <th className="text-center px-3 py-2"><Tip text="Organic lead revenue this month">Organic $</Tip></th>
               <th className="text-center px-3 py-2"><Tip text="Affiliate referred revenue this month">Affiliate $</Tip></th>
+              <th className="text-center px-3 py-2"><Tip text="Organic consult close rate this month: doc fees over organic consults">Org Close %</Tip></th>
+              <th className="text-center px-3 py-2"><Tip text="Affiliate consult close rate this month: doc fees over affiliate consults. Compare to Org Close % to see the conversion difference.">Aff Close %</Tip></th>
               <th className="text-center px-3 py-2"><Tip text="Average revenue per client this month">Avg/Client</Tip></th>
               <th className="text-center px-3 py-2"><Tip text="Revenue per consult this month">$/Consult</Tip></th>
               <th className="text-center px-3 py-2"><Tip text="Average daily sales this month">Daily Avg</Tip></th>
@@ -447,7 +450,9 @@ export default function ConsultantBonus() {
                 <td className="px-3 py-2.5 font-medium">{c.name.split(' ')[0]}</td>
                 <td className="text-center px-3 py-2.5 bg-blue-50 font-bold">{fmtInt(c.totalSales)}</td>
                 <td className="text-center px-3 py-2.5 bg-indigo-50 font-bold">{fmtInt(c.ytd?.sales||0)}</td>
+                <Cell v={fmtInt(c.ytd?.affiliateSales||0)} good={(c.ytd?.affiliateSales||0) > 0} />
                 <Cell v={fmtInt(c.organicSales)} /><Cell v={fmtInt(c.affiliateSales)} good={c.affiliateSales > 0} />
+                <Cell v={(c.organicClosingPct||0)+'%'} /><Cell v={(c.affiliateClosingPct||0)+'%'} good={(c.affiliateClosingPct||0) > (c.organicClosingPct||0)} />
                 <Cell v={'$'+(c.avgDealValue||0)} /><Cell v={'$'+(c.revenuePerConsult||0)} />
                 <Cell v={'$'+(c.dailyAvgSales||0)} /><Cell v={fmtInt(c.projectedSales||0)} />
               </tr>
@@ -906,6 +911,25 @@ export default function ConsultantBonus() {
             <p className="text-2xl font-bold text-emerald-400">{fmt(c.totalBonus)}</p>
           </div>
         </div>
+      </div>
+
+      {/* Past Due Invoices — outreach list */}
+      <div className="bg-white rounded-xl border shadow-sm p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle size={20} className={(c.pastDueInvoiceCount||0) > 0 ? 'text-rose-500' : 'text-slate-300'} />
+            <div>
+              <h3 className="font-bold text-slate-800"><Tip text="Clients from this month and last month who still owe on an invoice (overdue or partially paid). Reach out to collect. Click a client to open their Pipedrive deal.">Past Due Invoices</Tip></h3>
+              <p className="text-sm text-slate-500">{c.pastDueInvoiceCount || 0} client{(c.pastDueInvoiceCount||0) === 1 ? '' : 's'} from this and last month owing {fmt(c.pastDueOwed || 0)}</p>
+            </div>
+          </div>
+          {(c.clientDetail?.pastDueList?.length || 0) > 0 && (
+            <DrillButton onClick={() => setExpandedSection(expandedSection === 'pastdue' ? null : 'pastdue')} label="View clients" />
+          )}
+        </div>
+        {expandedSection === 'pastdue' && c.clientDetail?.pastDueList && (
+          <ClientPanel title="Past Due Invoices — Reach Out" items={c.clientDetail.pastDueList.map(p => ({ name: p.name, dealId: p.dealId, type: `$${p.balance} owed${p.daysOverdue != null && p.daysOverdue > 0 ? ` · ${p.daysOverdue}d overdue` : (p.status === 'partially_paid' ? ' · partially paid' : '')}`, date: p.dueDate }))} onClose={() => setExpandedSection(null)} />
+        )}
       </div>
 
       {/* Commission Detail */}

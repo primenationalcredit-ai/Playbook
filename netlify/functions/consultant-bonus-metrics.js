@@ -83,6 +83,13 @@ exports.handler = async (event) => {
       masterClientMap[key].months.add(p.payment_month);
     }
 
+    // deal_id -> client_name (invoices store deal-id-prefixed customer names, so resolve real names here)
+    const nameByDeal = {};
+    for (const p of allPayments) {
+      const did = p.pipedrive_deal_id ? String(p.pipedrive_deal_id) : null;
+      if (did && p.client_name && !nameByDeal[did]) nameByDeal[did] = p.client_name;
+    }
+
     // Get reviews
     const reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=*`);
 
@@ -636,6 +643,21 @@ exports.handler = async (event) => {
       const myInvoices = invoiceData.filter(inv => inv.pipedrive_deal_id && myDealIds.has(String(inv.pipedrive_deal_id)));
       const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
       const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
+
+      // Past-due / owing invoices (this + last month) with client names + deal links, for outreach
+      const prevMonthDate = new Date(Number(targetMonth.split('-')[0]), Number(targetMonth.split('-')[1]) - 2, 1);
+      const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+      const pastDueList = myInvoices
+        .filter(inv => (inv.status === 'overdue' || inv.status === 'partially_paid') && (parseFloat(inv.balance) || 0) > 1)
+        .filter(inv => inv.invoice_month === targetMonth || inv.invoice_month === prevMonth)
+        .map(inv => {
+          const did = String(inv.pipedrive_deal_id);
+          const due = inv.due_date ? new Date(inv.due_date) : null;
+          const daysOverdue = due ? Math.floor((now - due) / 86400000) : null;
+          return { name: nameByDeal[did] || inv.customer_name || `Deal ${did}`, dealId: inv.pipedrive_deal_id, balance: Math.round(parseFloat(inv.balance) || 0), dueDate: inv.due_date, daysOverdue, status: inv.status };
+        })
+        .sort((a, b) => (b.daysOverdue || 0) - (a.daysOverdue || 0));
+      const pastDueOwed = pastDueList.reduce((s, i) => s + i.balance, 0);
       const overdueAmount = overdueInvoices.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);
       const totalInvoiced = myInvoices.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
       const totalCollected = myInvoices.reduce((s, i) => s + (parseFloat(i.total) - parseFloat(i.balance) || 0), 0);
@@ -697,6 +719,7 @@ exports.handler = async (event) => {
         organicConsults, affiliateConsults, organicDocsPaid, affiliateDocsPaid,
         // Invoice / Collection
         overdueCount: overdueInvoices.length, overdueAmount: Math.round(overdueAmount),
+        pastDueInvoiceCount: pastDueList.length, pastDueOwed: Math.round(pastDueOwed),
         partiallyPaidCount: partiallyPaidInvoices.length,
         collectionRate, totalInvoiced: Math.round(totalInvoiced), totalCollected: Math.round(totalCollected),
         dueThisWeekCount: dueThisWeek.length, dueThisWeekAmount: Math.round(dueThisWeekAmount),
@@ -708,6 +731,7 @@ exports.handler = async (event) => {
         // CLIENT DETAIL for drill-down
         clientDetail: {
           notQualifiedList: notQualifiedClients.map(c => ({ name: c.name, dealId: c.dealId, reason: c.reason, paid: c.paid, owed: c.owed })),
+          pastDueList,
           mtdList: myPayments.map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.is_affiliate_deal ? p.referrer_org : null }))
             .sort((a, b) => String(b.date).localeCompare(String(a.date))),
           affiliateOrgList: Object.entries(affiliateMap).map(([orgName, count]) => ({ name: orgName, clients: count, producing: count >= 3 }))
