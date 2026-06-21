@@ -15,16 +15,16 @@ const META = {
   ontime_r1: { label: 'On-Time Starts (R1)', cmp: 'gte',
     how: 'Round 1 disputes must be submitted by the 5th business day. The submission list in Pipedrive should be empty by 5pm CST. If anything is still in it, Round 1s went out late. Target is 100% on time (nothing left in the list). The list below is anything still overdue.', listLabel: 'Round 1 deals still in the submission list' },
   day4_delay: { label: 'Day 4+ Delay Count', cmp: 'eq',
-    how: 'After any round\u2019s reports come in, the team has 4 business days to send the next round and clear the client out of Reports Received. This counts anyone sitting there longer than 4 business days. Target is zero, no backlog. The list below is each client past the window and how long they have waited.', listLabel: 'Clients past 4 business days in Reports Received' },
+    how: 'After any round’s reports come in, the team has 4 business days to send the next round and clear the client out of Reports Received. This counts anyone sitting there longer than 4 business days. Target is zero, no backlog. The list below is each client past the window and how long they have waited.', listLabel: 'Clients past 4 business days in Reports Received' },
   fourth_round: { label: '4th Round Started %', cmp: 'lte',
     how: 'We look at clients who ended Round 3 in the last 90 days. Of that group, how many started a 4th round. That divided by the group is the percentage. We keep 4th rounds low, so this is a ceiling, 25% or under passes. Lower is better. The list below is the clients who started a 4th round.', listLabel: 'Clients who started a 4th round' },
   round3_results: { label: 'Round 3 Results Rate', cmp: 'gte',
-    how: 'We look at the Round 3 result entries logged in the Master Dispute Tracking sheet, dated this month. Of those, how many had at least one item removed. That divided by the total is the percentage. Higher is better. The list below is this month\u2019s Round 3 results, each marked removed or nothing removed.', listLabel: 'This month\u2019s Round 3 results' },
+    how: 'We look at the Round 3 result entries logged in the Master Dispute Tracking sheet, dated this month. Of those, how many had at least one item removed. That divided by the total is the percentage. Higher is better. The list below is this month’s Round 3 results, each marked removed or nothing removed.', listLabel: 'This month’s Round 3 results' },
 };
 const ORDER = ['round3_cohort', 'ontime_r1', 'day4_delay', 'fourth_round', 'round3_results'];
 const stdText = (m) => {
   const c = META[m.key]?.cmp; const s = `${m.standard}${m.unit}`;
-  return c === 'eq' ? `= ${s}` : c === 'lte' ? `\u2264 ${s}` : `\u2265 ${s}`;
+  return c === 'eq' ? `= ${s}` : c === 'lte' ? `≤ ${s}` : `≥ ${s}`;
 };
 const DEAL_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/deal/${id}`;
 
@@ -69,7 +69,7 @@ export default function CreditTeamBonus() {
     setSaving(false);
   };
 
-  if (loading) return <div className="p-6 text-center text-slate-500">Loading Credit Team bonus\u2026</div>;
+  if (loading) return <div className="p-6 text-center text-slate-500">Loading Credit Team bonus…</div>;
   if (!data || data.error) return <div className="p-6 text-center text-rose-500">Could not load metrics{data?.error ? `: ${data.error}` : ''}.</div>;
 
   const metrics = ORDER.map((key) => ({ key, ...data.metrics[key] }));
@@ -84,7 +84,7 @@ export default function CreditTeamBonus() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Credit Team Bonus</h2>
-          <p className="text-sm text-slate-500">Elite Team Performance \u2014 ${data.pool} pool, all five operational metrics must be met.</p>
+          <p className="text-sm text-slate-500">Elite Team Performance — ${data.pool} pool, all five operational metrics must be met.</p>
         </div>
         <input type="month" value={month} onChange={(e) => setMonth(e.target.value)}
           className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm" />
@@ -104,11 +104,11 @@ export default function CreditTeamBonus() {
             <Trophy size={28} className={allMet ? 'text-green-600' : 'text-slate-300'} />
             <div>
               <div className="font-semibold text-slate-800">
-                {allMet ? 'Bonus earned this month' : `Not yet \u2014 ${metCount} of 5 metrics met`}
+                {allMet ? 'Bonus earned this month' : `Not yet — ${metCount} of 5 metrics met`}
               </div>
               <div className="text-sm text-slate-500">
                 {allMet
-                  ? `${fmt(data.pool)} pool \u00f7 ${memberCount} members = ${fmt(perMember)} each`
+                  ? `${fmt(data.pool)} pool ÷ ${memberCount} members = ${fmt(perMember)} each`
                   : 'All five metrics are required for the team to earn the pool.'}
               </div>
             </div>
@@ -142,7 +142,7 @@ export default function CreditTeamBonus() {
                   </div>
                   {m.detail && (
                     <p className="text-xs text-slate-400 mt-1 ml-6">
-                      {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} reached Round 3 \u00b7 ${m.detail.stalled} stalled (started 120 to 210 days ago)`}
+                      {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} reached Round 3 · ${m.detail.stalled} stalled (started 120 to 210 days ago)`}
                       {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.endedR3In90d} clients who ended Round 3 in the last 90 days started a 4th round`}
                       {m.key === 'day4_delay' && `${m.detail.overdue} deal${m.detail.overdue === 1 ? '' : 's'} past 4 business days in Reports Received (queue of ${m.detail.queue})`}
                       {m.key === 'ontime_r1' && `${m.detail.dueOrLate} Round 1 deal${m.detail.dueOrLate === 1 ? '' : 's'} still in the submission filter`}
@@ -150,14 +150,14 @@ export default function CreditTeamBonus() {
                     </p>
                   )}
                   <span className="text-xs text-blue-600 mt-1 ml-6 inline-flex items-center gap-1">
-                    <Info size={12} /> {isOpen ? 'Hide details' : 'How it\u2019s calculated \u00b7 view clients'}
+                    <Info size={12} /> {isOpen ? 'Hide details' : 'How it’s calculated · view clients'}
                   </span>
                 </button>
                 <div className="shrink-0 text-right">
                   {m.source === 'manual' && isAdmin ? (
                     <div className="flex items-center gap-1 justify-end">
                       <input type="number" value={resultsDraft ?? ''} onChange={(e) => setResultsDraft(e.target.value)}
-                        className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm text-right" placeholder="\u2014" />
+                        className="w-20 border border-slate-300 rounded-lg px-2 py-1 text-sm text-right" placeholder="—" />
                       <span className="text-sm text-slate-400">%</span>
                       <button onClick={saveResults} disabled={saving || !resultsDirty}
                         className={`ml-1 p-1.5 rounded-lg ${resultsDirty && !saving ? 'bg-slate-800 text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400'}`} title="Save">
@@ -165,7 +165,7 @@ export default function CreditTeamBonus() {
                       </button>
                     </div>
                   ) : (
-                    <span className="text-lg font-semibold text-slate-800">{entered ? `${m.value}${m.unit}` : '\u2014'}</span>
+                    <span className="text-lg font-semibold text-slate-800">{entered ? `${m.value}${m.unit}` : '—'}</span>
                   )}
                 </div>
               </div>
@@ -173,15 +173,15 @@ export default function CreditTeamBonus() {
               {isOpen && (
                 <div className="px-4 pb-4 ml-6 space-y-3">
                   <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 leading-relaxed">
-                    <div className="font-semibold text-slate-700 mb-1">How it\u2019s calculated</div>
+                    <div className="font-semibold text-slate-700 mb-1">How it’s calculated</div>
                     {meta.how}
                   </div>
                   <div>
                     <div className="text-xs font-semibold text-slate-600 mb-1">{meta.listLabel} ({clients.length})</div>
                     {clients.length === 0 ? (
                       <div className="text-xs text-slate-400">
-                        {m.key === 'ontime_r1' ? 'All Round 1s on time \u2014 nothing in the list.'
-                          : m.key === 'day4_delay' ? 'No delays \u2014 the queue is clear.'
+                        {m.key === 'ontime_r1' ? 'All Round 1s on time — nothing in the list.'
+                          : m.key === 'day4_delay' ? 'No delays — the queue is clear.'
                           : m.key === 'round3_results' ? 'No Round 3 results logged for this month yet.'
                           : 'No clients in this list.'}
                       </div>
