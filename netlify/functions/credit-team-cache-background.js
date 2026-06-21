@@ -43,7 +43,7 @@ exports.handler = async () => {
         const c = d[F.rd3] || null;   // RD3 start
         const e = d[RD3_END] || null; // RD3 end
         const dd = d[F.rd4] || null;  // RD4 start
-        if (a || e || dd) out.push({ a, c, e, d: dd });
+        if (a || e || dd) out.push({ id: d.id, n: d.title || null, a, c, e, d: dd });
       }
       more = r.additional_data && r.additional_data.pagination && r.additional_data.pagination.more_items_in_collection;
       start = (r.additional_data && r.additional_data.pagination && r.additional_data.pagination.next_start) || (start + 500);

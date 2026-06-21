@@ -78,6 +78,7 @@ async function fetchRound3ResultsRate(month) {
   const data = await res.json();
   const rows = data.values || [];
   let den = 0, num = 0;
+  const clients = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || Number(r[2]) !== 3) continue;       // Round 3 result row
@@ -86,9 +87,11 @@ async function fetchRound3ResultsRate(month) {
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     if (ym !== month) continue;
     den++;
-    if (Number(r[13]) > 0) num++;
+    const removed = Number(r[13]) > 0;
+    if (removed) num++;
+    clients.push({ name: r[1] || 'Unknown', removed });
   }
-  return { rate: den > 0 ? Math.round((num / den) * 100) : null, num, den };
+  return { rate: den > 0 ? Math.round((num / den) * 100) : null, num, den, clients };
 }
 
 exports.handler = async (event) => {
@@ -121,33 +124,44 @@ exports.handler = async (event) => {
 
     // --- Metric 1: Round 3 Cohort Rate / Metric 4: 4th Round Started % (both from cached round dates) ---
     let cohortDen = 0, cohortNum = 0, r4Den = 0, r4Num = 0;
+    const cohortStalled = [], r4Started = [];
     const r3EndWindowStart = new Date(asOf.getTime() - 90 * 86400000); // 4th round: Round 3 ended in last 90 days
     for (const x of cacheDeals) {
       const rd1 = parseDate(x.a), rd3 = parseDate(x.c), rd3end = parseDate(x.e), rd4 = parseDate(x.d);
-      if (rd1 && rd1 <= cohortNewest && rd1 >= cohortOldest) { cohortDen++; if (rd3) cohortNum++; }
-      if (rd3end && rd3end >= r3EndWindowStart && rd3end <= asOf) { r4Den++; if (rd4) r4Num++; }
+      if (rd1 && rd1 <= cohortNewest && rd1 >= cohortOldest) {
+        cohortDen++;
+        if (rd3) cohortNum++;
+        else cohortStalled.push({ name: x.n || `Deal ${x.id}`, dealId: x.id || null });
+      }
+      if (rd3end && rd3end >= r3EndWindowStart && rd3end <= asOf) {
+        r4Den++;
+        if (rd4) { r4Num++; r4Started.push({ name: x.n || `Deal ${x.id}`, dealId: x.id || null }); }
+      }
     }
     const round3CohortRate = cohortDen > 0 ? Math.round((cohortNum / cohortDen) * 100) : 0;
     const fourthRoundRate = r4Den > 0 ? Math.round((r4Num / r4Den) * 100) : 0;
 
     // --- Day 4+ Delay (all rounds): deals in Reports Received past the 4-business-day window ---
     let day4Count = 0, queueTotal = 0;
+    const day4List = [];
     try {
       const rr = await pdGet(`/deals?filter_id=${REPORTS_RECEIVED_FILTER}&start=0&limit=500`);
       (rr.data || []).forEach((deal) => {
         queueTotal++;
         const t = deal.stage_change_time || deal.update_time || deal.add_time;
         const bd = t ? businessDaysDiff(new Date(t.replace(' ', 'T') + 'Z'), now) : 0;
-        if (bd > 4) day4Count++;
+        if (bd > 4) { day4Count++; day4List.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id, days: bd }); }
       });
     } catch (e) { /* leave zeros */ }
 
     // --- On-Time R1: filter 17093 holds Round 1 deals due by the 5th business day; should be empty by 5pm CST ---
     let r1DueCount = 0;
+    const r1List = [];
     try {
       let s = 0, m2 = true, p = 0;
       while (m2 && p < 10) {
         const r1 = await pdGet(`/deals?filter_id=${R1_DUE_FILTER}&start=${s}&limit=500`);
+        (r1.data || []).forEach((deal) => r1List.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id }));
         r1DueCount += (r1.data || []).length;
         m2 = r1.additional_data && r1.additional_data.pagination && r1.additional_data.pagination.more_items_in_collection;
         s = (r1.additional_data && r1.additional_data.pagination && r1.additional_data.pagination.next_start) || (s + 500);
@@ -160,7 +174,7 @@ exports.handler = async (event) => {
     let results = null, resultsSource = 'manual', resultsDetail = {};
     try {
       const r3 = await fetchRound3ResultsRate(month);
-      if (r3) { results = r3.rate; resultsSource = 'auto'; resultsDetail = { gotResults: r3.num, completed: r3.den }; }
+      if (r3) { results = r3.rate; resultsSource = 'auto'; resultsDetail = { gotResults: r3.num, completed: r3.den, clients: (r3.clients || []).slice(0, 300) }; }
     } catch (e) {}
     if (results == null && resultsSource === 'manual') {
       try {
@@ -177,13 +191,13 @@ exports.handler = async (event) => {
 
     const metrics = {
       round3_cohort: { value: round3CohortRate, standard: STD.round3_cohort, unit: '%', source: 'auto',
-        met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen, stalled: cohortDen - cohortNum } },
+        met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen, stalled: cohortDen - cohortNum, clients: cohortStalled.slice(0, 300) } },
       ontime_r1: { value: ontimeR1Rate, standard: STD.ontime_r1, unit: '%', source: 'auto',
-        met: ontimeR1Rate >= STD.ontime_r1, detail: { dueOrLate: r1DueCount } },
+        met: ontimeR1Rate >= STD.ontime_r1, detail: { dueOrLate: r1DueCount, clients: r1List.slice(0, 300) } },
       day4_delay: { value: day4Count, standard: STD.day4_delay, unit: '', source: 'auto',
-        met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal } },
+        met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal, clients: day4List.slice(0, 300) } },
       fourth_round: { value: fourthRoundRate, standard: STD.fourth_round, unit: '%', source: 'auto',
-        met: fourthRoundRate <= STD.fourth_round, detail: { startedR4: r4Num, endedR3In90d: r4Den } },
+        met: fourthRoundRate <= STD.fourth_round, detail: { startedR4: r4Num, endedR3In90d: r4Den, clients: r4Started.slice(0, 300) } },
       round3_results: { value: manualResults, standard: STD.round3_results, unit: '%', source: resultsSource,
         met: manualResults != null && manualResults >= STD.round3_results, detail: resultsDetail },
     };
