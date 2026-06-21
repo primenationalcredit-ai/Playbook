@@ -919,8 +919,8 @@ export default function ConsultantBonus() {
           <div className="flex items-center gap-3">
             <AlertTriangle size={20} className={(c.pastDueInvoiceCount||0) > 0 ? 'text-rose-500' : 'text-slate-300'} />
             <div>
-              <h3 className="font-bold text-slate-800"><Tip text="Clients from this month and last month who still owe on an invoice (overdue or partially paid). Reach out to collect. Click a client to open their Pipedrive deal.">Past Due Invoices</Tip></h3>
-              <p className="text-sm text-slate-500">{c.pastDueInvoiceCount || 0} client{(c.pastDueInvoiceCount||0) === 1 ? '' : 's'} from this and last month owing {fmt(c.pastDueOwed || 0)}</p>
+              <h3 className="font-bold text-slate-800"><Tip text="Clients who still owe on an invoice (overdue or partially paid), most recently due first. Reach out to collect. Click a client to open their Pipedrive deal.">Past Due Invoices</Tip></h3>
+              <p className="text-sm text-slate-500">{c.pastDueInvoiceCount || 0} client{(c.pastDueInvoiceCount||0) === 1 ? '' : 's'} owing {fmt(c.pastDueOwed || 0)}</p>
             </div>
           </div>
           {(c.clientDetail?.pastDueList?.length || 0) > 0 && (

@@ -644,19 +644,16 @@ exports.handler = async (event) => {
       const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
       const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
 
-      // Past-due / owing invoices (this + last month) with client names + deal links, for outreach
-      const prevMonthDate = new Date(Number(targetMonth.split('-')[0]), Number(targetMonth.split('-')[1]) - 2, 1);
-      const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+      // Past-due / owing invoices with client names + deal links, for outreach (recent due first)
       const pastDueList = myInvoices
         .filter(inv => (inv.status === 'overdue' || inv.status === 'partially_paid') && (parseFloat(inv.balance) || 0) > 1)
-        .filter(inv => inv.invoice_month === targetMonth || inv.invoice_month === prevMonth)
         .map(inv => {
           const did = String(inv.pipedrive_deal_id);
           const due = inv.due_date ? new Date(inv.due_date) : null;
           const daysOverdue = due ? Math.floor((now - due) / 86400000) : null;
           return { name: nameByDeal[did] || inv.customer_name || `Deal ${did}`, dealId: inv.pipedrive_deal_id, balance: Math.round(parseFloat(inv.balance) || 0), dueDate: inv.due_date, daysOverdue, status: inv.status };
         })
-        .sort((a, b) => (b.daysOverdue || 0) - (a.daysOverdue || 0));
+        .sort((a, b) => String(b.dueDate || '').localeCompare(String(a.dueDate || '')));
       const pastDueOwed = pastDueList.reduce((s, i) => s + i.balance, 0);
       const overdueAmount = overdueInvoices.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);
       const totalInvoiced = myInvoices.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
@@ -811,9 +808,13 @@ exports.handler = async (event) => {
       if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') todayByConsultant[cName].finals++;
     }
 
-    // YTD data from allPayments (already loaded)
+    // YTD data from allPayments (already loaded). Fall back to payment_date when payment_month is blank,
+    // otherwise payments missing that field get dropped from YTD and the total undercounts.
     const year = targetMonth.split('-')[0];
-    const ytdPayments = allPayments.filter(p => (p.payment_month || '').startsWith(year));
+    const ytdPayments = allPayments.filter(p => {
+      const ym = p.payment_month || (p.payment_date ? String(p.payment_date).slice(0, 7) : '');
+      return ym.startsWith(year);
+    });
     
     const ytdSales = ytdPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
     const ytdDocs = ytdPayments.filter(p => p.payment_type === 'doc_fee').length;
@@ -834,10 +835,41 @@ exports.handler = async (event) => {
     // Convert Sets to counts
     for (const c of Object.values(ytdByConsultant)) { c.monthsActive = c.months.size; delete c.months; }
 
-    // Add today and YTD to each consultant result
+    // Add today and YTD to each consultant result.
+    // Match payments by the SAME fuzzy first/last-name logic the main loop uses, so consultants whose
+    // payment consultant_name differs from their user name (e.g. extra middle names) still aggregate.
+    const matchPay = (p, fn, ln, full) => {
+      const pName = (p.consultant_name || '').toLowerCase().trim();
+      const pParts = pName.split(/\s+/);
+      if (pParts[0] === fn) return true;
+      if (ln.length > 3 && pParts.some(pp => pp === ln)) return true;
+      if (pName === full) return true;
+      return false;
+    };
     for (const [n, d] of Object.entries(results)) {
-      d.today = todayByConsultant[n] || { sales: 0, docs: 0, partials: 0, finals: 0, payments: 0 };
-      d.ytd = ytdByConsultant[n] || { sales: 0, docs: 0, partials: 0, finals: 0, payments: 0, affiliateSales: 0, monthsActive: 0 };
+      const fn = n.split(' ')[0].toLowerCase();
+      const ln = n.split(' ').slice(-1)[0].toLowerCase();
+      const full = n.toLowerCase();
+      const myYtd = ytdPayments.filter(p => matchPay(p, fn, ln, full));
+      const myToday = todayPayments.filter(p => matchPay(p, fn, ln, full));
+      let yS = 0, yAff = 0, yD = 0, yP = 0, yF = 0; const yMonths = new Set();
+      for (const p of myYtd) {
+        const amt = parseFloat(p.amount) || 0;
+        yS += amt; yMonths.add(p.payment_month);
+        if (p.payment_type === 'doc_fee') yD++;
+        else if (p.payment_type === 'partial') yP++;
+        else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') yF++;
+        if (p.is_affiliate_deal) yAff += amt;
+      }
+      d.ytd = { sales: Math.round(yS), affiliateSales: Math.round(yAff), docs: yD, partials: yP, finals: yF, payments: myYtd.length, monthsActive: yMonths.size };
+      let tS = 0, tD = 0, tP = 0, tF = 0;
+      for (const p of myToday) {
+        tS += parseFloat(p.amount) || 0;
+        if (p.payment_type === 'doc_fee') tD++;
+        else if (p.payment_type === 'partial') tP++;
+        else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') tF++;
+      }
+      d.today = { sales: Math.round(tS), docs: tD, partials: tP, finals: tF, payments: myToday.length };
     }
 
     // Auto-save newly detected one-time bonuses
