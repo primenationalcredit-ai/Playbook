@@ -251,7 +251,7 @@ export default function AMBonus() {
     }
 
     // Referrals — organization-based, live once an Org ID is set per AM
-    let referrals = null, referralPaid = null, referralBonus = 0, referralNeedsConfig = false, referralTopProducer = false;
+    let referrals = null, referralPaid = null, referralBonus = 0, referralNeedsConfig = false, referralTopProducer = false, referralDeals = [];
     if (referralData) {
       if (referralData.needsConfig) {
         referralNeedsConfig = true;
@@ -264,6 +264,7 @@ export default function AMBonus() {
           referralPaid = fMatch[1].paid;
           referralBonus = fMatch[1].bonus;
           referralTopProducer = fMatch[1].isTopProducer;
+          referralDeals = fMatch[1].deals || [];
         } else { referrals = 0; referralPaid = 0; }
       }
     }
@@ -315,9 +316,10 @@ export default function AMBonus() {
       approvedCount, pending: pending.length, rejected: rejected.length,
       creditBonus, submissions: amSubs, approvedSubs: approved,
       reviewCount, bbbReviews, reviewBonus,
+      reviewList: amReviews.map(r => ({ reviewer: r.reviewer_name, location: r.location_name, rating: r.rating, text: r.review_text, date: r.created_at })),
       stallRate, stallCount, stallTotal, stalledClients, stallBonus,
       additionalRounds, roundsBonus, roundDeals, pastDueRounds,
-      referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer,
+      referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer, referralDeals,
       csatAvg, csatResponses, csatEligible, csatOverall,
       agreementPctKept, agreementKept, agreementTotal, agreementNeedsData,
       paymentStallRate, paymentStallCount,
@@ -325,7 +327,7 @@ export default function AMBonus() {
     };
     } catch(e) {
       console.error('getAMMetrics error:', e);
-      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, csatAvg: null, csatResponses: 0, csatEligible: false, csatOverall: null, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
+      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, reviewList: [], stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, referralDeals: [], csatAvg: null, csatResponses: 0, csatEligible: false, csatOverall: null, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, totalBonus: 0 };
     }
   };
 
@@ -593,6 +595,19 @@ export default function AMBonus() {
                     {currentAMMetrics.approvedCount > 50 && <p>15 at $6 + 15 at $8 + {currentAMMetrics.approvedCount - 50} at $10 = {fmt(currentAMMetrics.creditBonus)}</p>}
                   </div>
                 )}
+                {currentAMMetrics.submissions && currentAMMetrics.submissions.length > 0 && (
+                  <details className="mt-2 ml-8">
+                    <summary className="text-xs text-blue-500 cursor-pointer">View {currentAMMetrics.submissions.length} signup{currentAMMetrics.submissions.length === 1 ? '' : 's'} ({currentAMMetrics.approvedCount} approved · {currentAMMetrics.pending} pending)</summary>
+                    <div className="mt-1 max-h-48 overflow-y-auto">
+                      {currentAMMetrics.submissions.map((s, i) => (
+                        <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100 gap-2">
+                          <span className="text-slate-700">{s.client_name || s.client || 'Client'}{(s.product_name || s.product) ? <span className="text-slate-400"> · {s.product_name || s.product}</span> : ''}</span>
+                          <span className={s.status === 'approved' ? 'text-green-600' : s.status === 'rejected' ? 'text-red-500' : 'text-amber-600'}>{s.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
 
               {/* 2. Stall Rate */}
@@ -679,6 +694,19 @@ export default function AMBonus() {
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.referralBonus > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{(!currentAMMetrics.referralNeedsConfig && currentAMMetrics.referrals !== null) ? fmt(currentAMMetrics.referralBonus) : '--'}</p>
                 </div>
+                {currentAMMetrics.referralDeals && currentAMMetrics.referralDeals.length > 0 && (
+                  <details className="mt-2 ml-8">
+                    <summary className="text-xs text-indigo-500 cursor-pointer">View {currentAMMetrics.referralDeals.length} referred client{currentAMMetrics.referralDeals.length === 1 ? '' : 's'}</summary>
+                    <div className="mt-1 max-h-48 overflow-y-auto">
+                      {currentAMMetrics.referralDeals.map((d, i) => (
+                        <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100 gap-2">
+                          <span className="text-slate-700">{d.id ? <a href={DEAL_URL(d.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{d.title} ↗</a> : d.title}{d.added ? <span className="text-slate-400"> · {d.added}</span> : ''}</span>
+                          <span className={d.paid ? 'text-green-600 font-medium' : 'text-slate-400'}>{d.paid ? 'paid doc fee' : 'not yet paid'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
 
               {/* 5. Reviews */}
@@ -693,6 +721,22 @@ export default function AMBonus() {
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.reviewBonus > 0 ? 'text-yellow-600' : 'text-slate-300'}`}>{fmt(currentAMMetrics.reviewBonus)}</p>
                 </div>
+                {currentAMMetrics.reviewList && currentAMMetrics.reviewList.length > 0 && (
+                  <details className="mt-2 ml-8">
+                    <summary className="text-xs text-yellow-600 cursor-pointer">View {currentAMMetrics.reviewList.length} review{currentAMMetrics.reviewList.length === 1 ? '' : 's'}</summary>
+                    <div className="mt-1 max-h-56 overflow-y-auto space-y-1">
+                      {currentAMMetrics.reviewList.map((rv, i) => (
+                        <div key={i} className="text-xs py-1 border-b border-slate-100">
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-700 font-medium">{rv.reviewer || 'Anonymous'}{rv.location ? <span className="text-slate-400 font-normal"> · {rv.location}</span> : ''}</span>
+                            <span className="text-amber-500">{rv.rating != null ? `${rv.rating}★` : ''}{rv.date ? <span className="text-slate-400 ml-1">{new Date(rv.date).toLocaleDateString()}</span> : ''}</span>
+                          </div>
+                          {rv.text && <p className="text-slate-500 italic mt-0.5">"{rv.text}"</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
 
               {/* 6. CSAT */}

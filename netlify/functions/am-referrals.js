@@ -64,6 +64,7 @@ exports.handler = async (event) => {
     for (const am of ams) {
       const orgId = String(am.pipedrive_org_id).trim();
       let referrals = 0, paid = 0;
+      const dealList = [];
       let cursor = 0, more = true, guard = 0;
       while (more && guard < 20) {
         const r = await pdGet(`/organizations/${orgId}/deals?start=${cursor}&limit=500`);
@@ -71,8 +72,13 @@ exports.handler = async (event) => {
         const deals = r.data || [];
         for (const d of deals) {
           const added = d.add_time ? new Date(d.add_time.replace(' ', 'T') + 'Z') : null;
-          if (added && added >= start && added < end) referrals++;
-          if (docPaidDeals.has(d.id)) paid++;  // paid a doc fee this month
+          const isThisMonth = added && added >= start && added < end;
+          const isPaid = docPaidDeals.has(d.id);
+          if (isThisMonth) referrals++;
+          if (isPaid) paid++;  // paid a doc fee this month
+          if (isThisMonth || isPaid) {
+            dealList.push({ id: d.id, title: d.title || d.person_name || `Deal ${d.id}`, added: d.add_time ? String(d.add_time).slice(0, 10) : null, paid: isPaid });
+          }
         }
         more = r.additional_data?.pagination?.more_items_in_collection || false;
         cursor = r.additional_data?.pagination?.next_start || (cursor + 500);
@@ -80,7 +86,8 @@ exports.handler = async (event) => {
         if (deals.length === 0) break;
       }
       const rate = paid >= 8 ? 30 : 20;
-      byAM[am.name] = { referrals, paid, perPaidRate: rate, payout: paid * rate, isTopProducer: false, orgId };
+      dealList.sort((a, b) => (Number(b.paid) - Number(a.paid)) || String(b.added || '').localeCompare(String(a.added || '')));
+      byAM[am.name] = { referrals, paid, perPaidRate: rate, payout: paid * rate, isTopProducer: false, orgId, deals: dealList };
     }
 
     // Top producer: most paid, must have >= 15 referrals
