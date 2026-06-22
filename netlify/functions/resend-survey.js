@@ -13,7 +13,7 @@ const supa = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'C
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   try {
-    const { send_id } = JSON.parse(event.body || '{}');
+    const { send_id, channel } = JSON.parse(event.body || '{}');
     if (!send_id) return { statusCode: 400, headers, body: JSON.stringify({ error: 'send_id required' }) };
 
     const lookup = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?id=eq.${send_id}&select=*`, { headers: supa });
@@ -23,6 +23,7 @@ exports.handler = async (event) => {
     if (!orig.client_email && !orig.client_phone) return { statusCode: 400, headers, body: JSON.stringify({ error: 'no email or phone on record for this client' }) };
 
     const payload = { name: orig.client_name, email: orig.client_email, phone: orig.client_phone, am: orig.am_name, person_id: orig.person_id, deal_id: orig.deal_id };
+    if (channel === 'email' || channel === 'sms') payload.channels = [channel]; // resend on just one channel when asked
     let emailResult = null, smsResult = null;
     try {
       const sres = await fetch(SENDER_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });

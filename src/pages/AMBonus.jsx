@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
-import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle } from 'lucide-react';
+import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle, Mail } from 'lucide-react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -41,6 +41,7 @@ export default function AMBonus() {
   const [surveyResponses, setSurveyResponses] = useState([]);
   const [surveySends, setSurveySends] = useState([]);
   const [resendingId, setResendingId] = useState(null);
+  const [csatOpen, setCsatOpen] = useState(false);
   const [openResponseId, setOpenResponseId] = useState(null);
   const [agreementData, setAgreementData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -383,10 +384,10 @@ export default function AMBonus() {
   const completedCount = unifiedSurveys.filter(u => u.response).length;
   const awaitingCount = sentCount - completedCount;
 
-  const handleResend = async (send) => {
-    setResendingId(send.id);
+  const handleResend = async (send, channel) => {
+    setResendingId(send.id + (channel ? ':' + channel : ''));
     try {
-      await fetch('/.netlify/functions/resend-survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ send_id: send.id }) });
+      await fetch('/.netlify/functions/resend-survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ send_id: send.id, channel: channel || undefined }) });
       const r = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?source=neq.backlog_seed&order=sent_at.desc&select=*`, { headers: supaHeaders });
       if (r.ok) setSurveySends(await r.json());
     } catch (e) {}
@@ -709,6 +710,56 @@ export default function AMBonus() {
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.csatEligible ? 'text-blue-600' : 'text-slate-300'}`}>{currentAMMetrics.csatAvg != null ? `${currentAMMetrics.csatAvg}/10` : '--'}</p>
                 </div>
+                {unifiedSurveys.length > 0 && (
+                  <div className="mt-3 ml-8">
+                    <button onClick={() => setCsatOpen(o => !o)} className="text-xs text-blue-500 hover:underline">
+                      {csatOpen ? 'Hide surveys' : `View ${sentCount} survey${sentCount === 1 ? '' : 's'} · resend & responses`}
+                    </button>
+                    {csatOpen && (
+                      <div className="mt-2 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                        {unifiedSurveys.map((u) => {
+                          const r = u.response;
+                          const bad = r ? isBad(r) : false;
+                          return (
+                            <div key={u.key} className={`px-3 py-2 ${bad ? 'bg-red-50' : ''}`}>
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div>
+                                  <p className="text-sm font-medium text-slate-800">{u.client_name}</p>
+                                  <p className="text-xs text-slate-500">
+                                    {u.sent_at ? `Sent ${new Date(u.sent_at).toLocaleDateString()}` : (r?.created_at ? `Completed ${new Date(r.created_at).toLocaleDateString()}` : '')}
+                                    {u.send?.client_email ? ` · ${u.send.client_email}` : ''}
+                                  </p>
+                                </div>
+                                {r ? (
+                                  <div className="text-xs text-slate-600 flex items-center gap-3">
+                                    <span>AM <span className={`font-bold ${bad ? 'text-red-600' : 'text-slate-800'}`}>{r.am_rating ?? '--'}/10</span></span>
+                                    <span>Overall <span className="font-bold text-slate-800">{r.overall_satisfaction ?? '--'}/10</span></span>
+                                    <span className="text-green-600 font-medium">Completed</span>
+                                  </div>
+                                ) : u.send ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-amber-600">Awaiting</span>
+                                    {u.send.client_email && (
+                                      <button onClick={() => handleResend(u.send, 'email')} disabled={resendingId === u.send.id + ':email'} className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+                                        <Mail size={12} className={resendingId === u.send.id + ':email' ? 'animate-spin' : ''} /> {resendingId === u.send.id + ':email' ? 'Sending' : 'Email'}
+                                      </button>
+                                    )}
+                                    {u.send.client_phone && (
+                                      <button onClick={() => handleResend(u.send, 'sms')} disabled={resendingId === u.send.id + ':sms'} className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+                                        <MessageSquare size={12} className={resendingId === u.send.id + ':sms' ? 'animate-spin' : ''} /> {resendingId === u.send.id + ':sms' ? 'Sending' : 'Text'}
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : null}
+                              </div>
+                              {r && r.what_could_improve && <p className="text-xs text-slate-500 italic mt-1">"{r.what_could_improve}"</p>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* 7. All-Star */}
