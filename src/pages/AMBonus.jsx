@@ -6,8 +6,8 @@ import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, Me
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supaHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
-const DEAL_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/deal/${id}`;
-const PERSON_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/person/${id}`;
+const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
+const PERSON_URL = (id) => `https://asapcreditrepair.pipedrive.com/person/${id}`;
 
 function Tip({ text, children }) {
   const [show, setShow] = React.useState(false);
@@ -298,6 +298,15 @@ export default function AMBonus() {
       );
       if (cMatch) { csatAvg = cMatch[1].avgRating; csatResponses = cMatch[1].responses; csatEligible = cMatch[1].eligible; csatOverall = cMatch[1].avgOverall; }
     }
+    // Additional-round invoices that are past due, for this AM to follow up on.
+    let pastDueRounds = [];
+    if (roundsData?.pastDueRounds && amName) {
+      const fn = amName.split(' ')[0].toLowerCase();
+      pastDueRounds = roundsData.pastDueRounds.filter(r => {
+        const k = (r.am || '').toLowerCase();
+        return k.includes(fn) || amName.toLowerCase().includes((k.split(' ')[0] || '\0'));
+      });
+    }
     const totalBonus = creditBonus + reviewBonus + stallBonus + roundsBonus + referralBonus;
 
     return {
@@ -305,7 +314,7 @@ export default function AMBonus() {
       creditBonus, submissions: amSubs, approvedSubs: approved,
       reviewCount, bbbReviews, reviewBonus,
       stallRate, stallCount, stallTotal, stalledClients, stallBonus,
-      additionalRounds, roundsBonus, roundDeals,
+      additionalRounds, roundsBonus, roundDeals, pastDueRounds,
       referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer,
       csatAvg, csatResponses, csatEligible, csatOverall,
       agreementPctKept, agreementKept, agreementTotal, agreementNeedsData,
@@ -395,7 +404,7 @@ export default function AMBonus() {
         <div className="flex items-center gap-2">
           <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
             className="px-3 py-1.5 border rounded-lg text-sm text-slate-700 bg-white" />
-          {isAdmin && amList.length > 0 && (
+          {isAM && amList.length > 0 && (
             <select value={selectedAM || ''} onChange={e => setSelectedAM(e.target.value)}
               className="px-3 py-1.5 border rounded-lg text-sm font-medium">
               <option value="ALL">All Account Managers</option>
@@ -470,6 +479,7 @@ export default function AMBonus() {
                       <th className="px-4 py-2 font-medium">Account Manager</th>
                       <th className="px-4 py-2 font-medium text-center">Credit Signups</th>
                       <th className="px-4 py-2 font-medium text-center">Stall Rate</th>
+                      <th className="px-4 py-2 font-medium text-center">Pmt Stall</th>
                       <th className="px-4 py-2 font-medium text-center">Add'l Rounds</th>
                       <th className="px-4 py-2 font-medium text-center">Referrals</th>
                       <th className="px-4 py-2 font-medium text-center">Reviews</th>
@@ -485,6 +495,7 @@ export default function AMBonus() {
                         </td>
                         <td className="px-4 py-3 text-center">{m?.approvedCount ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.stallRate == null ? '—' : fmtPct(m.stallRate)}</td>
+                        <td className="px-4 py-3 text-center">{m?.paymentStallRate == null ? '—' : fmtPct(m.paymentStallRate)}</td>
                         <td className="px-4 py-3 text-center">{m?.additionalRounds ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.referrals ?? 0}{m?.referralPaid != null ? ` (${m.referralPaid} paid)` : ''}</td>
                         <td className="px-4 py-3 text-center">{m?.reviewCount ?? 0}</td>
@@ -497,6 +508,7 @@ export default function AMBonus() {
                     <tr className="bg-slate-50 font-semibold">
                       <td className="px-4 py-3">Totals</td>
                       <td className="px-4 py-3 text-center">{sum('approvedCount')}</td>
+                      <td className="px-4 py-3 text-center">—</td>
                       <td className="px-4 py-3 text-center">—</td>
                       <td className="px-4 py-3 text-center">{sum('additionalRounds')}</td>
                       <td className="px-4 py-3 text-center">{sum('referrals')}</td>
@@ -633,6 +645,19 @@ export default function AMBonus() {
                         <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100">
                           <span className="text-slate-700">{d.client} {d.deal_id && <a href={DEAL_URL(d.deal_id)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">#{d.deal_id} ↗</a>}</span>
                           <span className="text-slate-500">{fmt(d.amount)} — {d.date}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+                {currentAMMetrics.pastDueRounds && currentAMMetrics.pastDueRounds.length > 0 && (
+                  <details className="mt-2 ml-8" open>
+                    <summary className="text-xs text-rose-500 cursor-pointer font-medium">{currentAMMetrics.pastDueRounds.length} additional round{currentAMMetrics.pastDueRounds.length === 1 ? '' : 's'} past due — follow up</summary>
+                    <div className="mt-1 max-h-48 overflow-y-auto">
+                      {currentAMMetrics.pastDueRounds.map((d, i) => (
+                        <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100">
+                          <span className="text-slate-700">{d.client} {d.dealId && <a href={DEAL_URL(d.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</span>
+                          <span className="text-rose-500">${d.balance} · {d.daysOverdue}d overdue ({d.dueDate})</span>
                         </div>
                       ))}
                     </div>

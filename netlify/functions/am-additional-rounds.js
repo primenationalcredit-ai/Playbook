@@ -118,7 +118,37 @@ exports.handler = async (event) => {
       byAM[am].deals.push({ deal_id: p.pipedrive_deal_id, client: p.client_name, amount: p.amount, date: p.payment_date });
     }
 
-    return { statusCode: 200, headers, body: JSON.stringify({ month, totalPaid: paid.length, unattributed, byAM, calculatedAt: new Date().toISOString() }) };
+    // Additional-round invoices that are PAST DUE. AMs are paid on rounds, so these are their
+    // follow-ups. AR invoices are identified by their fee amount (249 / 299).
+    const todayStr = now.toISOString().slice(0, 10);
+    const pastDueRounds = [];
+    try {
+      const invRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?select=customer_name,pipedrive_deal_id,balance,due_date,total`, { headers: supa });
+      const invs = invRes.ok ? await invRes.json() : [];
+      const seen = new Set();
+      for (const inv of invs) {
+        const total = Math.round(parseFloat(inv.total) || 0);
+        const bal = Math.round(parseFloat(inv.balance) || 0);
+        const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
+        if (!(total === 249 || total === 299)) continue;     // additional-round fee only
+        if (bal <= 1 || !due || due >= todayStr || !inv.pipedrive_deal_id) continue;
+        const key = `${inv.pipedrive_deal_id}|${due}|${bal}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const am = await resolveAM(Number(inv.pipedrive_deal_id));
+        pastDueRounds.push({
+          am: am || 'Unassigned',
+          client: inv.customer_name,
+          dealId: String(inv.pipedrive_deal_id),
+          balance: bal,
+          dueDate: inv.due_date,
+          daysOverdue: Math.floor((now - new Date(due)) / 86400000)
+        });
+      }
+      pastDueRounds.sort((a, b) => String(b.dueDate || '').localeCompare(String(a.dueDate || '')));
+    } catch (e) {}
+
+    return { statusCode: 200, headers, body: JSON.stringify({ month, totalPaid: paid.length, unattributed, byAM, pastDueRounds, calculatedAt: new Date().toISOString() }) };
   } catch (err) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
   }

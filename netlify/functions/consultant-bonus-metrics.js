@@ -63,7 +63,7 @@ exports.handler = async (event) => {
     // (per month) and only recompute when it's older than the TTL or ?refresh=1 is passed. Keeps the
     // page loading instantly for the team and avoids the timeout.
     const CACHE_KEY = `consultant_bonus_${targetMonth}`;
-    const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+    const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes (warmed every 10 min in business hours)
     const forceRefresh = params.refresh === '1' || params.refresh === 'true';
     if (!forceRefresh) {
       try {
@@ -705,6 +705,8 @@ exports.handler = async (event) => {
         const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : (dealByClientName[norm(inv.customer_name)] || null);
         const bal = Math.round(parseFloat(inv.balance) || 0);
         const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
+        const invTotal = Math.round(parseFloat(inv.total) || 0);
+        if (invTotal === 249 || invTotal === 299) continue;   // additional rounds belong on the AM dashboard
         if (bal <= 1) continue;                                   // nothing owed (paid)
         if (!due || due >= todayStr) continue;                    // due today or future is not past due
         const key = `${did || norm(inv.customer_name)}|${due}|${bal}`;

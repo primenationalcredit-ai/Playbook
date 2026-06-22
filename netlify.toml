@@ -31,6 +31,11 @@
 [functions."am-pipeline-cache"]
   schedule = "*/30 12-23 * * 1-6"
 
+# Pre-warm the consultant bonus cache every 10 min during business hours so the page
+# always loads instantly off the cache instead of computing live.
+[functions."consultant-bonus-warm"]
+  schedule = "*/10 12-23 * * 1-6"
+
 # DISABLED - was causing duplicate/wrong data
 # [functions."sales-sync-backup"]
 #   schedule = "0 * * * *"
