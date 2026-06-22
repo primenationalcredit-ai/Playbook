@@ -57,10 +57,10 @@ exports.handler = async (event) => {
 
     let upserted = 0;
     for (const inv of invoices) {
-      // Parse deal ID from customer name (same format as payments: "265721  267070")
-      let dealId = null;
-      const match = (inv.customer_name || '').match(/^(\d{4,})/);
-      if (match) dealId = match[1];
+      // Company field holds two numbers: "<dealId> <personId>" (deal first, person second).
+      const nums = String(inv.company_name || inv.customer_name || '').match(/\d{4,}/g) || [];
+      const dealId = nums[0] || null;
+      const personId = nums[1] || null;
 
       const invoiceMonth = inv.date ? inv.date.substring(0, 7) : null;
 
@@ -79,11 +79,11 @@ exports.handler = async (event) => {
       };
 
       if (existingIds.has(inv.invoice_id)) {
-        // Update existing (balance and status may have changed)
+        // Update existing (balance, status, AND deal id — older rows were synced before this fix)
         await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?zoho_invoice_id=eq.${inv.invoice_id}`, {
           method: 'PATCH',
           headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ balance: record.balance, status: record.status, due_date: record.due_date, updated_at: record.updated_at })
+          body: JSON.stringify({ balance: record.balance, status: record.status, due_date: record.due_date, pipedrive_deal_id: record.pipedrive_deal_id, updated_at: record.updated_at })
         });
       } else {
         // Insert new
