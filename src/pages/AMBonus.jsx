@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
-import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle, Mail } from 'lucide-react';
+import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle, Mail, DollarSign } from 'lucide-react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -37,6 +37,7 @@ export default function AMBonus() {
   const [stallData, setStallData] = useState(null);
   const [roundsData, setRoundsData] = useState(null);
   const [referralData, setReferralData] = useState(null);
+  const [paymentsData, setPaymentsData] = useState(null);
   const [csatData, setCsatData] = useState(null);
   const [surveyResponses, setSurveyResponses] = useState([]);
   const [surveySends, setSurveySends] = useState([]);
@@ -94,6 +95,7 @@ export default function AMBonus() {
 
       // Referrals per AM — non-blocking (returns needsConfig until field is set)
       fetch(`/.netlify/functions/am-referrals?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setReferralData(d); }).catch(() => {});
+      fetch(`/.netlify/functions/am-payments-summary?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setPaymentsData(d); }).catch(() => {});
       fetch(`/.netlify/functions/am-csat?month=${selectedMonth}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setCsatData(d); }).catch(() => {});
       // Raw Round 2 survey responses (for the per-client survey view)
       fetch(`${SUPABASE_URL}/rest/v1/client_surveys?survey_type=eq.round2_am&order=created_at.desc&select=*`, { headers: supaHeaders })
@@ -431,6 +433,9 @@ export default function AMBonus() {
         </button>
         <button onClick={() => setTab('surveys')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'surveys' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
           <MessageSquare size={16} /> Surveys
+        </button>
+        <button onClick={() => setTab('payments')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'payments' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
+          <DollarSign size={16} /> Payments
         </button>
         {isAdmin && (
           <button onClick={() => setTab('approvals')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'approvals' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
@@ -946,6 +951,84 @@ export default function AMBonus() {
                 );
               })}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Payments Tab */}
+      {tab === 'payments' && (
+        <div className="space-y-4">
+          {!paymentsData ? (
+            <div className="bg-white rounded-xl border shadow-sm p-8 text-center text-slate-500">Loading payments...</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Doc Fees', key: 'docs', color: 'text-blue-600' },
+                  { label: 'Partials', key: 'partials', color: 'text-amber-600' },
+                  { label: 'Finals', key: 'finals', color: 'text-green-600' },
+                  { label: 'Additional Rounds', key: 'rounds', color: 'text-purple-600' },
+                ].map(c => (
+                  <div key={c.key} className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+                    <p className="text-sm text-slate-500">{c.label}</p>
+                    <p className={`text-2xl font-bold ${c.color}`}>{paymentsData.totals?.[c.key] ?? 0}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm text-slate-600">{paymentsData.totalPayments} payments collected in {paymentsData.month} · <span className="font-bold text-slate-800">{fmt(paymentsData.totals?.amount || 0)}</span></span>
+                <span className="text-xs text-slate-400">AM-attributed: {paymentsData.attributionCoverage}% of payments</span>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100"><h3 className="font-bold text-slate-800">By Consultant</h3></div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-500 text-left">
+                      <tr><th className="px-4 py-2 font-medium">Consultant</th><th className="px-4 py-2 font-medium text-center">Docs</th><th className="px-4 py-2 font-medium text-center">Partials</th><th className="px-4 py-2 font-medium text-center">Finals</th><th className="px-4 py-2 font-medium text-center">Rounds</th><th className="px-4 py-2 font-medium text-right">Collected</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paymentsData.byConsultant?.map((c, i) => (
+                        <tr key={i}>
+                          <td className="px-4 py-2.5 font-medium text-slate-800">{c.name}</td>
+                          <td className="px-4 py-2.5 text-center">{c.docs}</td>
+                          <td className="px-4 py-2.5 text-center">{c.partials}</td>
+                          <td className="px-4 py-2.5 text-center">{c.finals}</td>
+                          <td className="px-4 py-2.5 text-center text-slate-500">{c.rounds}</td>
+                          <td className="px-4 py-2.5 text-right font-medium">{fmt(c.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100">
+                  <h3 className="font-bold text-slate-800">Attributed to Account Manager</h3>
+                  <p className="text-xs text-slate-500">Which AM the paying client belongs to. Coverage grows as deals get mapped; unmapped ones show as Unattributed.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-500 text-left">
+                      <tr><th className="px-4 py-2 font-medium">Account Manager</th><th className="px-4 py-2 font-medium text-center">Docs</th><th className="px-4 py-2 font-medium text-center">Partials</th><th className="px-4 py-2 font-medium text-center">Finals</th><th className="px-4 py-2 font-medium text-center">Rounds</th><th className="px-4 py-2 font-medium text-right">Collected</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paymentsData.byAM?.map((c, i) => (
+                        <tr key={i} className={c.name === 'Unattributed' ? 'text-slate-400' : ''}>
+                          <td className="px-4 py-2.5 font-medium">{c.name}</td>
+                          <td className="px-4 py-2.5 text-center">{c.docs}</td>
+                          <td className="px-4 py-2.5 text-center">{c.partials}</td>
+                          <td className="px-4 py-2.5 text-center">{c.finals}</td>
+                          <td className="px-4 py-2.5 text-center">{c.rounds}</td>
+                          <td className="px-4 py-2.5 text-right font-medium">{fmt(c.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
         </div>
       )}
