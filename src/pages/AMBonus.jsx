@@ -42,6 +42,7 @@ export default function AMBonus() {
   const [surveySends, setSurveySends] = useState([]);
   const [resendingId, setResendingId] = useState(null);
   const [csatOpen, setCsatOpen] = useState(false);
+  const [openCsatResp, setOpenCsatResp] = useState(null);
   const [openResponseId, setOpenResponseId] = useState(null);
   const [agreementData, setAgreementData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -723,17 +724,18 @@ export default function AMBonus() {
                           return (
                             <div key={u.key} className={`px-3 py-2 ${bad ? 'bg-red-50' : ''}`}>
                               <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div>
-                                  <p className="text-sm font-medium text-slate-800">{u.client_name}</p>
+                                <button onClick={() => r && setOpenCsatResp(openCsatResp === r.id ? null : r.id)} className={`text-left flex-1 ${r ? 'hover:opacity-70' : 'cursor-default'}`}>
+                                  <p className="text-sm font-medium text-slate-800">{u.client_name}{r && <span className="text-xs text-blue-500 ml-1">{openCsatResp === r.id ? '▲' : '▼'}</span>}</p>
                                   <p className="text-xs text-slate-500">
                                     {u.sent_at ? `Sent ${new Date(u.sent_at).toLocaleDateString()}` : (r?.created_at ? `Completed ${new Date(r.created_at).toLocaleDateString()}` : '')}
                                     {u.send?.client_email ? ` · ${u.send.client_email}` : ''}
                                   </p>
-                                </div>
+                                </button>
                                 {r ? (
                                   <div className="text-xs text-slate-600 flex items-center gap-3">
                                     <span>AM <span className={`font-bold ${bad ? 'text-red-600' : 'text-slate-800'}`}>{r.am_rating ?? '--'}/10</span></span>
                                     <span>Overall <span className="font-bold text-slate-800">{r.overall_satisfaction ?? '--'}/10</span></span>
+                                    {r.what_could_improve && <MessageSquare size={12} className="text-slate-400" title="Has a comment" />}
                                     <span className="text-green-600 font-medium">Completed</span>
                                   </div>
                                 ) : u.send ? (
@@ -752,7 +754,18 @@ export default function AMBonus() {
                                   </div>
                                 ) : null}
                               </div>
-                              {r && r.what_could_improve && <p className="text-xs text-slate-500 italic mt-1">"{r.what_could_improve}"</p>}
+                              {r && openCsatResp === r.id && (
+                                <div className="mt-2 bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-700 space-y-1">
+                                  <p>Overall satisfaction: <span className="font-semibold">{r.overall_satisfaction ?? 'n/a'}/10</span></p>
+                                  <p>Account manager rating: <span className="font-semibold">{r.am_rating ?? 'n/a'}/10</span></p>
+                                  <p>Work explained clearly: <span className="font-semibold">{r.met_expectations === true ? 'Yes' : r.met_expectations === false ? 'No' : 'n/a'}</span></p>
+                                  <p>Likely to refer (NPS): <span className="font-semibold">{r.nps_score != null ? `${r.nps_score}/10` : 'n/a'}</span></p>
+                                  {r.client_phone && <p>Phone: <span className="font-semibold">{r.client_phone}</span></p>}
+                                  {r.what_could_improve
+                                    ? <p className="pt-1">Comment: <span className="italic">"{r.what_could_improve}"</span></p>
+                                    : <p className="pt-1 text-slate-400 italic">No comment left</p>}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
