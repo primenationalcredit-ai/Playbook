@@ -223,14 +223,7 @@ exports.handler = async (event) => {
       }
     } catch(e) { console.log('Lost deals error:', e.message); }
 
-    // Active CRS deal IDs — read from the cache the credit-team tab already builds (filter 523849,
-    // CRS round-1-started). A cheap single read; avoids a heavy live deal scan that times the request out.
-    const openCrsDeals = new Set();
-    try {
-      const cacheRows = await supaGet('app_cache', 'cache_key=eq.credit_team_round_dates&select=cache_value');
-      const cached = cacheRows && cacheRows[0] && JSON.parse(cacheRows[0].cache_value);
-      (cached?.deals || []).forEach(d => openCrsDeals.add(String(d.id)));
-    } catch(e) { console.log('CRS cache read error:', e.message); }
+
 
     // Week range
     const day = now.getDay();
@@ -696,7 +689,6 @@ exports.handler = async (event) => {
         const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
         if (bal <= 1) continue;                                   // nothing owed (paid)
         if (!due || due >= todayStr) continue;                    // due today or future is not past due
-        if (openCrsDeals.size > 0 && !(did && openCrsDeals.has(did))) continue; // open CRS deals only
         const key = `${did || norm(inv.customer_name)}|${due}|${bal}`;
         if (!invDedup[key]) invDedup[key] = { inv, did, bal, due };
       }
