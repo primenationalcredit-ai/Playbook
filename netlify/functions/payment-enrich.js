@@ -146,7 +146,7 @@ exports.handler = async (event) => {
           body: JSON.stringify({ 
             consultant_name: consultantName, 
             referrer_org: orgName, 
-            is_affiliate_deal: isConsultantReferral,
+            is_affiliate_deal: isAffiliate,
             org_email: orgEmail,
             org_has_email: orgHasEmail
           })
