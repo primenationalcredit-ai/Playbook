@@ -439,19 +439,19 @@ exports.handler = async (event) => {
 
       // Affiliate clients grouped by their referring org, so the bonus view shows each affiliate and
       // which ones qualified (3+ qualified clients = producing), instead of one flat client list.
+      // Affiliate clients this month, grouped by affiliate org. Only clients who paid their DOC FEE this
+      // month are shown (the cohort that can qualify), each flagged qualified or not-yet, so the list
+      // matches the "X of 3 qualified" count and the not-yet ones are visible to chase for a partial.
+      const qualifiedSet = new Set(qualifiedClients);
       const affGroupMap = {};
-      for (const p of myPayments) {
-        if (!p.is_affiliate_deal || !p.referrer_org) continue;
-        const o = p.referrer_org;
-        if (!affGroupMap[o]) affGroupMap[o] = {};
-        const ck = p.client_name || String(p.pipedrive_deal_id);
-        if (!affGroupMap[o][ck]) affGroupMap[o][ck] = { name: p.client_name || `Deal ${p.pipedrive_deal_id}`, dealId: p.pipedrive_deal_id || null, payments: [] };
-        affGroupMap[o][ck].payments.push({ type: p.payment_type, amount: p.amount, date: p.payment_date });
+      for (const client of clients) {
+        if (!client.isAffiliate || !client.orgName || !client.hasDocFee) continue;
+        if (!affGroupMap[client.orgName]) affGroupMap[client.orgName] = [];
+        affGroupMap[client.orgName].push({ name: client.name, dealId: client.dealId || null, qualified: qualifiedSet.has(client) });
       }
-      const affiliateGroups = Object.entries(affGroupMap).map(([org, clientsObj]) => {
-        const clients = Object.values(clientsObj);
-        const qualifiedCount = affiliateMap[org] || 0;
-        return { org, clientCount: clients.length, qualifiedCount, producing: qualifiedCount >= 3, clients };
+      const affiliateGroups = Object.entries(affGroupMap).map(([org, cls]) => {
+        const qualifiedCount = cls.filter(c => c.qualified).length;
+        return { org, clientCount: cls.length, qualifiedCount, producing: qualifiedCount >= 3, clients: cls.sort((a, b) => Number(b.qualified) - Number(a.qualified)) };
       }).sort((a, b) => (Number(b.producing) - Number(a.producing)) || (b.qualifiedCount - a.qualifiedCount) || (b.clientCount - a.clientCount));
 
       // === REACTIVATION KICKER ($75 one-time for reviving dormant affiliate) ===
@@ -947,14 +947,12 @@ exports.handler = async (event) => {
       if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') todayByConsultant[cName].finals++;
     }
 
-    // YTD data from allPayments (already loaded). Fall back to payment_date when payment_month is blank,
-    // otherwise payments missing that field get dropped from YTD and the total undercounts.
+    // YTD pulled straight from the table by payment_month (the field every row reliably carries and the
+    // same one MTD uses), instead of filtering the date-windowed set. That window keys off payment_date,
+    // so any 2026 payment with a blank/odd date was being dropped and the YTD total came up short.
     const year = targetMonth.split('-')[0];
-    const ytdPayments = allPayments.filter(p => {
-      const ym = p.payment_month || (p.payment_date ? String(p.payment_date).slice(0, 7) : '');
-      return ym.startsWith(year);
-    });
-    
+    const ytdPayments = await supaGet('consultant_payments', `payment_month=like.${year}-*&select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org`);
+
     const ytdSales = ytdPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
     const ytdDocs = ytdPayments.filter(p => p.payment_type === 'doc_fee').length;
     

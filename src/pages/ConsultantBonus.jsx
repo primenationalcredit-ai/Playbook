@@ -861,9 +861,9 @@ export default function ConsultantBonus() {
                     </div>
                     <div className="mt-1 space-y-0.5">
                       {g.clients.map((cl, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs text-slate-500">
-                          <span>{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</span>
-                          <span className="text-slate-400">{[...new Set(cl.payments.map(p => p.type))].join(', ')}</span>
+                        <div key={i} className={`flex items-center justify-between text-xs rounded px-1.5 py-1 ${cl.qualified ? 'bg-green-50' : ''}`}>
+                          <span className={cl.qualified ? 'text-green-800 font-medium' : 'text-slate-500'}>{cl.qualified ? '✓ ' : ''}{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</span>
+                          <span className={cl.qualified ? 'text-green-600 font-medium' : 'text-amber-600'}>{cl.qualified ? 'Qualified' : 'Needs partial'}</span>
                         </div>
                       ))}
                     </div>
