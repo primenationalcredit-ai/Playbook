@@ -919,7 +919,7 @@ export default function ConsultantBonus() {
           <div className="flex items-center gap-3">
             <AlertTriangle size={20} className={(c.pastDueInvoiceCount||0) > 0 ? 'text-rose-500' : 'text-slate-300'} />
             <div>
-              <h3 className="font-bold text-slate-800"><Tip text="Clients who still owe on an invoice (overdue or partially paid), most recently due first. Reach out to collect. Click a client to open their Pipedrive deal.">Past Due Invoices</Tip></h3>
+              <h3 className="font-bold text-slate-800"><Tip text="Clients still active in CRS (open deal) who owe on a past-due invoice, newest due date first. Each client is grouped with all their past-due invoices listed. Click a client to open their Pipedrive deal.">Past Due Invoices</Tip></h3>
               <p className="text-sm text-slate-500">{c.pastDueInvoiceCount || 0} client{(c.pastDueInvoiceCount||0) === 1 ? '' : 's'} owing {fmt(c.pastDueOwed || 0)}</p>
             </div>
           </div>
@@ -928,7 +928,32 @@ export default function ConsultantBonus() {
           )}
         </div>
         {expandedSection === 'pastdue' && c.clientDetail?.pastDueList && (
-          <ClientPanel title="Past Due Invoices — Reach Out" items={c.clientDetail.pastDueList.map(p => ({ name: p.name, dealId: p.dealId, type: `$${p.balance} owed${p.daysOverdue != null && p.daysOverdue > 0 ? ` · ${p.daysOverdue}d overdue` : (p.status === 'partially_paid' ? ' · partially paid' : '')}`, date: p.dueDate }))} onClose={() => setExpandedSection(null)} />
+          <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1">
+              <h4 className="font-semibold text-slate-700 text-sm">Past Due Invoices — Reach Out (newest first)</h4>
+              <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
+            </div>
+            {c.clientDetail.pastDueList.map((client, idx) => (
+              <div key={idx} className="bg-slate-50 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  {client.dealId ? (
+                    <a href={DEAL_URL(client.dealId)} target="_blank" rel="noreferrer" className="font-semibold text-blue-600 hover:underline">{client.name} ↗</a>
+                  ) : (
+                    <span className="font-semibold text-slate-700">{client.name}</span>
+                  )}
+                  <span className="text-sm font-bold text-rose-600">{fmt(client.totalOwed)} owed</span>
+                </div>
+                <div className="mt-1 space-y-0.5">
+                  {(client.invoices || []).map((inv, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs text-slate-500">
+                      <span>${inv.balance} · due {inv.dueDate}</span>
+                      <span className={inv.daysOverdue > 0 ? 'text-rose-500' : 'text-slate-400'}>{inv.daysOverdue > 0 ? `${inv.daysOverdue}d overdue` : 'due today'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
