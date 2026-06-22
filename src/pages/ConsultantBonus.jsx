@@ -791,9 +791,32 @@ export default function ConsultantBonus() {
               </div>
               <p className={`text-lg font-bold ${c.newAffiliateLaunchBonus > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{fmt(c.newAffiliateLaunchBonus || 0)}</p>
             </div>
-            {c.newAffiliateAllOrgs?.length > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'newaffiliate' ? null : 'newaffiliate')} label={`View ${c.newAffiliateAllOrgs.length} new affiliate${c.newAffiliateAllOrgs.length === 1 ? '' : 's'}`} />}
-            {expandedSection === 'newaffiliate' && c.newAffiliateAllOrgs && (
-              <ClientPanel title="New Affiliates (org created in last 60 days)" items={c.newAffiliateAllOrgs.map(o => ({ name: o.name, amount: o.qualifies ? 75 : undefined, type: `${o.clients} client${o.clients === 1 ? '' : 's'} · org created ${o.daysSinceCreated}d ago`, date: o.firstDate, reason: o.qualifies ? null : `${o.clients} of 3 clients — reach out for more referrals` }))} onClose={() => setExpandedSection(null)} />
+            {c.clientDetail?.newAffiliateProgress?.length > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'newaffiliate' ? null : 'newaffiliate')} label="View progress" />}
+            {expandedSection === 'newaffiliate' && c.clientDetail?.newAffiliateProgress && (
+              <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="font-semibold text-slate-700 text-sm">New affiliates — work their pipeline to proceed</h4>
+                  <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
+                </div>
+                {c.clientDetail.newAffiliateProgress.map((o, idx) => (
+                  <div key={idx} className="bg-slate-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-800">{o.name}</span>
+                      <span className="text-xs text-slate-500">created {o.daysSinceCreated}d ago · {o.paidClients} signed{o.qualifies ? ' · $75 earned' : ` · ${o.paidClients} of 3`}</span>
+                    </div>
+                    {o.pending.length > 0 && (
+                      <div className="mt-1">
+                        <p className="text-xs font-medium text-amber-600">Report done, needs consult / proceed ({o.pending.length}):</p>
+                        {o.pending.map((cl, i) => (
+                          <div key={i} className="text-xs text-slate-600 pl-2">{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</div>
+                        ))}
+                      </div>
+                    )}
+                    {o.proceeded.length > 0 && <p className="text-xs text-green-600 mt-1">{o.proceeded.length} already proceeded</p>}
+                    {o.pending.length === 0 && o.proceeded.length === 0 && <p className="text-xs text-slate-400 mt-1">No open pipeline this month</p>}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
@@ -819,11 +842,34 @@ export default function ConsultantBonus() {
                 ))}
               </div>
             )}
-            {c.clientDetail?.affiliateClients?.length > 0 && (
-              <DrillButton onClick={() => setExpandedSection(expandedSection === 'affclients' ? null : 'affclients')} label="View clients" />
+            {c.clientDetail?.affiliateGroups?.length > 0 && (
+              <DrillButton onClick={() => setExpandedSection(expandedSection === 'affgroups' ? null : 'affgroups')} label="View affiliates & clients" />
             )}
-            {expandedSection === 'affclients' && c.clientDetail?.affiliateClients && (
-              <ClientPanel title="Affiliate Clients by Org" items={c.clientDetail.affiliateClients} onClose={() => setExpandedSection(null)} />
+            {expandedSection === 'affgroups' && c.clientDetail?.affiliateGroups && (
+              <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="font-semibold text-slate-700 text-sm">Affiliates &amp; their clients (qualified first)</h4>
+                  <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
+                </div>
+                {c.clientDetail.affiliateGroups.map((g, idx) => (
+                  <div key={idx} className="bg-slate-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-800">{g.org}</span>
+                      {g.producing
+                        ? <span className="text-xs font-medium text-green-700 bg-green-100 rounded-full px-2 py-0.5">Qualified · {g.qualifiedCount} qualified client{g.qualifiedCount === 1 ? '' : 's'}</span>
+                        : <span className="text-xs text-slate-500 bg-slate-200 rounded-full px-2 py-0.5">{g.qualifiedCount} of 3 qualified</span>}
+                    </div>
+                    <div className="mt-1 space-y-0.5">
+                      {g.clients.map((cl, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs text-slate-500">
+                          <span>{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</span>
+                          <span className="text-slate-400">{[...new Set(cl.payments.map(p => p.type))].join(', ')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 

@@ -422,6 +422,23 @@ exports.handler = async (event) => {
         }
       });
 
+      // Affiliate clients grouped by their referring org, so the bonus view shows each affiliate and
+      // which ones qualified (3+ qualified clients = producing), instead of one flat client list.
+      const affGroupMap = {};
+      for (const p of myPayments) {
+        if (!p.is_affiliate_deal || !p.referrer_org) continue;
+        const o = p.referrer_org;
+        if (!affGroupMap[o]) affGroupMap[o] = {};
+        const ck = p.client_name || String(p.pipedrive_deal_id);
+        if (!affGroupMap[o][ck]) affGroupMap[o][ck] = { name: p.client_name || `Deal ${p.pipedrive_deal_id}`, dealId: p.pipedrive_deal_id || null, payments: [] };
+        affGroupMap[o][ck].payments.push({ type: p.payment_type, amount: p.amount, date: p.payment_date });
+      }
+      const affiliateGroups = Object.entries(affGroupMap).map(([org, clientsObj]) => {
+        const clients = Object.values(clientsObj);
+        const qualifiedCount = affiliateMap[org] || 0;
+        return { org, clientCount: clients.length, qualifiedCount, producing: qualifiedCount >= 3, clients };
+      }).sort((a, b) => (Number(b.producing) - Number(a.producing)) || (b.qualifiedCount - a.qualifiedCount) || (b.clientCount - a.clientCount));
+
       // === REACTIVATION KICKER ($75 one-time for reviving dormant affiliate) ===
       // Dormant = affiliate org with no clients for 90+ days, then sends a new one this month
       let reactivationCount = 0;
@@ -559,6 +576,21 @@ exports.handler = async (event) => {
           matchBy: byId ? 'deal id' : (byName ? 'name (no deal id on invoice)' : null),
         };
       }).sort((a, b) => (b.paidDocFee === a.paidDocFee ? a.name.localeCompare(b.name) : (b.paidDocFee ? 1 : -1)));
+
+      // New-affiliate progress tracker: for each new affiliate, their clients who have reached the
+      // quote stage this month (report done) split into who has proceeded (paid doc) vs who still
+      // needs to be pushed to consult and proceed. Helps the consultant work the new pipeline.
+      const newAffiliateProgress = newAffiliateAllOrgs.map(o => {
+        const consults = myConsultDealIds
+          .filter(id => dealMeta[id]?.orgName === o.name)
+          .map(id => ({ name: dealMeta[id]?.name || `Deal #${id}`, dealId: id, proceeded: isPaid(id) }));
+        return {
+          name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
+          paidClients: o.clients,
+          pending: consults.filter(c => !c.proceeded),
+          proceeded: consults.filter(c => c.proceeded)
+        };
+      }).sort((a, b) => b.pending.length - a.pending.length);
 
       // === PAY-PAST-DOC-FEE RATE ===
       // Of clients who paid doc fee THIS month, how many also paid partial/final?
@@ -823,6 +855,8 @@ exports.handler = async (event) => {
             .sort((a, b) => String(b.date).localeCompare(String(a.date))),
           affiliateOrgList: Object.entries(affiliateMap).map(([orgName, count]) => ({ name: orgName, clients: count, producing: count >= 3 }))
             .sort((a, b) => b.clients - a.clients),
+          affiliateGroups,
+          newAffiliateProgress,
           organicClients: myPayments.filter(p => !p.is_affiliate_deal).map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date })),
           affiliateClients: myPayments.filter(p => p.is_affiliate_deal).map(p => ({ name: p.client_name, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org })),
           docFeeList: myPayments.filter(p => p.payment_type === 'doc_fee').map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date })),
