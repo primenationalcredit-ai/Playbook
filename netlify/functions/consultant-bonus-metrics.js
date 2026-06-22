@@ -152,6 +152,14 @@ exports.handler = async (event) => {
     const dealIdsWithDocFee = new Set();
     const docFeeNames = new Set();
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    // Invoices store only the client name (no deal id), so map name -> deal id from payments to link them.
+    const dealByClientName = {};
+    for (const p of allPayments) {
+      if (p.client_name && p.pipedrive_deal_id) {
+        const k = norm(p.client_name);
+        if (!dealByClientName[k]) dealByClientName[k] = String(p.pipedrive_deal_id);
+      }
+    }
     for (const p of allPayments) {
       if (p.payment_type === 'doc_fee') {
         if (p.pipedrive_deal_id) dealIdsWithDocFee.add(p.pipedrive_deal_id);
@@ -647,20 +655,23 @@ exports.handler = async (event) => {
       const affiliateClosingPct = affiliateConsults > 0 ? Math.round((affiliateDocsPaid / affiliateConsults) * 100) : 0;
 
       // === INVOICE / COLLECTION METRICS ===
-      // Match invoices to this consultant by ALL their deals (any month) — past-due clients usually
-      // signed up in a prior month, so a this-month-only deal set misses them entirely.
-      const myDealIds = new Set(
-        allPayments.filter(p => {
-          if (!p.pipedrive_deal_id) return false;
-          const pName = (p.consultant_name || '').toLowerCase().trim();
-          const pParts = pName.split(/\s+/);
-          if (pParts[0] === firstName) return true;
-          if (lastName.length > 3 && pParts.some(pp => pp === lastName)) return true;
-          if (pName === name.toLowerCase()) return true;
-          return false;
-        }).map(p => String(p.pipedrive_deal_id))
-      );
-      const myInvoices = invoiceData.filter(inv => inv.pipedrive_deal_id && myDealIds.has(String(inv.pipedrive_deal_id)));
+      // Match invoices to this consultant by ALL their deals (any month) AND by client name, since
+      // invoices store only the client name with a null deal id.
+      const myAllPayments = allPayments.filter(p => {
+        const pName = (p.consultant_name || '').toLowerCase().trim();
+        const pParts = pName.split(/\s+/);
+        if (pParts[0] === firstName) return true;
+        if (lastName.length > 3 && pParts.some(pp => pp === lastName)) return true;
+        if (pName === name.toLowerCase()) return true;
+        return false;
+      });
+      const myDealIds = new Set(myAllPayments.filter(p => p.pipedrive_deal_id).map(p => String(p.pipedrive_deal_id)));
+      const myClientNames = new Set(myAllPayments.filter(p => p.client_name).map(p => norm(p.client_name)));
+      const myInvoices = invoiceData.filter(inv => {
+        const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : null;
+        if (did && myDealIds.has(did)) return true;
+        return myClientNames.has(norm(inv.customer_name));
+      });
       const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
       const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
 
@@ -668,10 +679,10 @@ exports.handler = async (event) => {
       const pastDueList = myInvoices
         .filter(inv => (inv.status === 'overdue' || inv.status === 'partially_paid') && (parseFloat(inv.balance) || 0) > 1)
         .map(inv => {
-          const did = String(inv.pipedrive_deal_id);
+          const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : (dealByClientName[norm(inv.customer_name)] || null);
           const due = inv.due_date ? new Date(inv.due_date) : null;
           const daysOverdue = due ? Math.floor((now - due) / 86400000) : null;
-          return { name: nameByDeal[did] || inv.customer_name || `Deal ${did}`, dealId: inv.pipedrive_deal_id, balance: Math.round(parseFloat(inv.balance) || 0), dueDate: inv.due_date, daysOverdue, status: inv.status };
+          return { name: inv.customer_name || (did && nameByDeal[did]) || `Deal ${did}`, dealId: did, balance: Math.round(parseFloat(inv.balance) || 0), dueDate: inv.due_date, daysOverdue, status: inv.status };
         })
         .sort((a, b) => String(b.dueDate || '').localeCompare(String(a.dueDate || '')));
       const pastDueOwed = pastDueList.reduce((s, i) => s + i.balance, 0);
