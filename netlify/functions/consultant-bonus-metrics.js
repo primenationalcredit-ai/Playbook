@@ -223,21 +223,14 @@ exports.handler = async (event) => {
       }
     } catch(e) { console.log('Lost deals error:', e.message); }
 
-    // Open CRS deals (pipeline 45) — the past-due follow-up list should only cover clients still
-    // active in CRS with an open deal, not closed/won/lost ones.
+    // Active CRS deal IDs — read from the cache the credit-team tab already builds (filter 523849,
+    // CRS round-1-started). A cheap single read; avoids a heavy live deal scan that times the request out.
     const openCrsDeals = new Set();
     try {
-      let start = 0;
-      for (let i = 0; i < 40; i++) {
-        const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?status=open&start=${start}&limit=500&api_token=${PIPEDRIVE_API_KEY}`);
-        if (!res.ok) break;
-        const data = await res.json();
-        const deals = data.data || [];
-        deals.forEach(d => { if (d.pipeline_id === 45) openCrsDeals.add(String(d.id)); });
-        if (!(data.additional_data?.pagination?.more_items_in_collection)) break;
-        start += 500;
-      }
-    } catch(e) { console.log('Open CRS deals error:', e.message); }
+      const cacheRows = await supaGet('app_cache', 'cache_key=eq.credit_team_round_dates&select=cache_value');
+      const cached = cacheRows && cacheRows[0] && JSON.parse(cacheRows[0].cache_value);
+      (cached?.deals || []).forEach(d => openCrsDeals.add(String(d.id)));
+    } catch(e) { console.log('CRS cache read error:', e.message); }
 
     // Week range
     const day = now.getDay();
