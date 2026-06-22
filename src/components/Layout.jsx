@@ -130,6 +130,7 @@ function Layout() {
   // Department-specific items
   const isConsultant = currentUser?.department === 'credit_consultants' || 
                        currentUser?.department === 'account_managers' ||
+                       currentUser?.role === 'account_manager' ||
                        currentUser?.role === 'admin';
   const isCSR = currentUser?.department === 'customer_support' || currentUser?.role === 'admin';
 

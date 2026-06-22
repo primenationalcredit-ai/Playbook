@@ -311,6 +311,7 @@ function ConsultantPayments() {
 
   const hasAccess = currentUser?.department === 'credit_consultants' || 
                     currentUser?.department === 'account_managers' ||
+                    currentUser?.role === 'account_manager' ||
                     currentUser?.department === 'leadership' ||
                     currentUser?.role === 'admin';
 
