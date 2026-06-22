@@ -675,14 +675,26 @@ exports.handler = async (event) => {
       const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
       const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
 
-      // Past-due = the due date has actually passed AND a balance is still owed. We drive this off the
-      // date + balance, NOT Zoho's status label (which can be stale or flag not-yet-due invoices).
-      const pastDueList = myInvoices
+      // Past-due = due date has passed (strictly before today, so due-today is NOT past due) AND a
+      // balance is still owed. Driven by date + balance, not Zoho's status label.
+      // First collapse duplicate invoice rows: per deal + due date, keep the LOWEST balance, so a
+      // paid row (0) suppresses a stale duplicate, and a true duplicate only appears once.
+      const invByKey = {};
+      for (const inv of myInvoices) {
+        const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : (dealByClientName[norm(inv.customer_name)] || null);
+        const key = `${did || norm(inv.customer_name)}|${String(inv.due_date || '').slice(0, 10)}`;
+        const bal = parseFloat(inv.balance) || 0;
+        const cur = invByKey[key];
+        if (!cur || bal < (parseFloat(cur.balance) || 0)) invByKey[key] = inv;
+      }
+      const todayStr = now.toISOString().slice(0, 10);
+      const pastDueList = Object.values(invByKey)
         .filter(inv => {
           const bal = parseFloat(inv.balance) || 0;
-          if (bal <= 1) return false;          // nothing owed (paid)
-          if (!inv.due_date) return false;     // no due date -> can't be past due
-          return new Date(inv.due_date) < now; // due date is in the past
+          if (bal <= 1) return false;                          // nothing owed (paid)
+          const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
+          if (!due) return false;                              // no due date -> can't be past due
+          return due < todayStr;                               // strictly before today
         })
         .map(inv => {
           const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : (dealByClientName[norm(inv.customer_name)] || null);

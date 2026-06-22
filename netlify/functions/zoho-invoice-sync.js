@@ -48,19 +48,11 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ page, invoicesScanned: 0, upserted: 0, hasMore: false }) };
     }
 
-    // Get existing invoice IDs
-    const existRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?select=zoho_invoice_id`, {
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
-    });
-    const existing = await existRes.json();
-    const existingIds = new Set((existing || []).map(e => e.zoho_invoice_id));
-
     let upserted = 0;
     for (const inv of invoices) {
       // Company field holds two numbers: "<dealId> <personId>" (deal first, person second).
       const nums = String(inv.company_name || inv.customer_name || '').match(/\d{4,}/g) || [];
       const dealId = nums[0] || null;
-      const personId = nums[1] || null;
 
       const invoiceMonth = inv.date ? inv.date.substring(0, 7) : null;
 
@@ -78,21 +70,13 @@ exports.handler = async (event) => {
         updated_at: new Date().toISOString()
       };
 
-      if (existingIds.has(inv.invoice_id)) {
-        // Update existing (balance, status, AND deal id — older rows were synced before this fix)
-        await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?zoho_invoice_id=eq.${inv.invoice_id}`, {
-          method: 'PATCH',
-          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({ balance: record.balance, status: record.status, due_date: record.due_date, pipedrive_deal_id: record.pipedrive_deal_id, updated_at: record.updated_at })
-        });
-      } else {
-        // Insert new
-        await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices`, {
-          method: 'POST',
-          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify(record)
-        });
-      }
+      // Upsert on zoho_invoice_id (requires a unique constraint on that column). A re-sync overwrites
+      // the existing row in place, so balances stay current and rows never duplicate.
+      await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?on_conflict=zoho_invoice_id`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(record)
+      });
       upserted++;
     }
 
