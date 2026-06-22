@@ -90,6 +90,12 @@ exports.handler = async (event) => {
       if (did && p.client_name && !nameByDeal[did]) nameByDeal[did] = p.client_name;
     }
 
+    // Orgs that carry the affiliate (Consultant Referral) label, so a consult can be classified as
+    // affiliate by its org even if that lead never converted (the doc-fee flag only exists once they pay).
+    const affiliateOrgNames = new Set(
+      allPayments.filter(p => p.is_affiliate_deal && p.referrer_org).map(p => String(p.referrer_org).toLowerCase().trim())
+    );
+
     // Get reviews
     const reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=*`);
 
@@ -132,7 +138,7 @@ exports.handler = async (event) => {
             consultsByOwner[o].total++;
             consultsByOwner[o].dealIds.push(d.id);
             rtqDealIds.add(d.id);
-            dealMeta[d.id] = { name: d.person_name || d.title || `Deal #${d.id}`, value: parseFloat(d.value) || 0 };
+            dealMeta[d.id] = { name: d.person_name || d.title || `Deal #${d.id}`, value: parseFloat(d.value) || 0, orgName: d.org_name || (d.org_id && d.org_id.name) || null };
           });
           more = data.additional_data?.pagination?.more_items_in_collection || false;
           start += 100;
@@ -627,19 +633,33 @@ exports.handler = async (event) => {
         }
       }
       
-      // Organic vs Affiliate closing %
+      // Organic vs Affiliate closing % — classify each consult by its org's affiliate label, NOT by
+      // whether it converted. (The doc-fee flag only exists after they pay, which forced affiliate to 100%.)
       let organicConsults = 0, affiliateConsults = 0, organicDocsPaid = 0, affiliateDocsPaid = 0;
       for (const dealId of myConsultDealIds) {
-        const payment = allPayments.find(p => p.pipedrive_deal_id === dealId && p.payment_type === 'doc_fee');
-        if (payment?.is_affiliate_deal) { affiliateConsults++; if (dealIdsWithDocFee.has(dealId)) affiliateDocsPaid++; }
-        else { organicConsults++; if (dealIdsWithDocFee.has(dealId)) organicDocsPaid++; }
+        const org = (dealMeta[dealId]?.orgName || '').toLowerCase().trim();
+        const isAff = !!org && affiliateOrgNames.has(org);
+        const paid = isPaid(dealId);
+        if (isAff) { affiliateConsults++; if (paid) affiliateDocsPaid++; }
+        else { organicConsults++; if (paid) organicDocsPaid++; }
       }
       const organicClosingPct = organicConsults > 0 ? Math.round((organicDocsPaid / organicConsults) * 100) : 0;
       const affiliateClosingPct = affiliateConsults > 0 ? Math.round((affiliateDocsPaid / affiliateConsults) * 100) : 0;
 
       // === INVOICE / COLLECTION METRICS ===
-      // Match invoices to this consultant by deal ID overlap with their payments
-      const myDealIds = new Set(myPayments.filter(p => p.pipedrive_deal_id).map(p => String(p.pipedrive_deal_id)));
+      // Match invoices to this consultant by ALL their deals (any month) — past-due clients usually
+      // signed up in a prior month, so a this-month-only deal set misses them entirely.
+      const myDealIds = new Set(
+        allPayments.filter(p => {
+          if (!p.pipedrive_deal_id) return false;
+          const pName = (p.consultant_name || '').toLowerCase().trim();
+          const pParts = pName.split(/\s+/);
+          if (pParts[0] === firstName) return true;
+          if (lastName.length > 3 && pParts.some(pp => pp === lastName)) return true;
+          if (pName === name.toLowerCase()) return true;
+          return false;
+        }).map(p => String(p.pipedrive_deal_id))
+      );
       const myInvoices = invoiceData.filter(inv => inv.pipedrive_deal_id && myDealIds.has(String(inv.pipedrive_deal_id)));
       const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
       const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
