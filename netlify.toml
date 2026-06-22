@@ -19,9 +19,18 @@
   schedule = "30 12-23 * * 1-6"
 
 # Fill in consultant names (Pipedrive deal owner) on freshly synced payments.
-# Runs every 15 min in the business window; does up to 20 rows per run.
+# Runs every 5 min in the business window; does up to 30 rows per run.
 [functions."payment-enrich"]
-  schedule = "*/15 13-23 * * 1-6"
+  schedule = "*/5 13-23 * * 1-6"
+
+# Completeness safety net: re-paginates previous + current month from Zoho and inserts any payments the
+# hourly page-1 sync missed during a busy stretch. Fast (no per-payment lookups). Twice a day.
+[functions."zoho-payment-backfill"]
+  schedule = "0 13,22 * * 1-6"
+
+# Resolves deal id + type onto backfilled payment rows so enrichment can then attribute them.
+[functions."backfill-resolve-deals"]
+  schedule = "*/5 13-23 * * 1-6"
 
 [functions."zoho-invoice-sync"]
   schedule = "45 12-23 * * 1-6"

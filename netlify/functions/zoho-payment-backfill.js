@@ -63,12 +63,16 @@ exports.handler = async (event) => {
     let months = [];
     if (params.month) {
       months = [params.month];
-    } else {
-      const year = parseInt(params.year) || now.getFullYear();
+    } else if (params.year) {
+      const year = parseInt(params.year);
       for (let m = 1; m <= 12; m++) {
         const mm = `${year}-${String(m).padStart(2, '0')}`;
-        if (mm <= currentMonth) months.push(mm); // don't bother with future months
+        if (mm <= currentMonth) months.push(mm);
       }
+    } else {
+      // Scheduled default: previous + current month, to catch any bursts the hourly page-1 sync missed.
+      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      months = [`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`, currentMonth];
     }
 
     const token = await getZohoToken();
