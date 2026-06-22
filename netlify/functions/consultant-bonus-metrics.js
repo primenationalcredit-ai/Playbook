@@ -675,9 +675,15 @@ exports.handler = async (event) => {
       const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
       const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
 
-      // Past-due / owing invoices with client names + deal links, for outreach (recent due first)
+      // Past-due = the due date has actually passed AND a balance is still owed. We drive this off the
+      // date + balance, NOT Zoho's status label (which can be stale or flag not-yet-due invoices).
       const pastDueList = myInvoices
-        .filter(inv => (inv.status === 'overdue' || inv.status === 'partially_paid') && (parseFloat(inv.balance) || 0) > 1)
+        .filter(inv => {
+          const bal = parseFloat(inv.balance) || 0;
+          if (bal <= 1) return false;          // nothing owed (paid)
+          if (!inv.due_date) return false;     // no due date -> can't be past due
+          return new Date(inv.due_date) < now; // due date is in the past
+        })
         .map(inv => {
           const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : (dealByClientName[norm(inv.customer_name)] || null);
           const due = inv.due_date ? new Date(inv.due_date) : null;
