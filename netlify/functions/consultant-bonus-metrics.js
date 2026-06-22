@@ -178,6 +178,14 @@ exports.handler = async (event) => {
         if (!dealByClientName[k]) dealByClientName[k] = String(p.pipedrive_deal_id);
       }
     }
+    // Total actually collected per deal (excluding additional rounds). Payments are the accurate
+    // source of truth, so we reconcile invoices against this instead of trusting stale invoice balances.
+    const paidByDeal = {};
+    for (const p of allPayments) {
+      if (!p.pipedrive_deal_id || p.payment_type === 'additional_round') continue;
+      const k = String(p.pipedrive_deal_id);
+      paidByDeal[k] = (paidByDeal[k] || 0) + (parseFloat(p.amount) || 0);
+    }
     for (const p of allPayments) {
       if (p.payment_type === 'doc_fee') {
         if (p.pipedrive_deal_id) dealIdsWithDocFee.add(p.pipedrive_deal_id);
@@ -695,39 +703,47 @@ exports.handler = async (event) => {
       const overdueInvoices = myInvoices.filter(inv => inv.status === 'overdue');
       const partiallyPaidInvoices = myInvoices.filter(inv => inv.status === 'partially_paid');
 
-      // Past-due = due date strictly before today AND a balance still owed. Driven by date + balance,
-      // not Zoho's status. Collapse exact-duplicate invoice rows (same deal + due date + balance) so a
-      // true duplicate only counts once. Then keep only invoices on OPEN CRS deals, and GROUP by client
-      // so each client appears once with their past-due invoices listed (newest due first).
+      // Past due, reconciled against PAYMENTS so stale invoice balances can't create false past-dues.
+      // For each deal we take the billed invoices (excluding additional rounds), allocate the deal's
+      // collected payments oldest-invoice-first, and only what's left unpaid past its due date counts.
       const todayStr = now.toISOString().slice(0, 10);
-      const invDedup = {};
+      const isARtotal = (t) => { const n = Math.round(parseFloat(t) || 0); return n === 249 || n === 299; };
+      const invByDeal = {};
       for (const inv of myInvoices) {
+        if (isARtotal(inv.total)) continue;                       // additional rounds -> AM dashboard
         const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : (dealByClientName[norm(inv.customer_name)] || null);
-        const bal = Math.round(parseFloat(inv.balance) || 0);
-        const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
-        const invTotal = Math.round(parseFloat(inv.total) || 0);
-        if (invTotal === 249 || invTotal === 299) continue;   // additional rounds belong on the AM dashboard
-        if (bal <= 1) continue;                                   // nothing owed (paid)
-        if (!due || due >= todayStr) continue;                    // due today or future is not past due
-        const key = `${did || norm(inv.customer_name)}|${due}|${bal}`;
-        if (!invDedup[key]) invDedup[key] = { inv, did, bal, due };
+        const k = did || norm(inv.customer_name);
+        if (!invByDeal[k]) invByDeal[k] = { did, name: inv.customer_name, invoices: [] };
+        invByDeal[k].invoices.push(inv);
       }
       const pastDueClientMap = {};
-      for (const { inv, did, bal, due } of Object.values(invDedup)) {
-        const ckey = did || norm(inv.customer_name);
-        if (!pastDueClientMap[ckey]) {
-          pastDueClientMap[ckey] = { name: inv.customer_name || (did && nameByDeal[did]) || `Deal ${did}`, dealId: did, totalOwed: 0, invoices: [] };
+      for (const grp of Object.values(invByDeal)) {
+        // de-dupe identical invoice rows (same due date + total), then oldest first
+        const seen = new Set();
+        const invs = grp.invoices.filter(inv => {
+          const key = `${String(inv.due_date || '').slice(0, 10)}|${Math.round(parseFloat(inv.total) || 0)}`;
+          if (seen.has(key)) return false; seen.add(key); return true;
+        }).sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')));
+        let paid = grp.did ? (paidByDeal[grp.did] || 0) : 0;   // collected so far on this deal
+        const pastInvs = [];
+        for (const inv of invs) {
+          const total = Math.round(parseFloat(inv.total) || 0);
+          let remaining;
+          if (paid >= total) { paid -= total; remaining = 0; }   // this invoice is covered by payments
+          else { remaining = total - paid; paid = 0; }
+          const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
+          if (remaining > 1 && due && due < todayStr) {
+            pastInvs.push({ balance: Math.round(remaining), dueDate: inv.due_date, daysOverdue: Math.floor((now - new Date(due)) / 86400000) });
+          }
         }
-        const daysOverdue = Math.floor((now - new Date(due)) / 86400000);
-        pastDueClientMap[ckey].invoices.push({ balance: bal, dueDate: inv.due_date, daysOverdue });
-        pastDueClientMap[ckey].totalOwed += bal;
+        if (pastInvs.length === 0) continue;                      // fully paid (per payments) -> not past due
+        const did = grp.did;
+        const name = (did && nameByDeal[did]) || grp.name || `Deal ${did}`;
+        pastInvs.sort((a, b) => String(b.dueDate || '').localeCompare(String(a.dueDate || ''))); // newest first
+        pastDueClientMap[did || grp.name] = { name, dealId: did, totalOwed: pastInvs.reduce((s, i) => s + i.balance, 0), invoices: pastInvs, newestDue: pastInvs[0].dueDate };
       }
-      const pastDueList = Object.values(pastDueClientMap).map(client => {
-        client.invoices.sort((a, b) => String(b.dueDate || '').localeCompare(String(a.dueDate || ''))); // newest first
-        client.newestDue = client.invoices[0]?.dueDate || '';
-        client.totalOwed = Math.round(client.totalOwed);
-        return client;
-      }).sort((a, b) => String(b.newestDue || '').localeCompare(String(a.newestDue || ''))); // newest-due client first
+      const pastDueList = Object.values(pastDueClientMap)
+        .sort((a, b) => String(b.newestDue || '').localeCompare(String(a.newestDue || ''))); // newest-due client first
       const pastDueOwed = pastDueList.reduce((s, c) => s + c.totalOwed, 0);
       const overdueAmount = overdueInvoices.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);
       const totalInvoiced = myInvoices.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);

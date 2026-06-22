@@ -118,32 +118,43 @@ exports.handler = async (event) => {
       byAM[am].deals.push({ deal_id: p.pipedrive_deal_id, client: p.client_name, amount: p.amount, date: p.payment_date });
     }
 
-    // Additional-round invoices that are PAST DUE. AMs are paid on rounds, so these are their
-    // follow-ups. AR invoices are identified by their fee amount (249 / 299).
+    // Additional-round invoices that are PAST DUE, reconciled against additional-round PAYMENTS so a
+    // paid round (with a stale invoice balance) doesn't show as owed. AR identified by fee (249/299).
     const todayStr = now.toISOString().slice(0, 10);
+    const arPaidByDeal = {};
+    try {
+      const arRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_type=eq.additional_round&select=pipedrive_deal_id,amount`, { headers: supa });
+      const arPays = arRes.ok ? await arRes.json() : [];
+      for (const p of arPays) { if (p.pipedrive_deal_id) { const k = String(p.pipedrive_deal_id); arPaidByDeal[k] = (arPaidByDeal[k] || 0) + (parseFloat(p.amount) || 0); } }
+    } catch (e) {}
     const pastDueRounds = [];
     try {
       const invRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?select=customer_name,pipedrive_deal_id,balance,due_date,total`, { headers: supa });
       const invs = invRes.ok ? await invRes.json() : [];
-      const seen = new Set();
+      const byDeal = {};
       for (const inv of invs) {
         const total = Math.round(parseFloat(inv.total) || 0);
-        const bal = Math.round(parseFloat(inv.balance) || 0);
-        const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
-        if (!(total === 249 || total === 299)) continue;     // additional-round fee only
-        if (bal <= 1 || !due || due >= todayStr || !inv.pipedrive_deal_id) continue;
-        const key = `${inv.pipedrive_deal_id}|${due}|${bal}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const am = await resolveAM(Number(inv.pipedrive_deal_id));
-        pastDueRounds.push({
-          am: am || 'Unassigned',
-          client: inv.customer_name,
-          dealId: String(inv.pipedrive_deal_id),
-          balance: bal,
-          dueDate: inv.due_date,
-          daysOverdue: Math.floor((now - new Date(due)) / 86400000)
-        });
+        if (!(total === 249 || total === 299) || !inv.pipedrive_deal_id) continue;
+        const k = String(inv.pipedrive_deal_id);
+        if (!byDeal[k]) byDeal[k] = [];
+        byDeal[k].push(inv);
+      }
+      for (const [dealId, list] of Object.entries(byDeal)) {
+        const seen = new Set();
+        const sorted = list.filter(inv => { const key = `${String(inv.due_date || '').slice(0, 10)}|${Math.round(parseFloat(inv.total) || 0)}`; if (seen.has(key)) return false; seen.add(key); return true; })
+          .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')));
+        let paid = arPaidByDeal[dealId] || 0;
+        let am = null, resolved = false;
+        for (const inv of sorted) {
+          const total = Math.round(parseFloat(inv.total) || 0);
+          let remaining;
+          if (paid >= total) { paid -= total; remaining = 0; } else { remaining = total - paid; paid = 0; }
+          const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
+          if (remaining > 1 && due && due < todayStr) {
+            if (!resolved) { am = await resolveAM(Number(dealId)); resolved = true; }
+            pastDueRounds.push({ am: am || 'Unassigned', client: inv.customer_name, dealId, balance: Math.round(remaining), dueDate: inv.due_date, daysOverdue: Math.floor((now - new Date(due)) / 86400000) });
+          }
+        }
       }
       pastDueRounds.sort((a, b) => String(b.dueDate || '').localeCompare(String(a.dueDate || '')));
     } catch (e) {}
