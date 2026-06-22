@@ -68,13 +68,13 @@ exports.handler = async (event) => {
     if (!forceRefresh) {
       try {
         const cacheRows = await supaGet('app_cache', `cache_key=eq.${CACHE_KEY}&select=cache_value,updated_at`);
-        if (cacheRows && cacheRows[0] && cacheRows[0].updated_at) {
-          const age = Date.now() - new Date(cacheRows[0].updated_at).getTime();
-          if (age < CACHE_TTL_MS && cacheRows[0].cache_value) {
-            return { statusCode: 200, headers, body: cacheRows[0].cache_value };
-          }
+        if (cacheRows && cacheRows[0] && cacheRows[0].cache_value) {
+          // Always serve cache on the live page load, even if a little stale. The scheduled warm
+          // function (and ?refresh=1) do the slow recompute, so the team never blocks on it and the
+          // page never fails to load. Freshness comes from the every-10-min warm.
+          return { statusCode: 200, headers, body: cacheRows[0].cache_value };
         }
-      } catch(e) { /* cache miss or error -> compute fresh below */ }
+      } catch(e) { /* no cache yet -> compute fresh below */ }
     }
     // Only read a rolling window of history (not the full multi-year table).
     // Covers current-month sales plus the look-backs the bonus logic needs (90-day reactivation, prior-month qualified docs).
@@ -195,8 +195,21 @@ exports.handler = async (event) => {
 
     // Cached lookup: org creation date (add_time) by org name — for New Affiliate Launch
     const orgAddTimeCache = {};
+    // Org creation dates rarely change, so cache them in the DB. Without this we'd do 2 live Pipedrive
+    // calls per affiliate org on every load, which is what was timing the function out.
+    let orgAddTimePersist = {};
+    try {
+      const rows = await supaGet('app_cache', 'cache_key=eq.org_add_times&select=cache_value');
+      if (rows && rows[0] && rows[0].cache_value) orgAddTimePersist = JSON.parse(rows[0].cache_value) || {};
+    } catch (e) {}
+    let orgAddTimeNewFetches = 0;
+    let orgAddTimeDirty = false;
+    const ORG_FETCH_CAP = 20; // bound live lookups per run; the rest fill in over subsequent runs
     async function getOrgAddTime(orgName) {
       if (orgName in orgAddTimeCache) return orgAddTimeCache[orgName];
+      if (orgName in orgAddTimePersist) { orgAddTimeCache[orgName] = orgAddTimePersist[orgName]; return orgAddTimeCache[orgName]; }
+      if (orgAddTimeNewFetches >= ORG_FETCH_CAP) return null; // defer to a later run, don't block this one
+      orgAddTimeNewFetches++;
       let result = null;
       try {
         const r = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/organizations/search?term=${encodeURIComponent(orgName)}&exact_match=true&fields=name&api_token=${PIPEDRIVE_API_KEY}`);
@@ -210,6 +223,8 @@ exports.handler = async (event) => {
         }
       } catch (e) {}
       orgAddTimeCache[orgName] = result;
+      orgAddTimePersist[orgName] = result;
+      orgAddTimeDirty = true;
       return result;
     }
     // Cached lookup: deal total value by id — for PIF paid-in-full check
@@ -1047,6 +1062,17 @@ exports.handler = async (event) => {
         body: JSON.stringify({ cache_key: CACHE_KEY, cache_value: responseBody, updated_at: new Date().toISOString() })
       });
     } catch(e) { /* caching is best-effort */ }
+
+    // Persist any org creation dates we looked up this run so future runs never re-fetch them.
+    if (orgAddTimeDirty) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
+          method: 'POST',
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({ cache_key: 'org_add_times', cache_value: JSON.stringify(orgAddTimePersist), updated_at: new Date().toISOString() })
+        });
+      } catch(e) { /* best-effort */ }
+    }
 
     return { statusCode: 200, headers, body: responseBody };
   } catch (error) {
