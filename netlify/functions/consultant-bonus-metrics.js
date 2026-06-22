@@ -58,6 +58,24 @@ exports.handler = async (event) => {
     const targetMonth = params.month || currentMonth;
     const monthLabel = new Date(targetMonth + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
     const monthStart = `${targetMonth}-01`;
+
+    // Response cache: this function does a lot of live Pipedrive work, so we serve a cached result
+    // (per month) and only recompute when it's older than the TTL or ?refresh=1 is passed. Keeps the
+    // page loading instantly for the team and avoids the timeout.
+    const CACHE_KEY = `consultant_bonus_${targetMonth}`;
+    const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+    const forceRefresh = params.refresh === '1' || params.refresh === 'true';
+    if (!forceRefresh) {
+      try {
+        const cacheRows = await supaGet('app_cache', `cache_key=eq.${CACHE_KEY}&select=cache_value,updated_at`);
+        if (cacheRows && cacheRows[0] && cacheRows[0].updated_at) {
+          const age = Date.now() - new Date(cacheRows[0].updated_at).getTime();
+          if (age < CACHE_TTL_MS && cacheRows[0].cache_value) {
+            return { statusCode: 200, headers, body: cacheRows[0].cache_value };
+          }
+        }
+      } catch(e) { /* cache miss or error -> compute fresh below */ }
+    }
     // Only read a rolling window of history (not the full multi-year table).
     // Covers current-month sales plus the look-backs the bonus logic needs (90-day reactivation, prior-month qualified docs).
     const [wy, wm] = targetMonth.split('-').map(Number);
@@ -950,9 +968,7 @@ exports.handler = async (event) => {
       }
     }
 
-    return {
-      statusCode: 200, headers,
-      body: JSON.stringify({
+    const responseBody = JSON.stringify({
         month: monthLabel, monthKey: targetMonth,
         teamTotals: { todaySales, todayDocs, todayPartials, todayFinals, mtdSales, mtdDocs, mtdPartials, mtdFinals, mtdProjection, ytdSales, ytdDocs, totalPayments: payments.length,
           totalOverdue: invoiceData.filter(i => i.status === 'overdue').length,
@@ -969,8 +985,18 @@ exports.handler = async (event) => {
         orgEmailCount: payments.filter(p => p.org_has_email === true).length,
         sampleOrgs: [...new Set(payments.map(p => p.referrer_org).filter(Boolean))].slice(0, 10),
         updatedAt: now.toISOString()
-      })
-    };
+      });
+
+    // Save to cache so subsequent loads are instant until the TTL expires.
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ cache_key: CACHE_KEY, cache_value: responseBody, updated_at: new Date().toISOString() })
+      });
+    } catch(e) { /* caching is best-effort */ }
+
+    return { statusCode: 200, headers, body: responseBody };
   } catch (error) {
     console.error('Bonus metrics error:', error);
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };

@@ -123,6 +123,7 @@ export default function ConsultantBonus() {
   const [selectedConsultant, setSelectedConsultant] = useState(null);
   const [tab, setTab] = useState('bonuses');
   const [expandedSection, setExpandedSection] = useState(null);
+  const [pastDueMonth, setPastDueMonth] = useState('all');
   const [sprintWeek, setSprintWeek] = useState(null);
   const [lbTab, setLbTab] = useState('overview');
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -927,13 +928,31 @@ export default function ConsultantBonus() {
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'pastdue' ? null : 'pastdue')} label="View clients" />
           )}
         </div>
-        {expandedSection === 'pastdue' && c.clientDetail?.pastDueList && (
+        {expandedSection === 'pastdue' && c.clientDetail?.pastDueList && (() => {
+          const allPd = c.clientDetail.pastDueList;
+          // distinct due-months across all past-due invoices, newest first
+          const months = [...new Set(allPd.flatMap(cl => (cl.invoices || []).map(i => String(i.dueDate || '').slice(0, 7))).filter(Boolean))].sort().reverse();
+          const monthLabel = (m) => new Date(m + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
+          // apply the month filter: keep only invoices due in the selected month, drop empty clients
+          const shown = allPd.map(cl => {
+            const invs = pastDueMonth === 'all' ? cl.invoices : (cl.invoices || []).filter(i => String(i.dueDate || '').slice(0, 7) === pastDueMonth);
+            return { ...cl, invoices: invs, shownOwed: invs.reduce((s, i) => s + (i.balance || 0), 0) };
+          }).filter(cl => (cl.invoices || []).length > 0);
+          const shownTotal = shown.reduce((s, cl) => s + cl.shownOwed, 0);
+          return (
           <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
               <h4 className="font-semibold text-slate-700 text-sm">Past Due Invoices — Reach Out (newest first)</h4>
-              <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
+              <div className="flex items-center gap-2">
+                <select value={pastDueMonth} onChange={e => setPastDueMonth(e.target.value)} className="text-xs border rounded px-2 py-1 text-slate-600">
+                  <option value="all">All months</option>
+                  {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                </select>
+                <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
+              </div>
             </div>
-            {c.clientDetail.pastDueList.map((client, idx) => (
+            <p className="text-xs text-slate-500">{shown.length} client{shown.length === 1 ? '' : 's'} owing {fmt(shownTotal)}{pastDueMonth !== 'all' ? ` due in ${monthLabel(pastDueMonth)}` : ''}</p>
+            {shown.map((client, idx) => (
               <div key={idx} className="bg-slate-50 rounded-lg p-3">
                 <div className="flex items-center justify-between">
                   {client.dealId ? (
@@ -941,7 +960,7 @@ export default function ConsultantBonus() {
                   ) : (
                     <span className="font-semibold text-slate-700">{client.name}</span>
                   )}
-                  <span className="text-sm font-bold text-rose-600">{fmt(client.totalOwed)} owed</span>
+                  <span className="text-sm font-bold text-rose-600">{fmt(client.shownOwed)} owed</span>
                 </div>
                 <div className="mt-1 space-y-0.5">
                   {(client.invoices || []).map((inv, i) => (
@@ -954,7 +973,8 @@ export default function ConsultantBonus() {
               </div>
             ))}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Commission Detail */}
