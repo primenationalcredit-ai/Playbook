@@ -1,403 +1,183 @@
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
 import { format } from 'date-fns';
 import {
-  ClipboardList,
-  Star,
-  TrendingUp,
-  Users,
-  Filter,
-  ChevronDown,
-  ChevronUp,
-  MessageSquare,
-  ThumbsUp,
-  ThumbsDown,
-  Search,
-  Calendar,
-  Download,
-  RefreshCw,
+  ClipboardList, Star, TrendingUp, MessageSquare,
+  ThumbsUp, ThumbsDown, Search, Download, RefreshCw, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supaHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 
+// The Round 2 ("2ND RD DONE") client survey — the live one that rates the Account Manager.
 function AdminSurveys() {
-  const { users } = useApp();
-  const [surveys, setSurveys] = useState([]);
+  const [responses, setResponses] = useState([]);   // client_surveys, survey_type = round2_am
+  const [sends, setSends] = useState([]);            // survey_sends (real sends, not the seed backlog)
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState('all');
-  const [filterConsultant, setFilterConsultant] = useState('all');
+  const [filterAM, setFilterAM] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedSurvey, setExpandedSurvey] = useState(null);
   const [dateRange, setDateRange] = useState('all');
-  const [r2Sends, setR2Sends] = useState([]);
+  const [expanded, setExpanded] = useState(null);
   const [resendingId, setResendingId] = useState(null);
 
-  // Load surveys
-  useEffect(() => {
-    loadSurveys();
-    loadR2Sends();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
 
-  const loadR2Sends = async () => {
+  const loadAll = async () => {
+    setLoading(true);
+    await Promise.all([loadResponses(), loadSends()]);
+    setLoading(false);
+  };
+  const loadResponses = async () => {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?source=neq.backlog_seed&order=sent_at.desc&select=*`, {
-        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      });
-      if (res.ok) setR2Sends(await res.json());
-    } catch (e) { console.error('Error loading sends:', e); }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/client_surveys?survey_type=eq.round2_am&order=created_at.desc&select=*`, { headers: supaHeaders });
+      if (res.ok) setResponses(await res.json());
+    } catch (e) { console.error('responses', e); }
+  };
+  const loadSends = async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?survey_type=eq.round2_am&source=neq.backlog_seed&order=sent_at.desc&select=*`, { headers: supaHeaders });
+      if (res.ok) setSends(await res.json());
+    } catch (e) { console.error('sends', e); }
   };
 
-  const handleR2Resend = async (sendId) => {
+  const handleResend = async (sendId) => {
     setResendingId(sendId);
     try {
       await fetch('/.netlify/functions/resend-survey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ send_id: sendId }) });
-      await loadR2Sends();
+      await loadSends();
     } catch (e) {}
     setResendingId(null);
   };
 
-  const loadSurveys = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/client_surveys?select=*&order=submitted_at.desc`,
-        {
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-          },
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSurveys(data || []);
-      }
-    } catch (error) {
-      console.error('Error loading surveys:', error);
-    }
-    setLoading(false);
+  const respTime = (r) => r.created_at || r.submitted_at;
+  const inRange = (d) => {
+    if (dateRange === 'all' || !d) return true;
+    const days = dateRange === '7days' ? 7 : dateRange === '30days' ? 30 : 90;
+    return (Date.now() - new Date(d).getTime()) <= days * 86400000;
   };
 
-  // Filter surveys
-  const filteredSurveys = surveys.filter(survey => {
-    if (filterType !== 'all' && survey.survey_type !== filterType) return false;
-    if (filterConsultant !== 'all' && survey.consultant_id !== filterConsultant) return false;
+  // AM list for the filter
+  const amNames = Array.from(new Set([
+    ...responses.map(r => (r.am_name || '').trim()),
+    ...sends.map(s => (s.am_name || '').trim()),
+  ].filter(Boolean))).sort();
+
+  // Filtered responses (the detail list)
+  const filtered = responses.filter(r => {
+    if (filterAM !== 'all' && (r.am_name || '').trim() !== filterAM) return false;
+    if (!inRange(respTime(r))) return false;
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      if (!survey.client_name?.toLowerCase().includes(query) &&
-          !survey.client_email?.toLowerCase().includes(query)) {
-        return false;
-      }
-    }
-    if (dateRange !== 'all') {
-      const surveyDate = new Date(survey.submitted_at);
-      const now = new Date();
-      if (dateRange === '7days' && (now - surveyDate) > 7 * 24 * 60 * 60 * 1000) return false;
-      if (dateRange === '30days' && (now - surveyDate) > 30 * 24 * 60 * 60 * 1000) return false;
-      if (dateRange === '90days' && (now - surveyDate) > 90 * 24 * 60 * 60 * 1000) return false;
+      const q = searchQuery.toLowerCase();
+      if (!(r.client_name || '').toLowerCase().includes(q) && !(r.client_email || '').toLowerCase().includes(q)) return false;
     }
     return true;
   });
 
-  // Calculate stats
-  const stats = {
-    total: filteredSurveys.length,
-    enrollment: filteredSurveys.filter(s => s.survey_type === 'enrollment').length,
-    completion: filteredSurveys.filter(s => s.survey_type === 'completion').length,
-    avgNPS: filteredSurveys.filter(s => s.nps_score != null).length > 0
-      ? (filteredSurveys.reduce((acc, s) => acc + (s.nps_score || 0), 0) / 
-         filteredSurveys.filter(s => s.nps_score != null).length).toFixed(1)
-      : 'N/A',
-    avgConsultantRating: filteredSurveys.filter(s => s.consultant_rating != null).length > 0
-      ? (filteredSurveys.reduce((acc, s) => acc + (s.consultant_rating || 0), 0) / 
-         filteredSurveys.filter(s => s.consultant_rating != null).length).toFixed(1)
-      : 'N/A',
-    avgSatisfaction: filteredSurveys.filter(s => s.overall_satisfaction != null).length > 0
-      ? (filteredSurveys.reduce((acc, s) => acc + (s.overall_satisfaction || 0), 0) / 
-         filteredSurveys.filter(s => s.overall_satisfaction != null).length).toFixed(1)
-      : 'N/A',
-  };
+  // Stats from the (filtered) responses
+  const rated = filtered.filter(r => r.am_rating != null);
+  const sat = filtered.filter(r => r.overall_satisfaction != null);
+  const nps = filtered.filter(r => r.nps_score != null);
+  const avg = (arr, key) => arr.length ? (arr.reduce((a, r) => a + Number(r[key] || 0), 0) / arr.length).toFixed(1) : 'N/A';
+  const promoters = nps.filter(r => r.nps_score >= 9).length;
+  const passives = nps.filter(r => r.nps_score >= 7 && r.nps_score <= 8).length;
+  const detractors = nps.filter(r => r.nps_score <= 6).length;
+  const npsScore = nps.length ? Math.round(((promoters - detractors) / nps.length) * 100) : 'N/A';
 
-  // NPS breakdown
-  const npsBreakdown = {
-    promoters: filteredSurveys.filter(s => s.nps_score >= 9).length,
-    passives: filteredSurveys.filter(s => s.nps_score >= 7 && s.nps_score <= 8).length,
-    detractors: filteredSurveys.filter(s => s.nps_score <= 6 && s.nps_score != null).length,
-  };
-  const npsScore = filteredSurveys.filter(s => s.nps_score != null).length > 0
-    ? Math.round(((npsBreakdown.promoters - npsBreakdown.detractors) / 
-        filteredSurveys.filter(s => s.nps_score != null).length) * 100)
-    : 'N/A';
-
-  const getConsultantName = (consultantId) => {
-    const user = users.find(u => u.id === consultantId);
-    return user?.name || 'Unknown';
-  };
-
-  const renderStars = (rating, max = 5) => {
-    if (!rating) return <span className="text-slate-400">N/A</span>;
-    return (
-      <div className="flex items-center gap-0.5">
-        {[...Array(max)].map((_, i) => (
-          <Star
-            key={i}
-            size={14}
-            className={i < rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'}
-          />
-        ))}
-        <span className="ml-1 text-sm text-slate-600">{rating}/{max}</span>
-      </div>
-    );
-  };
-
-  const getNPSColor = (score) => {
-    if (score >= 9) return 'text-green-600 bg-green-50';
-    if (score >= 7) return 'text-amber-600 bg-amber-50';
-    return 'text-red-600 bg-red-50';
-  };
+  // Send/response status table (latest send per person + whether they responded)
+  const respByPerson = {};
+  responses.forEach(r => { const pid = String(r.pipedrive_person_id || ''); if (pid) respByPerson[pid] = r; });
+  const latestSend = {};
+  sends.forEach(s => { const pid = String(s.person_id); if (!latestSend[pid] || new Date(s.sent_at) > new Date(latestSend[pid].sent_at)) latestSend[pid] = s; });
+  const sendRows = Object.values(latestSend)
+    .filter(s => filterAM === 'all' || (s.am_name || '').trim() === filterAM)
+    .sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
+  const isBad = (r) => r && ((r.am_rating != null && r.am_rating <= 6) || (r.overall_satisfaction != null && r.overall_satisfaction <= 6));
+  const respondedCount = sendRows.filter(s => respByPerson[String(s.person_id)]).length;
 
   const exportCSV = () => {
-    const headers = ['Date', 'Type', 'Client Name', 'Client Email', 'Consultant', 'NPS Score', 'Consultant Rating', 'Satisfaction', 'Comments'];
-    const rows = filteredSurveys.map(s => [
-      format(new Date(s.submitted_at), 'yyyy-MM-dd'),
-      s.survey_type,
-      s.client_name,
-      s.client_email,
-      s.consultant_name || getConsultantName(s.consultant_id),
-      s.nps_score || '',
-      s.consultant_rating || '',
-      s.overall_satisfaction || '',
-      (s.additional_comments || s.what_could_improve || '').replace(/,/g, ';'),
+    const head = ['Date', 'Client', 'Email', 'Account Manager', 'AM Rating (/10)', 'Overall (/10)', 'Work Explained Clearly', 'NPS', 'What Could Improve'];
+    const rows = filtered.map(r => [
+      respTime(r) ? format(new Date(respTime(r)), 'yyyy-MM-dd') : '',
+      r.client_name, r.client_email, r.am_name,
+      r.am_rating ?? '', r.overall_satisfaction ?? '',
+      r.met_expectations === true ? 'Yes' : r.met_expectations === false ? 'No' : '',
+      r.nps_score ?? '', (r.what_could_improve || '').replace(/,/g, ';'),
     ]);
-    
-    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const csv = [head, ...rows].map(row => row.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `surveys-export-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.href = URL.createObjectURL(blob);
+    a.download = `round2-surveys-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
   };
 
+  const StatCard = ({ icon, label, value, color = 'text-slate-800' }) => (
+    <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+      <div className="flex items-center gap-2 mb-2">{icon}<span className="text-sm text-slate-500">{label}</span></div>
+      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+    </div>
+  );
+
+  const ratingPill = (label, v) => (
+    <span className={`text-xs px-2 py-0.5 rounded-full ${v == null ? 'bg-slate-100 text-slate-500' : v <= 6 ? 'bg-red-100 text-red-700' : v <= 8 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+      {label} {v ?? '—'}/10
+    </span>
+  );
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold text-slate-800">Survey Results</h1>
-          <p className="text-slate-500">View and analyze client feedback from enrollment and completion surveys</p>
+          <p className="text-slate-500">Round 2 client satisfaction surveys, the AM rating sent when a client reaches "2ND RD DONE."</p>
         </div>
-        
         <div className="flex gap-2">
-          <button
-            onClick={() => { loadSurveys(); loadR2Sends(); }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium transition-colors"
-          >
-            <RefreshCw size={18} />
-            Refresh
+          <button onClick={loadAll} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium">
+            <RefreshCw size={18} /> Refresh
           </button>
-          <button
-            onClick={exportCSV}
-            className="flex items-center gap-2 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium transition-colors"
-          >
-            <Download size={18} />
-            Export CSV
+          <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium">
+            <Download size={18} /> Export CSV
           </button>
         </div>
       </div>
 
-      {/* Round 2 Survey — sends, response status, and resend (all AMs in one place) */}
-      {(() => {
-        const r2Responses = (surveys || []).filter(s => s.survey_type === 'round2_am');
-        const respByPerson = {};
-        r2Responses.forEach(r => { if (r.pipedrive_person_id) respByPerson[String(r.pipedrive_person_id)] = r; });
-        // latest send per person
-        const byPerson = {};
-        (r2Sends || []).forEach(s => {
-          const pid = String(s.person_id);
-          if (!byPerson[pid] || new Date(s.sent_at) > new Date(byPerson[pid].sent_at)) byPerson[pid] = s;
-        });
-        const rows = Object.values(byPerson).sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
-        const bad = (r) => r && ((r.am_rating != null && r.am_rating <= 6) || (r.overall_satisfaction != null && r.overall_satisfaction <= 6));
-        return (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 mb-6 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-slate-800">Round 2 Survey — Sent &amp; Responses</h2>
-                <p className="text-sm text-slate-500">Everyone the Round 2 survey went to, who responded, and a resend button. {rows.length} sent.</p>
-              </div>
-              <MessageSquare size={20} className="text-blue-500" />
-            </div>
-            {rows.length === 0 ? (
-              <div className="px-5 py-8 text-center text-slate-500 text-sm">No Round 2 surveys have been sent yet. They appear here as clients reach "2ND RD DONE".</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-slate-500 text-left">
-                    <tr>
-                      <th className="px-5 py-2 font-medium">Client</th>
-                      <th className="px-5 py-2 font-medium">Account Manager</th>
-                      <th className="px-5 py-2 font-medium">Sent</th>
-                      <th className="px-5 py-2 font-medium">Status</th>
-                      <th className="px-5 py-2 font-medium text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rows.map((s) => {
-                      const resp = respByPerson[String(s.person_id)];
-                      const isBad = bad(resp);
-                      return (
-                        <tr key={s.id} className={isBad ? 'bg-red-50' : ''}>
-                          <td className="px-5 py-3 font-medium text-slate-800">{s.client_name || 'Client'}</td>
-                          <td className="px-5 py-3 text-slate-600">{s.am_name || '—'}</td>
-                          <td className="px-5 py-3 text-slate-500">{s.sent_at ? format(new Date(s.sent_at), 'MMM d') : ''}</td>
-                          <td className="px-5 py-3">
-                            {resp ? (
-                              <span className={isBad ? 'text-red-600 font-semibold' : 'text-green-600 font-medium'}>
-                                Responded · AM {resp.am_rating ?? '?'}/10 · Overall {resp.overall_satisfaction ?? '?'}/10
-                              </span>
-                            ) : (
-                              <span className="text-amber-600">Awaiting response</span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3 text-right">
-                            {!resp && (
-                              <button
-                                onClick={() => handleR2Resend(s.id)}
-                                disabled={resendingId === s.id}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-                              >
-                                <RefreshCw size={14} className={resendingId === s.id ? 'animate-spin' : ''} /> {resendingId === s.id ? 'Sending' : 'Resend'}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-2">
-            <ClipboardList size={18} className="text-blue-500" />
-            <span className="text-sm text-slate-500">Total</span>
-          </div>
-          <p className="text-2xl font-bold text-slate-800">{stats.total}</p>
-        </div>
-        
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-2">
-            <Users size={18} className="text-purple-500" />
-            <span className="text-sm text-slate-500">Enrollment</span>
-          </div>
-          <p className="text-2xl font-bold text-purple-600">{stats.enrollment}</p>
-        </div>
-        
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-2">
-            <ThumbsUp size={18} className="text-green-500" />
-            <span className="text-sm text-slate-500">Completion</span>
-          </div>
-          <p className="text-2xl font-bold text-green-600">{stats.completion}</p>
-        </div>
-        
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp size={18} className="text-amber-500" />
-            <span className="text-sm text-slate-500">Avg NPS</span>
-          </div>
-          <p className="text-2xl font-bold text-amber-600">{stats.avgNPS}</p>
-        </div>
-        
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-2">
-            <Star size={18} className="text-amber-400" />
-            <span className="text-sm text-slate-500">Consultant Avg</span>
-          </div>
-          <p className="text-2xl font-bold text-slate-800">{stats.avgConsultantRating}/10</p>
-        </div>
-        
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-          <div className="flex items-center gap-2 mb-2">
-            <ThumbsUp size={18} className="text-blue-500" />
-            <span className="text-sm text-slate-500">Satisfaction</span>
-          </div>
-          <p className="text-2xl font-bold text-slate-800">{stats.avgSatisfaction}/5</p>
-        </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <StatCard icon={<ClipboardList size={18} className="text-blue-500" />} label="Responses" value={filtered.length} />
+        <StatCard icon={<MessageSquare size={18} className="text-slate-500" />} label="Sent" value={sendRows.length} />
+        <StatCard icon={<TrendingUp size={18} className="text-indigo-500" />} label="Response Rate" value={sendRows.length ? `${Math.round((respondedCount / sendRows.length) * 100)}%` : 'N/A'} color="text-indigo-600" />
+        <StatCard icon={<Star size={18} className="text-amber-400" />} label="Avg AM Rating" value={`${avg(rated, 'am_rating')}/10`} color="text-amber-600" />
+        <StatCard icon={<ThumbsUp size={18} className="text-green-500" />} label="Avg Overall" value={`${avg(sat, 'overall_satisfaction')}/10`} color="text-green-600" />
+        <StatCard icon={<TrendingUp size={18} className="text-blue-500" />} label="NPS" value={npsScore} color="text-blue-600" />
       </div>
 
-      {/* NPS Breakdown */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">
-        <h3 className="font-semibold text-slate-800 mb-4">Net Promoter Score (NPS)</h3>
-        <div className="flex flex-wrap items-center gap-6">
-          <div className="text-center">
-            <p className="text-4xl font-bold text-blue-600">{npsScore}</p>
-            <p className="text-sm text-slate-500">NPS Score</p>
-          </div>
-          <div className="flex-1 flex gap-4">
-            <div className="flex-1 bg-green-50 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-green-600">{npsBreakdown.promoters}</p>
-              <p className="text-xs text-green-700">Promoters (9-10)</p>
-            </div>
-            <div className="flex-1 bg-amber-50 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-amber-600">{npsBreakdown.passives}</p>
-              <p className="text-xs text-amber-700">Passives (7-8)</p>
-            </div>
-            <div className="flex-1 bg-red-50 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-red-600">{npsBreakdown.detractors}</p>
-              <p className="text-xs text-red-700">Detractors (0-6)</p>
+      {/* NPS breakdown */}
+      {nps.length > 0 && (
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 mb-6">
+          <h3 className="font-semibold text-slate-800 mb-4">Net Promoter Score</h3>
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="text-center"><p className="text-4xl font-bold text-blue-600">{npsScore}</p><p className="text-sm text-slate-500">NPS</p></div>
+            <div className="flex-1 flex gap-4">
+              <div className="flex-1 bg-green-50 rounded-lg p-3 text-center"><p className="text-2xl font-bold text-green-600">{promoters}</p><p className="text-xs text-green-700">Promoters (9-10)</p></div>
+              <div className="flex-1 bg-amber-50 rounded-lg p-3 text-center"><p className="text-2xl font-bold text-amber-600">{passives}</p><p className="text-xs text-amber-700">Passives (7-8)</p></div>
+              <div className="flex-1 bg-red-50 rounded-lg p-3 text-center"><p className="text-2xl font-bold text-red-600">{detractors}</p><p className="text-xs text-red-700">Detractors (0-6)</p></div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-6">
         <div className="flex flex-wrap gap-4">
           <div className="flex-1 min-w-[200px] relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder="Search by client name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+            <input type="text" placeholder="Search by client name or email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500" />
           </div>
-          
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Types</option>
-            <option value="enrollment">Enrollment</option>
-            <option value="completion">Completion</option>
+          <select value={filterAM} onChange={(e) => setFilterAM(e.target.value)} className="px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500">
+            <option value="all">All Account Managers</option>
+            {amNames.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
-          
-          <select
-            value={filterConsultant}
-            onChange={(e) => setFilterConsultant(e.target.value)}
-            className="px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Consultants</option>
-            {users.filter(u => u.department === 'credit_consultants').map(user => (
-              <option key={user.id} value={user.id}>{user.name}</option>
-            ))}
-          </select>
-          
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
+          <select value={dateRange} onChange={(e) => setDateRange(e.target.value)} className="px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500">
             <option value="all">All Time</option>
             <option value="7days">Last 7 Days</option>
             <option value="30days">Last 30 Days</option>
@@ -406,185 +186,119 @@ function AdminSurveys() {
         </div>
       </div>
 
-      {/* Survey List */}
+      {/* Sent & response status + resend */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 mb-6 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-slate-800">Sent &amp; Responses</h2>
+            <p className="text-sm text-slate-500">Who the survey went to, who responded, and a resend for anyone still pending. {sendRows.length} sent · {respondedCount} responded.</p>
+          </div>
+          <MessageSquare size={20} className="text-blue-500" />
+        </div>
+        {sendRows.length === 0 ? (
+          <div className="px-5 py-8 text-center text-slate-500 text-sm">No surveys sent yet. Clients appear here as they reach "2ND RD DONE."</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-left">
+                <tr>
+                  <th className="px-5 py-2 font-medium">Client</th>
+                  <th className="px-5 py-2 font-medium">Account Manager</th>
+                  <th className="px-5 py-2 font-medium">Sent</th>
+                  <th className="px-5 py-2 font-medium">Status</th>
+                  <th className="px-5 py-2 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {sendRows.map((s) => {
+                  const resp = respByPerson[String(s.person_id)];
+                  const bad = isBad(resp);
+                  return (
+                    <tr key={s.id} className={bad ? 'bg-red-50' : ''}>
+                      <td className="px-5 py-3 font-medium text-slate-800">{s.client_name || 'Client'}</td>
+                      <td className="px-5 py-3 text-slate-600">{s.am_name || '—'}</td>
+                      <td className="px-5 py-3 text-slate-500">{s.sent_at ? format(new Date(s.sent_at), 'MMM d') : ''}</td>
+                      <td className="px-5 py-3">
+                        {resp ? (
+                          <span className={bad ? 'text-red-600 font-semibold' : 'text-green-600 font-medium'}>Responded · AM {resp.am_rating ?? '?'}/10 · Overall {resp.overall_satisfaction ?? '?'}/10</span>
+                        ) : (
+                          <span className="text-amber-600">Awaiting response</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {!resp && (
+                          <button onClick={() => handleResend(s.id)} disabled={resendingId === s.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+                            <RefreshCw size={14} className={resendingId === s.id ? 'animate-spin' : ''} /> {resendingId === s.id ? 'Sending' : 'Resend'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Response detail list */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100"><h2 className="font-bold text-slate-800">Responses ({filtered.length})</h2></div>
         {loading ? (
-          <div className="p-12 text-center text-slate-500">
-            <RefreshCw size={32} className="mx-auto mb-4 animate-spin text-slate-300" />
-            <p>Loading surveys...</p>
-          </div>
-        ) : filteredSurveys.length === 0 ? (
-          <div className="p-12 text-center text-slate-500">
-            <ClipboardList size={48} className="mx-auto mb-4 text-slate-300" />
-            <p className="font-medium">No surveys found</p>
-            <p className="text-sm">Adjust your filters or wait for new submissions</p>
-          </div>
+          <div className="p-12 text-center text-slate-500"><RefreshCw size={32} className="mx-auto mb-4 animate-spin text-slate-300" /><p>Loading...</p></div>
+        ) : filtered.length === 0 ? (
+          <div className="p-12 text-center text-slate-500"><ClipboardList size={48} className="mx-auto mb-4 text-slate-300" /><p className="font-medium">No responses yet</p><p className="text-sm">They show up here as clients complete the survey.</p></div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {filteredSurveys.map(survey => (
-              <div key={survey.id} className="hover:bg-slate-50 transition-colors">
-                {/* Survey Row */}
-                <div
-                  className="p-4 flex items-center gap-4 cursor-pointer"
-                  onClick={() => setExpandedSurvey(expandedSurvey === survey.id ? null : survey.id)}
-                >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                    survey.survey_type === 'enrollment' ? 'bg-purple-100' : 'bg-green-100'
-                  }`}>
-                    {survey.survey_type === 'enrollment' ? (
-                      <Users size={20} className="text-purple-600" />
-                    ) : (
-                      <ThumbsUp size={20} className="text-green-600" />
-                    )}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-slate-800 truncate">{survey.client_name}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        survey.survey_type === 'enrollment' 
-                          ? 'bg-purple-100 text-purple-700' 
-                          : 'bg-green-100 text-green-700'
-                      }`}>
-                        {survey.survey_type}
-                      </span>
+            {filtered.map(r => {
+              const bad = isBad(r);
+              return (
+                <div key={r.id} className="hover:bg-slate-50">
+                  <div className="p-4 flex items-center gap-4 cursor-pointer" onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${bad ? 'bg-red-100' : 'bg-green-100'}`}>
+                      {bad ? <ThumbsDown size={20} className="text-red-600" /> : <ThumbsUp size={20} className="text-green-600" />}
                     </div>
-                    <p className="text-sm text-slate-500 truncate">{survey.client_email}</p>
-                  </div>
-                  
-                  {survey.nps_score != null && (
-                    <div className={`px-3 py-1 rounded-lg font-semibold ${getNPSColor(survey.nps_score)}`}>
-                      NPS: {survey.nps_score}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-slate-800 truncate">{r.client_name}</p>
+                        <span className="text-xs text-slate-500">AM: {r.am_name || '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {ratingPill('AM', r.am_rating)}
+                        {ratingPill('Overall', r.overall_satisfaction)}
+                        {r.nps_score != null && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">NPS {r.nps_score}</span>}
+                      </div>
                     </div>
-                  )}
-                  
-                  {survey.consultant_rating && (
-                    <div className="hidden md:flex items-center gap-1 text-amber-500">
-                      <Star size={16} className="fill-amber-400" />
-                      <span className="font-medium">{survey.consultant_rating}/10</span>
-                    </div>
-                  )}
-                  
-                  <div className="text-sm text-slate-500 hidden lg:block">
-                    {format(new Date(survey.submitted_at), 'MMM d, yyyy')}
+                    <div className="text-sm text-slate-500 hidden lg:block">{respTime(r) ? format(new Date(respTime(r)), 'MMM d, yyyy') : ''}</div>
+                    {expanded === r.id ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
                   </div>
-                  
-                  {expandedSurvey === survey.id ? (
-                    <ChevronUp size={20} className="text-slate-400" />
-                  ) : (
-                    <ChevronDown size={20} className="text-slate-400" />
+                  {expanded === r.id && (
+                    <div className="px-4 pb-4 bg-slate-50 border-t border-slate-100">
+                      <div className="grid md:grid-cols-2 gap-4 mt-4">
+                        <div className="bg-white rounded-lg p-4 border border-slate-200">
+                          <h4 className="text-sm font-semibold text-slate-600 mb-3">Details</h4>
+                          <div className="space-y-2 text-sm">
+                            <p><span className="text-slate-500">Client:</span> {r.client_name}</p>
+                            {r.client_email && <p><span className="text-slate-500">Email:</span> {r.client_email}</p>}
+                            {r.client_phone && <p><span className="text-slate-500">Phone:</span> {r.client_phone}</p>}
+                            <p><span className="text-slate-500">Account Manager:</span> {r.am_name || '—'}</p>
+                            <p><span className="text-slate-500">AM Rating:</span> {r.am_rating ?? '—'}/10</p>
+                            <p><span className="text-slate-500">Overall Satisfaction:</span> {r.overall_satisfaction ?? '—'}/10</p>
+                            <p className="flex items-center gap-2"><span className="text-slate-500">Work explained clearly:</span> {r.met_expectations === true ? <ThumbsUp size={15} className="text-green-500" /> : r.met_expectations === false ? <ThumbsDown size={15} className="text-red-500" /> : '—'}</p>
+                            {r.nps_score != null && <p><span className="text-slate-500">Would recommend (NPS):</span> {r.nps_score}/10</p>}
+                            <p><span className="text-slate-500">Submitted:</span> {respTime(r) ? format(new Date(respTime(r)), 'PPp') : '—'}</p>
+                          </div>
+                        </div>
+                        <div className="bg-white rounded-lg p-4 border border-slate-200">
+                          <h4 className="text-sm font-semibold text-slate-600 mb-3 flex items-center gap-2"><MessageSquare size={16} /> What could improve</h4>
+                          {r.what_could_improve ? <p className="text-sm text-slate-700 bg-slate-50 p-2 rounded">{r.what_could_improve}</p> : <p className="text-sm text-slate-400 italic">No comment provided</p>}
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
-                
-                {/* Expanded Details */}
-                {expandedSurvey === survey.id && (
-                  <div className="px-4 pb-4 pt-0 bg-slate-50 border-t border-slate-100">
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                      {/* Contact Info */}
-                      <div className="bg-white rounded-lg p-4 border border-slate-200">
-                        <h4 className="text-sm font-semibold text-slate-600 mb-3">Contact Info</h4>
-                        <div className="space-y-2 text-sm">
-                          <p><span className="text-slate-500">Name:</span> {survey.client_name}</p>
-                          <p><span className="text-slate-500">Email:</span> {survey.client_email}</p>
-                          {survey.client_phone && (
-                            <p><span className="text-slate-500">Phone:</span> {survey.client_phone}</p>
-                          )}
-                          <p><span className="text-slate-500">Submitted:</span> {format(new Date(survey.submitted_at), 'PPp')}</p>
-                        </div>
-                      </div>
-                      
-                      {/* Ratings */}
-                      <div className="bg-white rounded-lg p-4 border border-slate-200">
-                        <h4 className="text-sm font-semibold text-slate-600 mb-3">Ratings</h4>
-                        <div className="space-y-3">
-                          {survey.consultant_id && (
-                            <div>
-                              <p className="text-xs text-slate-500 mb-1">Consultant</p>
-                              <p className="font-medium">{survey.consultant_name || getConsultantName(survey.consultant_id)}</p>
-                            </div>
-                          )}
-                          {survey.initial_impression && (
-                            <div>
-                              <p className="text-xs text-slate-500 mb-1">Initial Impression</p>
-                              {renderStars(survey.initial_impression)}
-                            </div>
-                          )}
-                          {survey.consultant_rating && (
-                            <div>
-                              <p className="text-xs text-slate-500 mb-1">Consultant Rating</p>
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                  <div 
-                                    className="h-full bg-amber-400 rounded-full"
-                                    style={{ width: `${survey.consultant_rating * 10}%` }}
-                                  />
-                                </div>
-                                <span className="text-sm font-medium">{survey.consultant_rating}/10</span>
-                              </div>
-                            </div>
-                          )}
-                          {survey.consultant_explanation_quality && (
-                            <div>
-                              <p className="text-xs text-slate-500 mb-1">Explanation Quality</p>
-                              {renderStars(survey.consultant_explanation_quality)}
-                            </div>
-                          )}
-                          {survey.overall_satisfaction && (
-                            <div>
-                              <p className="text-xs text-slate-500 mb-1">Overall Satisfaction</p>
-                              {renderStars(survey.overall_satisfaction)}
-                            </div>
-                          )}
-                          {survey.process_explained_clearly !== null && (
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs text-slate-500">Process Explained Clearly:</p>
-                              {survey.process_explained_clearly ? (
-                                <ThumbsUp size={16} className="text-green-500" />
-                              ) : (
-                                <ThumbsDown size={16} className="text-red-500" />
-                              )}
-                            </div>
-                          )}
-                          {survey.met_expectations !== null && (
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs text-slate-500">Met Expectations:</p>
-                              {survey.met_expectations ? (
-                                <ThumbsUp size={16} className="text-green-500" />
-                              ) : (
-                                <ThumbsDown size={16} className="text-red-500" />
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Comments */}
-                      <div className="bg-white rounded-lg p-4 border border-slate-200 md:col-span-2 lg:col-span-1">
-                        <h4 className="text-sm font-semibold text-slate-600 mb-3 flex items-center gap-2">
-                          <MessageSquare size={16} />
-                          Comments
-                        </h4>
-                        {survey.what_could_improve && (
-                          <div className="mb-3">
-                            <p className="text-xs text-slate-500 mb-1">What Could Improve</p>
-                            <p className="text-sm text-slate-700 bg-slate-50 p-2 rounded">{survey.what_could_improve}</p>
-                          </div>
-                        )}
-                        {survey.additional_comments && (
-                          <div>
-                            <p className="text-xs text-slate-500 mb-1">Additional Comments</p>
-                            <p className="text-sm text-slate-700 bg-slate-50 p-2 rounded">{survey.additional_comments}</p>
-                          </div>
-                        )}
-                        {!survey.what_could_improve && !survey.additional_comments && (
-                          <p className="text-sm text-slate-400 italic">No comments provided</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
