@@ -20,9 +20,10 @@ const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
 // One row in an affiliate's referred-client roster: deal link plus the next payment that is owed and
 // when it is due, so the consultant can tell who is past due and who to call.
 function ReferredClientRow({ cl }) {
+  const owes = cl.owed > 0 ? `owes $${cl.owed}` : null;
   const colour = cl.overdue ? 'text-red-600 font-medium'
     : cl.status === 'qualified' ? 'text-green-600 font-medium'
-    : (cl.status === 'needs_advance' || cl.dueDate) ? 'text-amber-600'
+    : (cl.status === 'needs_advance' || cl.dueDate || owes) ? 'text-amber-600'
     : 'text-slate-500';
   let label;
   if (cl.status === 'qualified') {
@@ -30,11 +31,11 @@ function ReferredClientRow({ cl }) {
   } else if (cl.status === 'needs_advance') {
     label = cl.dueDate
       ? (cl.overdue ? `Partial/final past due ${fmtDate(cl.dueDate)} — call` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
-      : 'Paid doc fee — needs a partial or final';
+      : (owes ? `Needs partial/final · ${owes}` : 'Paid doc fee — needs a partial or final');
   } else { // needs_doc
     label = cl.dueDate
       ? (cl.overdue ? `Doc fee past due ${fmtDate(cl.dueDate)} — call` : `Needs doc fee · due ${fmtDate(cl.dueDate)}`)
-      : 'Referred — needs to pay doc fee';
+      : (owes ? `Needs doc fee · ${owes}` : 'Referred — needs to pay doc fee');
   }
   return (
     <div className="flex items-center justify-between gap-2 text-xs">

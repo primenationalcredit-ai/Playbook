@@ -240,6 +240,19 @@ exports.handler = async (event) => {
       }
     }
 
+    // Total still-owed balance per deal, resolved from the invoice's deal id or its customer name.
+    // Used as a fallback in the rosters so a client who owes but has no dated invoice still shows the
+    // amount owed, instead of a bare status, so the consultant knows to call them.
+    const owedByDeal = {};
+    for (const inv of invoiceData) {
+      const bal = parseFloat(inv.balance) || 0;
+      if (bal <= 1) continue;
+      const cn = norm(inv.customer_name);
+      const did = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : (dealByClientName[cn] || nameToDealId[cn] || null);
+      if (!did) continue;
+      owedByDeal[did] = (owedByDeal[did] || 0) + bal;
+    }
+
     // === DUE-DATE DIAGNOSTIC (read-only) ===
     // ?duedebug=<consultant name> returns each affiliate-referred client for that consultant with the
     // due-date match attempt and, when no date is found, the reason: no open invoice on file, an invoice
@@ -718,7 +731,7 @@ exports.handler = async (event) => {
           // Show the next owed invoice and its due date for anyone who still owes, whether that is the
           // doc fee (needs_doc) or a partial/final (needs_advance), so the consultant knows who to call.
           const due = status !== 'qualified' ? nextDueForDeal(c.dealId, c.name) : null;
-          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false };
+          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false, owed: Math.round(owedByDeal[String(c.dealId)] || 0) };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
@@ -770,7 +783,7 @@ exports.handler = async (event) => {
           const qualified = c.hasDoc && c.hasAdvanced;
           const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
           const due = status !== 'qualified' ? nextDueForDeal(c.dealId, c.name) : null;
-          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false };
+          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false, owed: Math.round(owedByDeal[String(c.dealId)] || 0) };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         reactivationProgress.push({
           name: orgName, kind, daysDormant, lastActive: lastPrior,
