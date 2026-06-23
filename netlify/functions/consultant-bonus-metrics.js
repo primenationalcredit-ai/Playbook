@@ -1001,7 +1001,9 @@ exports.handler = async (event) => {
           consultList: myConsultDealIds.map(id => {
             const paid = dealIdsWithDocFee.has(id);
             const payment = allPayments.find(p => p.pipedrive_deal_id === id && p.payment_type === 'doc_fee');
-            return { dealId: id, paid, clientName: payment?.client_name || dealMeta[id]?.name || `Deal #${id}`, amount: payment?.amount || dealMeta[id]?.value || 0, date: payment?.payment_date || '' };
+            // Show the doc fee actually paid. If they have not paid, show 0, never the Pipedrive
+            // quote value, which would read as a payment that never happened.
+            return { dealId: id, paid, clientName: payment?.client_name || dealMeta[id]?.name || `Deal #${id}`, amount: paid ? (payment?.amount || 0) : 0, date: payment?.payment_date || '' };
           }).sort((a, b) => b.paid - a.paid),
         }
       };
