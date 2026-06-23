@@ -209,18 +209,26 @@ function ConsultantPayments() {
       
       // Single API call for ALL data
       const monthsData = await fetchLiveData(allMonths);
-      
+
+      // Scope to the logged-in employee's own payments unless they are leadership/admin, who see the
+      // whole company. Each row's `consultant` is already normalized to the user's name upstream.
+      const seesAllPayments = currentUser?.role === 'admin' || currentUser?.department === 'leadership';
+      const myConsultName = (currentUser?.name || '').toLowerCase().trim();
+      const scopeRows = (rows) => seesAllPayments
+        ? (rows || [])
+        : (rows || []).filter(r => (r.consultant || '').toLowerCase().trim() === myConsultName);
+
       // Extract current month data
-      const mtdData = monthsData[currentMonth]?.rows || [];
+      const mtdData = scopeRows(monthsData[currentMonth]?.rows || []);
       
       // Filter today's data from MTD
       const todayData = mtdData.filter(r => r.date_paid === todayFormatted);
       
       // Combine all YTD months
-      const ytdData = ytdMonths.flatMap(m => monthsData[m]?.rows || []);
+      const ytdData = scopeRows(ytdMonths.flatMap(m => monthsData[m]?.rows || []));
       
       // Last year data
-      const lastYearData = monthsData[lastYearMonth]?.rows || [];
+      const lastYearData = scopeRows(monthsData[lastYearMonth]?.rows || []);
       
       // Filter same day last year
       const sameDayLastYear = format(subYears(today, 1), 'yyyy-MM-dd');

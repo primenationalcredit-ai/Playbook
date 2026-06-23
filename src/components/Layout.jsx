@@ -88,7 +88,7 @@ function Layout() {
     ...(isInOnboarding ? [{ path: '/onboarding', icon: ClipboardList, label: 'Onboarding', highlight: true }] : []),
     { path: '/playbook', icon: ClipboardList, label: 'My Playbook' },
     { path: '/team', icon: Users, label: 'Team View' },
-    ...((currentUser?.department === 'credit_consultants' || currentUser?.department === 'account_managers' || currentUser?.department === 'customer_support')
+    ...((currentUser?.department === 'credit_consultants' || currentUser?.department === 'account_managers' || currentUser?.department === 'customer_support' || currentUser?.department === 'credit_team')
       ? [{ path: '/bonus-tracker', icon: Trophy, label: 'My Bonuses' }] : []),
     { path: '/training', icon: GraduationCap, label: 'Training' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
