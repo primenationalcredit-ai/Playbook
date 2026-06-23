@@ -836,23 +836,28 @@ export default function ConsultantBonus() {
                         <div className={`h-full rounded-full ${o.qualifies ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, (qual / 3) * 100)}%` }} />
                       </div>
                     </div>
-                    {/* This month's pipeline from this affiliate — clients to push so they pay and advance */}
-                    {o.proceeded.length > 0 && (
-                      <p className="text-xs text-green-600 mt-2">{o.proceeded.length} paid their doc fee this month{o.proceeded.length ? ': ' : ''}{o.proceeded.map(c => c.name).join(', ')}</p>
-                    )}
-                    {o.pending.length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-xs font-medium text-amber-600">Push these to pay and advance past the doc fee ({o.pending.length}) — a qualified client counts toward the 3:</p>
-                        {o.pending.map((cl, i) => (
-                          <div key={i} className="text-xs text-slate-600 pl-2">{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</div>
+                    {/* Referred clients for this affiliate: deal name, link, and what each needs to qualify */}
+                    {o.clients && o.clients.length > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {o.clients.map((cl, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-slate-700">
+                              {cl.dealId
+                                ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} ↗</a>
+                                : cl.name}
+                            </span>
+                            <span className={cl.status === 'qualified' ? 'text-green-600 font-medium' : cl.status === 'needs_advance' ? 'text-amber-600' : 'text-slate-500'}>
+                              {cl.status === 'qualified'
+                                ? '✓ Qualified'
+                                : cl.status === 'needs_advance'
+                                  ? 'Paid doc fee — needs a partial or final'
+                                  : 'Referred — needs to pay doc fee'}
+                            </span>
+                          </div>
                         ))}
                       </div>
-                    )}
-                    {o.pending.length === 0 && o.proceeded.length === 0 && !o.qualifies && (
-                      <p className="text-xs text-slate-400 mt-2">No clients in motion this month. Reach out to this affiliate for {need} more qualified client{need === 1 ? '' : 's'} to unlock the $75.</p>
-                    )}
-                    {o.pending.length === 0 && o.proceeded.length === 0 && o.qualifies && (
-                      <p className="text-xs text-slate-400 mt-2">No new clients in motion this month.</p>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-2">No referred clients with deals yet.</p>
                     )}
                   </div>
                   );

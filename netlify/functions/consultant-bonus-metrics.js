@@ -594,22 +594,38 @@ exports.handler = async (event) => {
         };
       }).sort((a, b) => (b.paidDocFee === a.paidDocFee ? a.name.localeCompare(b.name) : (b.paidDocFee ? 1 : -1)));
 
-      // New-affiliate progress tracker: for each new affiliate, their clients who have reached the
-      // quote stage this month (report done) split into who has proceeded (paid doc) vs who still
-      // needs to be pushed to consult and proceed. Helps the consultant work the new pipeline.
+      // New-affiliate roster: for each new affiliate, the actual referred clients (from payment history
+      // plus this month's consults), each flagged with what they have paid and what they still need to
+      // become a qualified client (doc fee + a partial/final). This is what counts toward the 3.
       const newAffiliateProgress = newAffiliateAllOrgs.map(o => {
-        const consults = myConsultDealIds
-          .filter(id => dealMeta[id]?.orgName === o.name)
-          .map(id => ({ name: dealMeta[id]?.name || `Deal #${id}`, dealId: id, proceeded: isPaid(id) }));
+        const roster = {};
+        for (const p of allPayments) {
+          if (p.referrer_org === o.name && p.is_affiliate_deal) {
+            const key = p.pipedrive_deal_id || p.client_name;
+            if (!roster[key]) roster[key] = { name: p.client_name, dealId: p.pipedrive_deal_id || null, hasDoc: false, hasAdvanced: false };
+            if (p.payment_type === 'doc_fee') roster[key].hasDoc = true;
+            else if (['partial', 'final', 'paid_in_full'].includes(p.payment_type)) roster[key].hasAdvanced = true;
+          }
+        }
+        // Referred deals in this month's consults that may not have paid yet
+        for (const id of myConsultDealIds) {
+          if (dealMeta[id]?.orgName === o.name) {
+            if (!roster[id]) roster[id] = { name: dealMeta[id]?.name || `Deal #${id}`, dealId: id, hasDoc: isPaid(id), hasAdvanced: false };
+          }
+        }
+        const clients = Object.values(roster).map(c => {
+          const qualified = c.hasDoc && c.hasAdvanced;
+          const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
+          return { name: c.name, dealId: c.dealId, qualified, status };
+        }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
           paidClients: o.clients,
           qualifiedClients: o.qualifiedClients || 0,
           alreadyAwarded: awardedOrgs.has(`new_affiliate_launch:${o.name}`),
-          pending: consults.filter(c => !c.proceeded),
-          proceeded: consults.filter(c => c.proceeded)
+          clients
         };
-      }).sort((a, b) => b.pending.length - a.pending.length);
+      }).sort((a, b) => (b.qualifiedClients - a.qualifiedClients) || (b.clients.length - a.clients.length));
 
       // === PAY-PAST-DOC-FEE RATE ===
       // Of clients who paid doc fee THIS month, how many also paid partial/final?
