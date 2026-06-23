@@ -283,7 +283,18 @@ function Reviews() {
       }
       
       console.log('Review added:', result);
-      
+
+      // Post a Pipedrive note on the deal crediting the assigned team member.
+      // Best-effort: the review is already saved, so a note failure must not block the flow.
+      // No reviewId is passed, so review-post-note only posts the note and does not touch incoming_reviews.
+      try {
+        const creditedName = (Array.isArray(users) ? users.find(u => u.id === targetUserId)?.name : null) || currentUser?.name || null;
+        await fetch('/.netlify/functions/review-post-note', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealId, reviewerName: formData.client_name, rating: formData.rating, reviewText: formData.notes, creditedTo: creditedName }),
+        });
+      } catch (noteErr) { /* note is best-effort; the review is already saved */ }
+
       setShowAddModal(false);
       setFormData({
         platform: 'google',
