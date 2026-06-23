@@ -82,16 +82,20 @@ function Layout() {
   // Full access users (Joe, Astrid, and other leadership)
   const hasFullNavAccess = isJoe || isAstrid || isLeadership;
 
+  // Credit consultants get a lean nav: claiming lives in their Bonus tracker, so the standalone
+  // Playbook, Team View, Training, Ask AI, and Claim Reviews items are hidden for them.
+  const isCreditConsultant = currentUser?.department === 'credit_consultants';
+
   // Core nav items (shown to regular employees only)
   const coreNavItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     ...(isInOnboarding ? [{ path: '/onboarding', icon: ClipboardList, label: 'Onboarding', highlight: true }] : []),
-    { path: '/playbook', icon: ClipboardList, label: 'My Playbook' },
-    { path: '/team', icon: Users, label: 'Team View' },
+    ...(!isCreditConsultant ? [{ path: '/playbook', icon: ClipboardList, label: 'My Playbook' }] : []),
+    ...(!isCreditConsultant ? [{ path: '/team', icon: Users, label: 'Team View' }] : []),
     { path: '/bonus-tracker', icon: Trophy, label: 'Bonus & Payment Tracker' },
-    { path: '/training', icon: GraduationCap, label: 'Training' },
+    ...(!isCreditConsultant ? [{ path: '/training', icon: GraduationCap, label: 'Training' }] : []),
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
-    { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
+    ...(!isCreditConsultant ? [{ path: '/ask-ai', icon: Sparkles, label: 'Ask AI' }] : []),
     { path: '/reviews', icon: Star, label: 'Reviews' },
     // Get Review Link - shown to all employees EXCEPT Credit Team
     ...(!isCreditTeam && !isLeadership ? [{ path: '/review-link', icon: Shuffle, label: 'Get Review Link' }] : []),
@@ -137,7 +141,7 @@ function Layout() {
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
-    ...((isConsultant || isCSR) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
+    ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];
 
   // Additional department items (hidden in "More" for leadership only - NOT shown to employees)
