@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import ReviewClaimQueue from '../components/ReviewClaimQueue';
 import { supabase } from '../lib/supabase';
 import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle, Mail, DollarSign } from 'lucide-react';
 
@@ -436,6 +437,9 @@ export default function AMBonus() {
         </button>
         <button onClick={() => setTab('payments')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'payments' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
           <DollarSign size={16} /> Payments
+        </button>
+        <button onClick={() => setTab('reviews')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'reviews' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
+          <Star size={16} /> Reviews
         </button>
         {isAdmin && (
           <button onClick={() => setTab('approvals')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'approvals' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
@@ -1062,6 +1066,10 @@ export default function AMBonus() {
       )}
 
       {/* Credit Building Tab */}
+      {tab === 'reviews' && (
+        <div className="mt-2"><ReviewClaimQueue /></div>
+      )}
+
       {tab === 'credit-building' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">

@@ -5,6 +5,7 @@ import {
   RefreshCw, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Zap, Gift,
   Shield, Clock, X, Eye
 } from 'lucide-react';
+import ReviewClaimQueue from '../components/ReviewClaimQueue';
 
 const fmt = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -313,7 +314,14 @@ export default function ConsultantBonus() {
         <button onClick={() => setTab('leaderboard')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'leaderboard' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
           <Award size={16} /> Leaderboard
         </button>
+        <button onClick={() => setTab('reviews')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'reviews' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
+          <Star size={16} /> Reviews
+        </button>
       </div>
+
+      {tab === 'reviews' && (
+        <div className="mt-2"><ReviewClaimQueue /></div>
+      )}
 
       {tab === 'leaderboard' && (() => {
         const cons = Object.values(data.consultants).sort((a, b) => b.totalSales - a.totalSales);

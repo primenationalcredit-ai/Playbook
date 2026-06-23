@@ -153,6 +153,7 @@ function Layout() {
   const departmentItems = isJoe ? [
     ...(isConsultant ? [{ path: '/affiliates', icon: Users2, label: 'Affiliates' }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
+    ...((isConsultant || isCSR) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
