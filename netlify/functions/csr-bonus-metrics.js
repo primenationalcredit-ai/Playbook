@@ -120,10 +120,13 @@ exports.handler = async (event) => {
     // Review data: reviews are assigned to a user (assigned_to = user id) in the IncomingReviews page.
     // Map each CSR name to their user id, then count this month's assigned reviews. BBB = location name contains "bbb".
     const monthStart = `${month}-01`;
+    // Credit follows the month the review was LEFT (review_date), not when it was claimed/approved.
+    const [rvy, rvm] = month.split('-').map(Number);
+    const nextMonthStart = `${new Date(rvy, rvm, 1).getFullYear()}-${String(new Date(rvy, rvm, 1).getMonth() + 1).padStart(2, '0')}-01`;
     let csrUsers = [];
     let reviews = [];
     try { csrUsers = await supaGet('users', 'department=eq.customer_support&select=id,name,hire_date'); } catch (e) {}
-    try { reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=assigned_to,location_name,reviewer_name,rating,review_date`); } catch (e) {}
+    try { reviews = await supaGet('incoming_reviews', `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))&select=assigned_to,location_name,reviewer_name,rating,review_date`); } catch (e) {}
     const nameToUserId = {};
     const nameToHire = {};
     for (const u of csrUsers) if (u.name) { nameToUserId[u.name.trim().toLowerCase()] = u.id; nameToHire[u.name.trim().toLowerCase()] = u.hire_date || null; }

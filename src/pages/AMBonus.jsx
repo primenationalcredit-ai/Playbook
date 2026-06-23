@@ -82,9 +82,14 @@ export default function AMBonus() {
         if (subRes.ok) setSubmissions(await subRes.json());
       } catch(e) {}
 
-      // Reviews
+      // Reviews. Credit follows the month the review was LEFT (review_date), not when it was claimed
+      // or approved. Reviews with no review_date fall back to the month the row was created.
       try {
-        const revRes = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?created_at=gte.${monthStart}&select=*`, { headers: supaHeaders });
+        const [ry, rm] = selectedMonth.split('-').map(Number);
+        const nm = new Date(ry, rm, 1);
+        const nextMonthStart = `${nm.getFullYear()}-${String(nm.getMonth() + 1).padStart(2, '0')}-01`;
+        const revFilter = `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))`;
+        const revRes = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?${revFilter}&select=*`, { headers: supaHeaders });
         if (revRes.ok) setReviews(await revRes.json());
       } catch(e) {}
 
@@ -319,7 +324,7 @@ export default function AMBonus() {
       approvedCount, pending: pending.length, rejected: rejected.length,
       creditBonus, submissions: amSubs, approvedSubs: approved,
       reviewCount, bbbReviews, reviewBonus,
-      reviewList: amReviews.map(r => ({ reviewer: r.reviewer_name, location: r.location_name, rating: r.rating, text: r.review_text, date: r.created_at })),
+      reviewList: amReviews.map(r => ({ reviewer: r.reviewer_name, location: r.location_name, rating: r.rating, text: r.review_text, date: r.review_date || r.created_at })),
       stallRate, stallCount, stallTotal, stalledClients, stallBonus,
       additionalRounds, roundsBonus, roundDeals, pastDueRounds,
       referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer, referralDeals,

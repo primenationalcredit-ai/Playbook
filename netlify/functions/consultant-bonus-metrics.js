@@ -119,8 +119,12 @@ exports.handler = async (event) => {
       allPayments.filter(p => p.is_affiliate_deal && p.referrer_org).map(p => String(p.referrer_org).toLowerCase().trim())
     );
 
-    // Get reviews
-    const reviews = await supaGet('incoming_reviews', `created_at=gte.${monthStart}&select=*`);
+    // Get reviews. Credit follows the month the review was LEFT (review_date), not when it was claimed
+    // or approved. So a March review approved in June counts toward March. Reviews with no review_date
+    // fall back to the month the row was created.
+    const [rvy, rvm] = targetMonth.split('-').map(Number);
+    const nextMonthStart = `${new Date(rvy, rvm, 1).getFullYear()}-${String(new Date(rvy, rvm, 1).getMonth() + 1).padStart(2, '0')}-01`;
+    const reviews = await supaGet('incoming_reviews', `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))&select=*`);
 
     // Get already-awarded one-time bonuses
     let awardedBonuses = [];
