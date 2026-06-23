@@ -55,6 +55,7 @@ function Reviews() {
     imagePreview: '',
     location_name: '', // Added for GMB location tracking
     rating: 5, // Star rating - only 5-star counts toward goals
+    pipedrive_deal_id: '', // Pipedrive deal id, required on manual entry
   });
 
   const PLATFORMS = [
@@ -249,6 +250,13 @@ function Reviews() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Pipedrive deal id is required on a manually added review so it can be tied to the client file.
+      const dealId = (formData.pipedrive_deal_id || '').trim();
+      if (!/^\d+$/.test(dealId)) {
+        alert('A numeric Pipedrive deal ID is required to add a review.');
+        return;
+      }
+
       // Use assigned user if leadership selected one, otherwise current user
       const targetUserId = isLeadership && assignToUser ? assignToUser : currentUser.id;
       
@@ -262,6 +270,7 @@ function Reviews() {
         user_id: targetUserId,
         location_name: formData.location_name || null, // GMB location
         rating: formData.rating, // Star rating
+        pipedrive_deal_id: dealId,
       };
       
       const result = await supabasePost('reviews', reviewData);
@@ -286,6 +295,7 @@ function Reviews() {
         imagePreview: '',
         location_name: '',
         rating: 5,
+        pipedrive_deal_id: '',
       });
       setAssignToUser(''); // Reset assignment
       loadReviews();
@@ -806,6 +816,20 @@ function Reviews() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-asap-blue"
                   placeholder="e.g., John D."
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Pipedrive Deal ID *</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={formData.pipedrive_deal_id}
+                  onChange={(e) => setFormData(prev => ({ ...prev, pipedrive_deal_id: e.target.value.replace(/[^\d]/g, '') }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-asap-blue"
+                  placeholder="e.g., 12345"
+                  required
+                />
+                <p className="text-xs text-slate-500 mt-1">The deal this review ties back to on the client file. Numbers only.</p>
               </div>
               
               <div>
