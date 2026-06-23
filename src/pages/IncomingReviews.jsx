@@ -135,7 +135,7 @@ function IncomingReviews() {
         body: JSON.stringify(updateData)
       });
       
-      await postReviewNote(assigningReview, String(dealId));
+      await postReviewNote(assigningReview, String(dealId), getUserName(selectedUser));
 
       setAssigningReview(null);
       setSelectedUser('');
@@ -158,11 +158,11 @@ function IncomingReviews() {
   };
 
   // Approve a team member's claim: assign the review to whoever claimed it (this is what credits their bonus).
-  const postReviewNote = async (review, dealId) => {
+  const postReviewNote = async (review, dealId, creditedTo) => {
     try {
       await fetch('/.netlify/functions/review-post-note', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviewId: review.id, dealId, reviewerName: review.reviewer_name, rating: review.rating, reviewText: review.review_text }),
+        body: JSON.stringify({ reviewId: review.id, dealId, reviewerName: review.reviewer_name, rating: review.rating, reviewText: review.review_text, creditedTo: creditedTo || null }),
       });
     } catch (e) { /* note is best-effort; assignment already saved */ }
   };
@@ -176,7 +176,7 @@ function IncomingReviews() {
     }
     try {
       await patchReview(review.id, { status: 'assigned', assigned_to: review.claimed_by, assigned_by: currentUser?.id, assigned_at: new Date().toISOString(), pipedrive_deal_id: String(dealId) });
-      await postReviewNote(review, String(dealId));
+      await postReviewNote(review, String(dealId), review.claimed_by_name || getUserName(review.claimed_by));
       loadData();
     } catch (err) { console.error('Error approving claim:', err); alert('Failed to approve claim'); }
   };

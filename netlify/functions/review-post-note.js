@@ -14,7 +14,7 @@ exports.handler = async (event) => {
   };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   try {
-    const { reviewId, dealId, reviewerName, rating, reviewText } = JSON.parse(event.body || '{}');
+    const { reviewId, dealId, reviewerName, rating, reviewText, creditedTo } = JSON.parse(event.body || '{}');
     if (!dealId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'deal_id required' }) };
 
     const supa = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' };
@@ -28,8 +28,9 @@ exports.handler = async (event) => {
 
     // Post the note on the deal
     const stars = rating ? `${rating}-star ` : '';
+    const credit = creditedTo ? ` Credited to ${creditedTo}.` : '';
     const snippet = reviewText ? `<br><br>"${String(reviewText).slice(0, 300)}"` : '';
-    const content = `Review left by ${reviewerName || 'a client'} (${stars}review). Logged in the ASAP Playbook.${snippet}`;
+    const content = `Review left by ${reviewerName || 'a client'} (${stars}review). Logged in the ASAP Playbook.${credit}${snippet}`;
     const noteRes = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/notes?api_token=${PIPEDRIVE_TOKEN}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deal_id: Number(dealId), content }),
