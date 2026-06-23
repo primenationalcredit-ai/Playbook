@@ -143,45 +143,28 @@ exports.handler = async (event) => {
     // Monthly payments only (for commission calc)
     const payments = allPayments.filter(p => p.payment_month === targetMonth);
 
-    // Consults for closing % — deals from Pipedrive filter 523803 (Ready to Quote this month)
-    // Cross-referenced with Zoho payments to see which ones actually paid doc fee
+    // Consults for closing % — read from our OWN consult_deals table (kept current by the background
+    // sync-consult-deals job). No Pipedrive call at request time, so rate limits / filter hiccups can
+    // never break the closing rate. Worst case the stored snapshot is a few minutes stale.
     let consultsByOwner = {};  // owner -> { total, dealIds[] }
     const rtqDealIds = new Set();
     const dealMeta = {};       // dealId -> { name, value } for names + PIF payoff check
-    let rtqOk = true;          // did EVERY page of the RTQ filter fetch succeed? if not, we won't trust/cache this run
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    let rtqOk = true;
     try {
-      let start = 0, more = true;
-      while (more) {
-        // Retry each page a few times so a transient Pipedrive blip (rate limit, 5xx, timeout)
-        // doesn't silently zero out everyone's closing rate.
-        let data = null, pageOk = false;
-        for (let attempt = 0; attempt < 3 && !pageOk; attempt++) {
-          try {
-            const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?filter_id=523803&start=${start}&limit=100&api_token=${PIPEDRIVE_API_KEY}`);
-            if (res.ok) { data = await res.json(); pageOk = true; }
-            else if (res.status === 429 || res.status >= 500) { await sleep(500 * (attempt + 1)); }
-            else { break; } // hard 4xx (e.g. filter missing) -> don't burn retries
-          } catch (e) { await sleep(500 * (attempt + 1)); }
-        }
-        if (!pageOk) { rtqOk = false; break; } // give up this run; we'll fall back to last good cache
-        const deals = data.data || [];
-        deals.forEach(d => {
-          const o = d.owner_name || 'Unknown';
-          if (!consultsByOwner[o]) consultsByOwner[o] = { total: 0, dealIds: [] };
-          consultsByOwner[o].total++;
-          consultsByOwner[o].dealIds.push(d.id);
-          rtqDealIds.add(d.id);
-          dealMeta[d.id] = { name: d.person_name || d.title || `Deal #${d.id}`, value: parseFloat(d.value) || 0, orgName: d.org_name || (d.org_id && d.org_id.name) || null };
-        });
-        more = data.additional_data?.pagination?.more_items_in_collection || false;
-        start += 100;
-        if (start > 1000) more = false;
+      const rows = await supaGet('consult_deals', `in_rtq=eq.true&rtq_month=eq.${targetMonth}&select=deal_id,owner_name,person_name,title,value,org_name`);
+      if (!Array.isArray(rows)) throw new Error('consult_deals read returned no array');
+      for (const d of rows) {
+        const o = d.owner_name || 'Unknown';
+        if (!consultsByOwner[o]) consultsByOwner[o] = { total: 0, dealIds: [] };
+        consultsByOwner[o].total++;
+        consultsByOwner[o].dealIds.push(d.deal_id);
+        rtqDealIds.add(d.deal_id);
+        dealMeta[d.deal_id] = { name: d.person_name || d.title || `Deal #${d.deal_id}`, value: parseFloat(d.value) || 0, orgName: d.org_name || null };
       }
-    } catch(e) { rtqOk = false; console.log('Consults error:', e.message); }
+    } catch(e) { rtqOk = false; console.log('Consult read error:', e.message); }
     const companyConsultTotal = Object.values(consultsByOwner).reduce((s, v) => s + v.total, 0);
-    // The RTQ data is trustworthy only if every page fetched AND we didn't suddenly drop to zero
-    // consults when a prior good run had them (that pattern means the filter glitched/changed).
+    // Trust the run only if the read succeeded and we didn't suddenly drop to zero when a prior good
+    // run had consults (that would mean the sync table got emptied) — otherwise fall back to last good.
     const rtqReliable = rtqOk && !(companyConsultTotal === 0 && (priorConsultTotal || 0) > 0);
 
     // Build set of deal IDs that have doc_fee payments in Zoho, plus a name index
@@ -261,27 +244,9 @@ exports.handler = async (event) => {
       return v;
     }
 
-    // Lost deals for closing % — get from all pipelines with lost status
-    let lostByOwner = {};
-    try {
-      // Get lost deals from this month across all pipelines
-      let start = 0;
-      let moreLost = true;
-      while (moreLost) {
-        const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?status=lost&start=${start}&limit=100&api_token=${PIPEDRIVE_API_KEY}`);
-        if (res.ok) {
-          const data = await res.json();
-          const deals = data.data || [];
-          deals.filter(d => d.lost_time && d.lost_time >= monthStart).forEach(d => {
-            const o = d.owner_name || 'Unknown';
-            lostByOwner[o] = (lostByOwner[o] || 0) + 1;
-          });
-          moreLost = data.additional_data?.pagination?.more_items_in_collection || false;
-          start += 100;
-          if (start > 500) moreLost = false; // cap at 500 to avoid timeout
-        } else { moreLost = false; }
-      }
-    } catch(e) { console.log('Lost deals error:', e.message); }
+    // (Removed the live "lost deals" Pipedrive fetch — its result was never used in any metric and it
+    //  was one more request-time Pipedrive call that could rate-limit. Closing % uses consults + paid
+    //  doc fees only. If lost-deal counts are needed later, sync them into a table like consult_deals.)
 
 
 

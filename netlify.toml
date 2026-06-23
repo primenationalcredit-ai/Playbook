@@ -45,6 +45,12 @@
 [functions."consultant-bonus-warm"]
   schedule = "*/10 12-23 * * 1-6"
 
+# Sync the Ready-to-Quote consult deals from Pipedrive into our own consult_deals table. The bonus
+# dashboard reads closing-rate data from that table (never from Pipedrive live), so a rate limit or
+# filter hiccup can't break it. Runs offset from the warm so the table is fresh when the cache recomputes.
+[functions."sync-consult-deals"]
+  schedule = "5,15,25,35,45,55 12-23 * * 1-6"
+
 # DISABLED - was causing duplicate/wrong data
 # [functions."sales-sync-backup"]
 #   schedule = "0 * * * *"
