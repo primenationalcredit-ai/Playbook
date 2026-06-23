@@ -40,6 +40,11 @@ exports.handler = async (event) => {
       else if (desc.includes('paid in full') || desc.includes('pif')) paymentType = 'paid_in_full';
       else if (desc.includes('additional') || desc.includes('round')) paymentType = 'additional_round';
     }
+    // $249 or $299 with no Doc, Partial, or Final code is an additional round, credited to the AM.
+    if (paymentType === 'unknown') {
+      const amt = Math.round(parseFloat(body.amount) || 0);
+      if (amt === 249 || amt === 299) paymentType = 'additional_round';
+    }
 
     const record = {
       payment_date: paymentDate,

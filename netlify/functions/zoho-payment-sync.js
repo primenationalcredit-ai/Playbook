@@ -135,6 +135,14 @@ exports.handler = async (event) => {
         }
       }
 
+      // $249 or $299 with no Doc, Partial, or Final code is an additional round, credited to the AM.
+      // Only applies when classification fell through to unknown (blank item name, no invoice match,
+      // or the detail lookup failed). Never overrides a real doc_fee/partial/final/paid_in_full code.
+      if (paymentType === 'unknown') {
+        const amt = Math.round(parseFloat(payment.amount) || 0);
+        if (amt === 249 || amt === 299) paymentType = 'additional_round';
+      }
+
       batch.push({
         payment_date: payment.date,
         payment_month: targetMonth,
