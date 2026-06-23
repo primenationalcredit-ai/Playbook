@@ -176,6 +176,35 @@ exports.handler = async (event) => {
     const dealIdsWithDocFee = new Set();
     const docFeeNames = new Set();
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+    // Resolve a deal id for a payment row even when the row itself has no pipedrive_deal_id (Zoho
+    // payments often store only the client name). Backfill by client name from any payment that does
+    // carry an id, then from the consult deal metadata, so every client list can link to its deal.
+    const nameToDealId = {};
+    for (const p of allPayments) {
+      if (p.pipedrive_deal_id && p.client_name) {
+        const k = norm(p.client_name);
+        if (k && !nameToDealId[k]) nameToDealId[k] = p.pipedrive_deal_id;
+      }
+    }
+    for (const id in dealMeta) {
+      const nm = norm(dealMeta[id]?.name || '');
+      if (nm && !nameToDealId[nm]) nameToDealId[nm] = id;
+    }
+    const resolveDealId = (p) => p.pipedrive_deal_id || nameToDealId[norm(p.client_name || p.name)] || null;
+
+    // Earliest still-owed invoice due date for a deal, so a client who needs a partial/final shows
+    // when their next payment is due and whether it is already past due (follow up).
+    const dueTodayStr = new Date().toISOString().slice(0, 10);
+    const nextDueForDeal = (dealId) => {
+      if (!dealId) return null;
+      const owing = invoiceData
+        .filter(inv => String(inv.pipedrive_deal_id) === String(dealId) && (parseFloat(inv.balance) || 0) > 1 && inv.due_date)
+        .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+      if (!owing.length) return null;
+      const due = String(owing[0].due_date).slice(0, 10);
+      return { dueDate: due, overdue: due < dueTodayStr };
+    };
     // Invoices store only the client name (no deal id), so map name -> deal id from payments to link them.
     const dealByClientName = {};
     for (const p of allPayments) {
@@ -556,10 +585,16 @@ exports.handler = async (event) => {
           if (d.getDay() !== 0 && d.getDay() !== 6) bizDays++;
           d.setDate(d.getDate() + 1);
         }
-        if (bizDays <= 5) {
-          pifCount++;
-          pifClients.push({ name: client.name, docDate: docPayment.payment_date, finalDate: finalPayment.payment_date, bizDays, docAmount: docPayment.amount, finalAmount: finalPayment.amount });
-        }
+        const qualified = bizDays <= 5;
+        if (qualified) pifCount++;
+        // Keep clients who paid in full but missed the 5 business day window in the list, with the
+        // reason, so consultants can see why they did not qualify instead of the client just vanishing.
+        pifClients.push({
+          name: client.name, dealId: client.dealId || nameToDealId[norm(client.name)] || null,
+          docDate: docPayment.payment_date, finalDate: finalPayment.payment_date, bizDays,
+          docAmount: docPayment.amount, finalAmount: finalPayment.amount, qualified,
+          reason: qualified ? null : `Paid in full on business day ${bizDays} (must be within 5 to qualify)`
+        });
       }
       const pifBonus = pifCount * 25;
 
@@ -616,7 +651,8 @@ exports.handler = async (event) => {
         const clients = Object.values(roster).map(c => {
           const qualified = c.hasDoc && c.hasAdvanced;
           const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
-          return { name: c.name, dealId: c.dealId, qualified, status };
+          const due = status === 'needs_advance' ? nextDueForDeal(c.dealId) : null;
+          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
@@ -886,17 +922,17 @@ exports.handler = async (event) => {
         clientDetail: {
           notQualifiedList: notQualifiedClients.map(c => ({ name: c.name, dealId: c.dealId, reason: c.reason, paid: c.paid, owed: c.owed })),
           pastDueList,
-          mtdList: myPayments.map(p => ({ name: p.client_name, dealId: p.pipedrive_deal_id, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.is_affiliate_deal ? p.referrer_org : null }))
+          mtdList: myPayments.map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.is_affiliate_deal ? p.referrer_org : null }))
             .sort((a, b) => String(b.date).localeCompare(String(a.date))),
           affiliateOrgList: Object.entries(affiliateMap).map(([orgName, count]) => ({ name: orgName, clients: count, producing: count >= 3 }))
             .sort((a, b) => b.clients - a.clients),
           affiliateGroups,
           newAffiliateProgress,
-          organicClients: myPayments.filter(p => !p.is_affiliate_deal).map(p => ({ name: p.client_name, dealId: p.pipedrive_deal_id, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org || null, orgLabel: 'Org' })),
-          affiliateClients: myPayments.filter(p => p.is_affiliate_deal).map(p => ({ name: p.client_name, dealId: p.pipedrive_deal_id, amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org })),
-          docFeeList: myPayments.filter(p => p.payment_type === 'doc_fee').map(p => ({ name: p.client_name, dealId: p.pipedrive_deal_id, amount: p.amount, date: p.payment_date })),
-          partialList: myPayments.filter(p => p.payment_type === 'partial').map(p => ({ name: p.client_name, dealId: p.pipedrive_deal_id, amount: p.amount, date: p.payment_date })),
-          finalList: myPayments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').map(p => ({ name: p.client_name, dealId: p.pipedrive_deal_id, amount: p.amount, date: p.payment_date })),
+          organicClients: myPayments.filter(p => !p.is_affiliate_deal).map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org || null, orgLabel: 'Org' })),
+          affiliateClients: myPayments.filter(p => p.is_affiliate_deal).map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org })),
+          docFeeList: myPayments.filter(p => p.payment_type === 'doc_fee').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date })),
+          partialList: myPayments.filter(p => p.payment_type === 'partial').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date })),
+          finalList: myPayments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date })),
           qualifiedList: qualifiedClients.map(c => ({ name: c.name, dealId: c.dealId, totalPaid: c.totalPaid, org: c.orgName, isAffiliate: c.isAffiliate, payments: c.payments.map(p => ({ type: p.payment_type, amount: p.amount, date: p.payment_date })) })),
           docFeeOnlyList: docFeeOnlyClients.map(c => ({ name: c.name, dealId: c.dealId, totalPaid: c.totalPaid })),
           reviewList: myReviews.map(r => ({ reviewer: r.reviewer_name, rating: r.rating, date: r.review_date, location: r.location_name, text: (r.review_text || '').substring(0, 100) })),

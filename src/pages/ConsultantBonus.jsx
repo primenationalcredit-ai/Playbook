@@ -765,9 +765,9 @@ export default function ConsultantBonus() {
               </div>
               <p className={`text-lg font-bold ${c.pifBonus > 0 ? 'text-green-600' : 'text-slate-300'}`}>{fmt(c.pifBonus)}</p>
             </div>
-            {c.pifCount > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'pif' ? null : 'pif')} label={`View ${c.pifCount} PIF clients`} />}
+            {(c.pifClients?.length > 0) && <DrillButton onClick={() => setExpandedSection(expandedSection === 'pif' ? null : 'pif')} label={`View ${c.pifClients.length} paid-in-full client${c.pifClients.length === 1 ? '' : 's'}${c.pifClients.length > c.pifCount ? ` (${c.pifCount} within 5 days)` : ''}`} />}
             {expandedSection === 'pif' && c.pifClients && (
-              <ClientPanel title="PIF Fast Start Clients" items={c.pifClients.map(p => ({ name: p.name, amount: p.finalAmount, type: 'PIF', date: p.finalDate, payments: [{ type: 'doc_fee', amount: p.docAmount, date: p.docDate }, { type: 'final', amount: p.finalAmount, date: p.finalDate }] }))} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title="PIF Fast Start Clients" items={c.pifClients.map(p => ({ name: p.name, dealId: p.dealId, amount: p.finalAmount, type: p.qualified ? 'final' : undefined, date: p.finalDate, reason: p.qualified ? undefined : p.reason, payments: [{ type: 'doc_fee', amount: p.docAmount, date: p.docDate }, { type: 'final', amount: p.finalAmount, date: p.finalDate }] }))} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 
@@ -846,11 +846,13 @@ export default function ConsultantBonus() {
                                 ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} ↗</a>
                                 : cl.name}
                             </span>
-                            <span className={cl.status === 'qualified' ? 'text-green-600 font-medium' : cl.status === 'needs_advance' ? 'text-amber-600' : 'text-slate-500'}>
+                            <span className={cl.status === 'qualified' ? 'text-green-600 font-medium' : cl.status === 'needs_advance' ? (cl.overdue ? 'text-red-600 font-medium' : 'text-amber-600') : 'text-slate-500'}>
                               {cl.status === 'qualified'
                                 ? '✓ Qualified'
                                 : cl.status === 'needs_advance'
-                                  ? 'Paid doc fee — needs a partial or final'
+                                  ? (cl.dueDate
+                                      ? (cl.overdue ? `Past due ${fmtDate(cl.dueDate)} — follow up` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
+                                      : 'Paid doc fee — needs a partial or final')
                                   : 'Referred — needs to pay doc fee'}
                             </span>
                           </div>
