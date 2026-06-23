@@ -627,11 +627,39 @@ export default function AMBonus() {
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.stallBonus > 0 ? 'text-green-600' : 'text-slate-300'}`}>{fmt(currentAMMetrics.stallBonus)}</p>
                 </div>
-                <div className="mt-2 ml-8 grid grid-cols-4 gap-2 text-xs text-center">
-                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 40 ? 'bg-green-100 border-green-300 font-bold' : 'bg-green-50 border-green-200'}`}><p className="font-bold">40%</p><p>+$75</p></div>
-                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 30 ? 'bg-emerald-100 border-emerald-300 font-bold' : 'bg-emerald-50 border-emerald-200'}`}><p className="font-bold">30%</p><p>+$150</p></div>
-                  <div className={`p-2 rounded border ${currentAMMetrics.stallRate !== null && currentAMMetrics.stallRate <= 20 ? 'bg-emerald-100 border-emerald-300 font-bold' : 'bg-emerald-50 border-emerald-200'}`}><p className="font-bold">20%</p><p>+$250</p></div>
-                </div>
+                {currentAMMetrics.stallRate !== null && (() => {
+                  const r = currentAMMetrics.stallRate;
+                  const eligible = currentAMMetrics.stallTotal >= 15;
+                  const tiers = [{ thr: 40, amt: 75 }, { thr: 30, amt: 150 }, { thr: 20, amt: 250 }];
+                  return (
+                    <div className="mt-3 ml-8">
+                      <p className="text-xs text-slate-600 mb-2">
+                        {!eligible ? (
+                          <>Needs 15+ in-window clients to qualify. Currently <span className="font-semibold text-slate-700">{currentAMMetrics.stallTotal}</span>.</>
+                        ) : currentAMMetrics.stallBonus > 0 ? (
+                          <>At <span className="font-semibold text-slate-800">{r}%</span> you're earning <span className="font-semibold text-green-600">+{fmt(currentAMMetrics.stallBonus)}</span>
+                          {r > 30 ? <> · drop to 30% for +$150</> : r > 20 ? <> · drop to 20% for +$250</> : <> · top tier reached</>}</>
+                        ) : (
+                          <>At <span className="font-semibold text-slate-800">{r}%</span>, no stall bonus yet · get to 40% or below for +$75</>
+                        )}
+                      </p>
+                      <div className="grid grid-cols-3 gap-2 text-xs text-center">
+                        {tiers.map(t => {
+                          const earned = eligible && currentAMMetrics.stallBonus === t.amt;
+                          return (
+                            <div key={t.thr} className={earned
+                              ? 'p-2 rounded-lg border-2 border-green-500 bg-green-50 ring-2 ring-green-200'
+                              : 'p-2 rounded-lg border border-slate-200 bg-slate-50'}>
+                              <p className={`font-bold ${earned ? 'text-green-700' : 'text-slate-500'}`}>{'\u2264'}{t.thr}%</p>
+                              <p className={earned ? 'text-green-600 font-semibold' : 'text-slate-400'}>+${t.amt}</p>
+                              {earned && <p className="text-[10px] text-green-600 font-semibold mt-0.5">You're here</p>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {currentAMMetrics.stalledClients && currentAMMetrics.stalledClients.length > 0 && (
                   <details className="mt-2 ml-8">
                     <summary className="text-xs text-blue-500 cursor-pointer">View {currentAMMetrics.stallCount} stalled clients</summary>
