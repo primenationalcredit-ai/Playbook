@@ -65,17 +65,22 @@ exports.handler = async (event) => {
     const CACHE_KEY = `consultant_bonus_${targetMonth}`;
     const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes (warmed every 10 min in business hours)
     const forceRefresh = params.refresh === '1' || params.refresh === 'true';
-    if (!forceRefresh) {
-      try {
-        const cacheRows = await supaGet('app_cache', `cache_key=eq.${CACHE_KEY}&select=cache_value,updated_at`);
-        if (cacheRows && cacheRows[0] && cacheRows[0].cache_value) {
+    // Read the existing cache once. On a normal load we serve it immediately. On a recompute we KEEP
+    // it as a fallback so a failed Pipedrive fetch can never wipe out good closing-rate data.
+    let priorCacheBody = null, priorConsultTotal = null;
+    try {
+      const cacheRows = await supaGet('app_cache', `cache_key=eq.${CACHE_KEY}&select=cache_value,updated_at`);
+      if (cacheRows && cacheRows[0] && cacheRows[0].cache_value) {
+        priorCacheBody = cacheRows[0].cache_value;
+        try { priorConsultTotal = JSON.parse(priorCacheBody)?.companyConsultTotal ?? null; } catch(_) {}
+        if (!forceRefresh) {
           // Always serve cache on the live page load, even if a little stale. The scheduled warm
           // function (and ?refresh=1) do the slow recompute, so the team never blocks on it and the
           // page never fails to load. Freshness comes from the every-10-min warm.
-          return { statusCode: 200, headers, body: cacheRows[0].cache_value };
+          return { statusCode: 200, headers, body: priorCacheBody };
         }
-      } catch(e) { /* no cache yet -> compute fresh below */ }
-    }
+      }
+    } catch(e) { /* no cache yet -> compute fresh below */ }
     // Only read a rolling window of history (not the full multi-year table).
     // Covers current-month sales plus the look-backs the bonus logic needs (90-day reactivation, prior-month qualified docs).
     const [wy, wm] = targetMonth.split('-').map(Number);
@@ -143,27 +148,41 @@ exports.handler = async (event) => {
     let consultsByOwner = {};  // owner -> { total, dealIds[] }
     const rtqDealIds = new Set();
     const dealMeta = {};       // dealId -> { name, value } for names + PIF payoff check
+    let rtqOk = true;          // did EVERY page of the RTQ filter fetch succeed? if not, we won't trust/cache this run
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     try {
       let start = 0, more = true;
       while (more) {
-        const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?filter_id=523803&start=${start}&limit=100&api_token=${PIPEDRIVE_API_KEY}`);
-        if (res.ok) {
-          const data = await res.json();
-          const deals = data.data || [];
-          deals.forEach(d => {
-            const o = d.owner_name || 'Unknown';
-            if (!consultsByOwner[o]) consultsByOwner[o] = { total: 0, dealIds: [] };
-            consultsByOwner[o].total++;
-            consultsByOwner[o].dealIds.push(d.id);
-            rtqDealIds.add(d.id);
-            dealMeta[d.id] = { name: d.person_name || d.title || `Deal #${d.id}`, value: parseFloat(d.value) || 0, orgName: d.org_name || (d.org_id && d.org_id.name) || null };
-          });
-          more = data.additional_data?.pagination?.more_items_in_collection || false;
-          start += 100;
-          if (start > 1000) more = false;
-        } else { more = false; }
+        // Retry each page a few times so a transient Pipedrive blip (rate limit, 5xx, timeout)
+        // doesn't silently zero out everyone's closing rate.
+        let data = null, pageOk = false;
+        for (let attempt = 0; attempt < 3 && !pageOk; attempt++) {
+          try {
+            const res = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals?filter_id=523803&start=${start}&limit=100&api_token=${PIPEDRIVE_API_KEY}`);
+            if (res.ok) { data = await res.json(); pageOk = true; }
+            else if (res.status === 429 || res.status >= 500) { await sleep(500 * (attempt + 1)); }
+            else { break; } // hard 4xx (e.g. filter missing) -> don't burn retries
+          } catch (e) { await sleep(500 * (attempt + 1)); }
+        }
+        if (!pageOk) { rtqOk = false; break; } // give up this run; we'll fall back to last good cache
+        const deals = data.data || [];
+        deals.forEach(d => {
+          const o = d.owner_name || 'Unknown';
+          if (!consultsByOwner[o]) consultsByOwner[o] = { total: 0, dealIds: [] };
+          consultsByOwner[o].total++;
+          consultsByOwner[o].dealIds.push(d.id);
+          rtqDealIds.add(d.id);
+          dealMeta[d.id] = { name: d.person_name || d.title || `Deal #${d.id}`, value: parseFloat(d.value) || 0, orgName: d.org_name || (d.org_id && d.org_id.name) || null };
+        });
+        more = data.additional_data?.pagination?.more_items_in_collection || false;
+        start += 100;
+        if (start > 1000) more = false;
       }
-    } catch(e) { console.log('Consults error:', e.message); }
+    } catch(e) { rtqOk = false; console.log('Consults error:', e.message); }
+    const companyConsultTotal = Object.values(consultsByOwner).reduce((s, v) => s + v.total, 0);
+    // The RTQ data is trustworthy only if every page fetched AND we didn't suddenly drop to zero
+    // consults when a prior good run had them (that pattern means the filter glitched/changed).
+    const rtqReliable = rtqOk && !(companyConsultTotal === 0 && (priorConsultTotal || 0) > 0);
 
     // Build set of deal IDs that have doc_fee payments in Zoho, plus a name index
     // (some Zoho invoices have no deal ID on them, so we fall back to client name)
@@ -509,22 +528,16 @@ exports.handler = async (event) => {
         if (daysSinceCreated <= 60) {
           // Count unique clients from this org
           const orgClients = new Set();
-          const signedClients = [];
           for (const p of allPayments) {
             if (p.referrer_org === orgName && p.is_affiliate_deal) {
-              const key = p.pipedrive_deal_id || p.client_name;
-              if (!orgClients.has(key)) {
-                orgClients.add(key);
-                signedClients.push({ name: p.client_name || `Deal #${p.pipedrive_deal_id}`, dealId: p.pipedrive_deal_id || null, date: p.payment_date });
-              }
+              orgClients.add(p.pipedrive_deal_id || p.client_name);
             }
           }
           const count = orgClients.size;
           if (count >= 1) {
             const qualifies = count >= 3;
-            const alreadyAwarded = awardedOrgs.has(`new_affiliate_launch:${orgName}`);
-            newAffiliateAllOrgs.push({ name: orgName, clients: count, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies, alreadyAwarded, signedClients });
-            if (qualifies && !alreadyAwarded) {
+            newAffiliateAllOrgs.push({ name: orgName, clients: count, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies });
+            if (qualifies && !awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
               newAffiliateLaunchCount++;
               newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, orgCreated: addTime, clients: count, daysSinceCreated });
             }
@@ -607,7 +620,6 @@ exports.handler = async (event) => {
           .map(id => ({ name: dealMeta[id]?.name || `Deal #${id}`, dealId: id, proceeded: isPaid(id) }));
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
-          alreadyAwarded: o.alreadyAwarded, signedClients: o.signedClients || [],
           paidClients: o.clients,
           pending: consults.filter(c => !c.proceeded),
           proceeded: consults.filter(c => c.proceeded)
@@ -1051,6 +1063,8 @@ exports.handler = async (event) => {
         sprintWinner, sprintMaxDocs: sprintMax, weeklyWinners,
         consultantOfMonth: cotmCandidate,
         totalPayments: payments.length,
+        companyConsultTotal,
+        closingDataOk: rtqReliable,
         dataSources: { payments: 'Zoho Invoice API (live)', milestones: 'Derived from payment data' },
         // Diagnostic
         affiliateFlaggedCount: payments.filter(p => p.is_affiliate_deal === true).length,
@@ -1059,14 +1073,17 @@ exports.handler = async (event) => {
         updatedAt: now.toISOString()
       });
 
-    // Save to cache so subsequent loads are instant until the TTL expires.
-    try {
-      await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
-        method: 'POST',
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ cache_key: CACHE_KEY, cache_value: responseBody, updated_at: new Date().toISOString() })
-      });
-    } catch(e) { /* caching is best-effort */ }
+    // Save to cache so subsequent loads are instant until the TTL expires — but ONLY if the RTQ fetch
+    // was reliable this run. A failed/partial fetch must never overwrite good closing-rate data.
+    if (rtqReliable) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
+          method: 'POST',
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({ cache_key: CACHE_KEY, cache_value: responseBody, updated_at: new Date().toISOString() })
+        });
+      } catch(e) { /* caching is best-effort */ }
+    }
 
     // Persist any org creation dates we looked up this run so future runs never re-fetch them.
     if (orgAddTimeDirty) {
@@ -1077,6 +1094,12 @@ exports.handler = async (event) => {
           body: JSON.stringify({ cache_key: 'org_add_times', cache_value: JSON.stringify(orgAddTimePersist), updated_at: new Date().toISOString() })
         });
       } catch(e) { /* best-effort */ }
+    }
+
+    // If this run's RTQ data was unreliable but we have a last-good cache, serve that instead so the
+    // team keeps seeing real closing rates rather than a blip of zeros.
+    if (!rtqReliable && priorCacheBody) {
+      return { statusCode: 200, headers, body: priorCacheBody };
     }
 
     return { statusCode: 200, headers, body: responseBody };
