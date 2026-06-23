@@ -590,6 +590,7 @@ exports.handler = async (event) => {
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
           paidClients: o.clients,
+          alreadyAwarded: awardedOrgs.has(`new_affiliate_launch:${o.name}`),
           pending: consults.filter(c => !c.proceeded),
           proceeded: consults.filter(c => c.proceeded)
         };
