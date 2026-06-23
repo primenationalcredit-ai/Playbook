@@ -656,7 +656,9 @@ exports.handler = async (event) => {
         const clients = Object.values(roster).map(c => {
           const qualified = c.hasDoc && c.hasAdvanced;
           const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
-          const due = status === 'needs_advance' ? nextDueForDeal(c.dealId, c.name) : null;
+          // Show the next owed invoice and its due date for anyone who still owes, whether that is the
+          // doc fee (needs_doc) or a partial/final (needs_advance), so the consultant knows who to call.
+          const due = status !== 'qualified' ? nextDueForDeal(c.dealId, c.name) : null;
           return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         return {
@@ -708,7 +710,7 @@ exports.handler = async (event) => {
         const rosterClients = Object.values(roster).map(c => {
           const qualified = c.hasDoc && c.hasAdvanced;
           const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
-          const due = status === 'needs_advance' ? nextDueForDeal(c.dealId, c.name) : null;
+          const due = status !== 'qualified' ? nextDueForDeal(c.dealId, c.name) : null;
           return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         reactivationProgress.push({

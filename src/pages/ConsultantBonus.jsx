@@ -17,6 +17,37 @@ const fmtDate = (d) => {
 };
 const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
 
+// One row in an affiliate's referred-client roster: deal link plus the next payment that is owed and
+// when it is due, so the consultant can tell who is past due and who to call.
+function ReferredClientRow({ cl }) {
+  const colour = cl.overdue ? 'text-red-600 font-medium'
+    : cl.status === 'qualified' ? 'text-green-600 font-medium'
+    : (cl.status === 'needs_advance' || cl.dueDate) ? 'text-amber-600'
+    : 'text-slate-500';
+  let label;
+  if (cl.status === 'qualified') {
+    label = '✓ Qualified';
+  } else if (cl.status === 'needs_advance') {
+    label = cl.dueDate
+      ? (cl.overdue ? `Partial/final past due ${fmtDate(cl.dueDate)} — call` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
+      : 'Paid doc fee — needs a partial or final';
+  } else { // needs_doc
+    label = cl.dueDate
+      ? (cl.overdue ? `Doc fee past due ${fmtDate(cl.dueDate)} — call` : `Needs doc fee · due ${fmtDate(cl.dueDate)}`)
+      : 'Referred — needs to pay doc fee';
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-slate-700">
+        {cl.dealId
+          ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} ↗</a>
+          : cl.name}
+      </span>
+      <span className={colour}>{label}</span>
+    </div>
+  );
+}
+
 // Slide-out panel for client details
 function ClientPanel({ title, items, columns, onClose, payments }) {
   if (!items) return null;
@@ -798,7 +829,7 @@ export default function ConsultantBonus() {
                       <span className="text-xs text-right">{
                         o.kind === 'reactivated'
                           ? (o.alreadyAwarded
-                              ? <span className="text-slate-400">$75 already paid (one time)</span>
+                              ? <span className="text-slate-400">Reactivation bonus already earned · pays once per affiliate</span>
                               : <span className="text-green-600 font-medium">Reactivated — $75 added this month</span>)
                           : <span className="text-amber-600 font-medium">Dormant {o.daysDormant} days — send a fresh client to earn $75</span>
                       }</span>
@@ -811,24 +842,7 @@ export default function ConsultantBonus() {
                     {/* Referred clients for this affiliate: deal name, link, and what each needs */}
                     {o.clients && o.clients.length > 0 ? (
                       <div className="mt-2 space-y-1">
-                        {o.clients.map((cl, i) => (
-                          <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="text-slate-700">
-                              {cl.dealId
-                                ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} ↗</a>
-                                : cl.name}
-                            </span>
-                            <span className={cl.status === 'qualified' ? 'text-green-600 font-medium' : cl.status === 'needs_advance' ? (cl.overdue ? 'text-red-600 font-medium' : 'text-amber-600') : 'text-slate-500'}>
-                              {cl.status === 'qualified'
-                                ? '✓ Qualified'
-                                : cl.status === 'needs_advance'
-                                  ? (cl.dueDate
-                                      ? (cl.overdue ? `Past due ${fmtDate(cl.dueDate)} — follow up` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
-                                      : 'Paid doc fee — needs a partial or final')
-                                  : 'Referred — needs to pay doc fee'}
-                            </span>
-                          </div>
-                        ))}
+                        {o.clients.map((cl, i) => <ReferredClientRow key={i} cl={cl} />)}
                       </div>
                     ) : (
                       <p className="text-xs text-slate-400 mt-2">No referred clients with deals on file yet.</p>
@@ -869,7 +883,7 @@ export default function ConsultantBonus() {
                       <span className="font-semibold text-slate-800">{o.name}</span>
                       <span className="text-xs text-right">{
                         o.alreadyAwarded
-                          ? <span className="text-slate-400">$75 already paid (one time)</span>
+                          ? <span className="text-slate-400">Launch bonus already earned · pays once per affiliate</span>
                           : (o.qualifies
                               ? <span className="text-green-600 font-medium">Goal hit — $75 added this month</span>
                               : <span className="text-amber-600 font-medium">{need} more qualified client{need === 1 ? '' : 's'} to earn $75</span>)
@@ -888,24 +902,7 @@ export default function ConsultantBonus() {
                     {/* Referred clients for this affiliate: deal name, link, and what each needs to qualify */}
                     {o.clients && o.clients.length > 0 ? (
                       <div className="mt-2 space-y-1">
-                        {o.clients.map((cl, i) => (
-                          <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="text-slate-700">
-                              {cl.dealId
-                                ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} ↗</a>
-                                : cl.name}
-                            </span>
-                            <span className={cl.status === 'qualified' ? 'text-green-600 font-medium' : cl.status === 'needs_advance' ? (cl.overdue ? 'text-red-600 font-medium' : 'text-amber-600') : 'text-slate-500'}>
-                              {cl.status === 'qualified'
-                                ? '✓ Qualified'
-                                : cl.status === 'needs_advance'
-                                  ? (cl.dueDate
-                                      ? (cl.overdue ? `Past due ${fmtDate(cl.dueDate)} — follow up` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
-                                      : 'Paid doc fee — needs a partial or final')
-                                  : 'Referred — needs to pay doc fee'}
-                            </span>
-                          </div>
-                        ))}
+                        {o.clients.map((cl, i) => <ReferredClientRow key={i} cl={cl} />)}
                       </div>
                     ) : (
                       <p className="text-xs text-slate-400 mt-2">No referred clients with deals yet.</p>
