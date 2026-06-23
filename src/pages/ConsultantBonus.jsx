@@ -805,12 +805,13 @@ export default function ConsultantBonus() {
             {expandedSection === 'newaffiliate' && c.clientDetail?.newAffiliateProgress && (
               <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
                 <div className="flex items-center justify-between mb-1">
-                  <h4 className="font-semibold text-slate-700 text-sm">New affiliates — get 3 paying clients in their first 60 days to earn $75</h4>
+                  <h4 className="font-semibold text-slate-700 text-sm">New affiliates — get 3 qualified clients (doc fee + a partial or final) in their first 60 days to earn $75</h4>
                   <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
                 </div>
                 {c.clientDetail.newAffiliateProgress.map((o, idx) => {
                   const daysLeft = Math.max(0, 60 - (o.daysSinceCreated || 0));
-                  const need = Math.max(0, 3 - (o.paidClients || 0));
+                  const qual = o.qualifiedClients || 0;
+                  const need = Math.max(0, 3 - qual);
                   return (
                   <div key={idx} className="bg-slate-50 rounded-lg p-3">
                     <div className="flex items-center justify-between gap-2">
@@ -820,33 +821,33 @@ export default function ConsultantBonus() {
                           ? <span className="text-slate-400">$75 already paid (one time)</span>
                           : (o.qualifies
                               ? <span className="text-green-600 font-medium">Goal hit — $75 added this month</span>
-                              : <span className="text-amber-600 font-medium">{need} more paying client{need === 1 ? '' : 's'} to earn $75</span>)
+                              : <span className="text-amber-600 font-medium">{need} more qualified client{need === 1 ? '' : 's'} to earn $75</span>)
                       }</span>
                     </div>
-                    {/* Progress toward the 3 paying clients that earn the $75 */}
+                    {/* Progress toward the 3 QUALIFIED clients that earn the $75 */}
                     <div className="mt-1.5">
                       <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span><span className="font-semibold text-slate-700">{Math.min(o.paidClients || 0, 3)} of 3</span> paying clients{(o.paidClients || 0) > 3 ? ` (${o.paidClients} total)` : ''}</span>
+                        <span><span className="font-semibold text-slate-700">{Math.min(qual, 3)} of 3</span> qualified{(o.paidClients || 0) > qual ? ` · ${o.paidClients} paying so far` : ''}</span>
                         <span>{o.alreadyAwarded || o.qualifies ? `${o.daysSinceCreated}d since they joined` : `${daysLeft} days left in their first 60`}</span>
                       </div>
                       <div className="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${o.qualifies ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, ((o.paidClients || 0) / 3) * 100)}%` }} />
+                        <div className={`h-full rounded-full ${o.qualifies ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, (qual / 3) * 100)}%` }} />
                       </div>
                     </div>
-                    {/* This month's pipeline from this affiliate — the clients to push so they pay and count */}
+                    {/* This month's pipeline from this affiliate — clients to push so they pay and advance */}
                     {o.proceeded.length > 0 && (
                       <p className="text-xs text-green-600 mt-2">{o.proceeded.length} paid their doc fee this month{o.proceeded.length ? ': ' : ''}{o.proceeded.map(c => c.name).join(', ')}</p>
                     )}
                     {o.pending.length > 0 && (
                       <div className="mt-2">
-                        <p className="text-xs font-medium text-amber-600">Push these to pay their doc fee ({o.pending.length}) — each one moves this affiliate toward the 3:</p>
+                        <p className="text-xs font-medium text-amber-600">Push these to pay and advance past the doc fee ({o.pending.length}) — a qualified client counts toward the 3:</p>
                         {o.pending.map((cl, i) => (
                           <div key={i} className="text-xs text-slate-600 pl-2">{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</div>
                         ))}
                       </div>
                     )}
                     {o.pending.length === 0 && o.proceeded.length === 0 && !o.qualifies && (
-                      <p className="text-xs text-slate-400 mt-2">No clients in motion this month. Reach out to this affiliate for {need} more referral{need === 1 ? '' : 's'} to unlock the $75.</p>
+                      <p className="text-xs text-slate-400 mt-2">No clients in motion this month. Reach out to this affiliate for {need} more qualified client{need === 1 ? '' : 's'} to unlock the $75.</p>
                     )}
                     {o.pending.length === 0 && o.proceeded.length === 0 && o.qualifies && (
                       <p className="text-xs text-slate-400 mt-2">No new clients in motion this month.</p>

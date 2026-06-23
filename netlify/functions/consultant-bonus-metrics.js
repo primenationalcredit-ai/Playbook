@@ -502,17 +502,24 @@ exports.handler = async (event) => {
         const daysSinceCreated = Math.floor((new Date() - orgCreated) / (1000 * 60 * 60 * 24));
 
         if (daysSinceCreated <= 60) {
-          // Count unique clients from this org
-          const orgClients = new Set();
+          // Count unique clients from this org, and how many are QUALIFIED (paid a doc fee AND advanced
+          // to a partial/final). The $75 is earned on 3 qualified clients, not just 3 who paid anything.
+          const orgClientKeys = new Set();
           for (const p of allPayments) {
             if (p.referrer_org === orgName && p.is_affiliate_deal) {
-              orgClients.add(p.pipedrive_deal_id || p.client_name);
+              orgClientKeys.add(p.pipedrive_deal_id || p.client_name);
             }
           }
-          const count = orgClients.size;
+          const count = orgClientKeys.size;
+          let qualifiedCount = 0;
+          for (const key of orgClientKeys) {
+            const hasDoc = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && ap.payment_type === 'doc_fee');
+            const hasAdvanced = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && ['partial', 'final', 'paid_in_full'].includes(ap.payment_type));
+            if (hasDoc && hasAdvanced) qualifiedCount++;
+          }
           if (count >= 1) {
-            const qualifies = count >= 3;
-            newAffiliateAllOrgs.push({ name: orgName, clients: count, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies });
+            const qualifies = qualifiedCount >= 3;
+            newAffiliateAllOrgs.push({ name: orgName, clients: count, qualifiedClients: qualifiedCount, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies });
             if (qualifies && !awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
               newAffiliateLaunchCount++;
               newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, orgCreated: addTime, clients: count, daysSinceCreated });
@@ -597,6 +604,7 @@ exports.handler = async (event) => {
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
           paidClients: o.clients,
+          qualifiedClients: o.qualifiedClients || 0,
           alreadyAwarded: awardedOrgs.has(`new_affiliate_launch:${o.name}`),
           pending: consults.filter(c => !c.proceeded),
           proceeded: consults.filter(c => c.proceeded)
