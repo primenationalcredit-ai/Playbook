@@ -509,16 +509,22 @@ exports.handler = async (event) => {
         if (daysSinceCreated <= 60) {
           // Count unique clients from this org
           const orgClients = new Set();
+          const signedClients = [];
           for (const p of allPayments) {
             if (p.referrer_org === orgName && p.is_affiliate_deal) {
-              orgClients.add(p.pipedrive_deal_id || p.client_name);
+              const key = p.pipedrive_deal_id || p.client_name;
+              if (!orgClients.has(key)) {
+                orgClients.add(key);
+                signedClients.push({ name: p.client_name || `Deal #${p.pipedrive_deal_id}`, dealId: p.pipedrive_deal_id || null, date: p.payment_date });
+              }
             }
           }
           const count = orgClients.size;
           if (count >= 1) {
             const qualifies = count >= 3;
-            newAffiliateAllOrgs.push({ name: orgName, clients: count, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies });
-            if (qualifies && !awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
+            const alreadyAwarded = awardedOrgs.has(`new_affiliate_launch:${orgName}`);
+            newAffiliateAllOrgs.push({ name: orgName, clients: count, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies, alreadyAwarded, signedClients });
+            if (qualifies && !alreadyAwarded) {
               newAffiliateLaunchCount++;
               newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, orgCreated: addTime, clients: count, daysSinceCreated });
             }
@@ -601,6 +607,7 @@ exports.handler = async (event) => {
           .map(id => ({ name: dealMeta[id]?.name || `Deal #${id}`, dealId: id, proceeded: isPaid(id) }));
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
+          alreadyAwarded: o.alreadyAwarded, signedClients: o.signedClients || [],
           paidClients: o.clients,
           pending: consults.filter(c => !c.proceeded),
           proceeded: consults.filter(c => c.proceeded)
