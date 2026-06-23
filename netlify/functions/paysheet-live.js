@@ -146,7 +146,7 @@ exports.handler = async (event) => {
 
     const data = await response.json();
     const rows = data.values || [];
-    
+
     // Detect affiliate column from header
     const headerRow = rows[0] || [];
     let affiliateColIdx = -1;
@@ -158,6 +158,47 @@ exports.handler = async (event) => {
       }
     }
     console.log(`[paysheet-live] ${rows.length} rows, header cols: ${headerRow.length}, affiliate col: ${affiliateColIdx >= 0 ? affiliateColIdx : 'NOT FOUND'}`);
+
+    // Opt-in reconciliation view: ?debug=<name substring> returns every raw row whose consultant cell
+    // contains that text (counted AND dropped), so a missing-from-the-app total can be traced to the
+    // exact row. Does not change the normal dashboard response.
+    const debugTerm = (params.debug || '').toLowerCase().trim();
+    if (debugTerm) {
+      const debugRows = [];
+      let countedTotal = 0;
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const rawConsultant = (row[0] || '').trim();
+        if (!rawConsultant.toLowerCase().includes(debugTerm)) continue;
+        const datePaid = parseDate(row[1]);
+        const rawFee = row[3];
+        const feePaid = parseFloat((rawFee || '').toString().replace(/[$,]/g, '')) || 0;
+        const normalized = normalizeConsultant(rawConsultant);
+        const rowMonth = datePaid ? datePaid.substring(0, 7) : null;
+        const inMonth = rowMonth ? months.includes(rowMonth) : false;
+        const counted = !!(rawConsultant && datePaid && feePaid) && inMonth;
+        let dropReason = null;
+        if (!datePaid) dropReason = 'date did not parse';
+        else if (!feePaid) dropReason = 'fee_paid blank or zero';
+        else if (!inMonth) dropReason = `dated ${rowMonth}, outside requested month(s)`;
+        if (counted) countedTotal += feePaid;
+        debugRows.push({
+          raw_consultant: rawConsultant, normalized, date_paid: datePaid, raw_date: row[1],
+          raw_fee: rawFee, fee_paid: feePaid, client: (row[2] || '').trim(), code: (row[8] || '').trim(),
+          total_price: row[10], month: rowMonth, counted, drop_reason: dropReason,
+        });
+      }
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          success: true, debug: debugTerm, months,
+          counted_total: Math.round(countedTotal * 100) / 100,
+          counted_rows: debugRows.filter(r => r.counted).length,
+          not_counted_rows: debugRows.filter(r => !r.counted).length,
+          rows: debugRows,
+        }, null, 2),
+      };
+    }
 
     // Parse ALL rows once, bucket by month
     const byMonth = {};
