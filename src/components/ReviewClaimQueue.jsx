@@ -13,6 +13,7 @@ export default function ReviewClaimQueue() {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
+  const [dealInputs, setDealInputs] = useState({});
 
   const myId = currentUser?.id;
   const myName = currentUser?.name || currentUser?.full_name || currentUser?.email || 'Me';
@@ -40,9 +41,12 @@ export default function ReviewClaimQueue() {
   };
 
   const claim = async (review) => {
+    const dealId = (dealInputs[review.id] || '').trim();
+    if (!dealId) { alert('Please enter the Pipedrive deal ID for this client before claiming.'); return; }
+    if (!/^\d+$/.test(dealId)) { alert('The deal ID should be just the numbers from the deal URL (e.g. 12345).'); return; }
     setBusyId(review.id);
     try {
-      await patch(review.id, { claimed_by: myId, claimed_by_name: myName, claimed_at: new Date().toISOString() });
+      await patch(review.id, { claimed_by: myId, claimed_by_name: myName, claimed_at: new Date().toISOString(), pipedrive_deal_id: dealId });
       await loadData();
     } catch (e) { alert('Could not claim that review, please try again.'); }
     setBusyId(null);
@@ -137,15 +141,24 @@ export default function ReviewClaimQueue() {
           <div className="grid md:grid-cols-2 gap-4">
             {available.map(review => (
               <Card key={review.id} review={review}>
-                <div className="flex justify-end pt-1">
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={dealInputs[review.id] || ''}
+                    onChange={e => setDealInputs(prev => ({ ...prev, [review.id]: e.target.value.replace(/[^0-9]/g, '') }))}
+                    placeholder="Pipedrive deal ID"
+                    className="flex-1 min-w-0 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-asap-blue/30"
+                  />
                   <button
                     onClick={() => claim(review)}
                     disabled={busyId === review.id}
-                    className="flex items-center gap-2 px-4 py-2 bg-asap-blue text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 bg-asap-blue text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 shrink-0"
                   >
-                    <Check size={16} /> Claim this review
+                    <Check size={16} /> Claim
                   </button>
                 </div>
+                <p className="text-xs text-slate-400 mt-1">Add the client's deal ID so we can log the review on their Pipedrive file.</p>
               </Card>
             ))}
           </div>

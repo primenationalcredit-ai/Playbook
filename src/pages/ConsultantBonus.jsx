@@ -935,7 +935,7 @@ export default function ConsultantBonus() {
             </div>
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'reviews' ? null : 'reviews')} label={`View ${c.reviewCount} reviews`} />
             {expandedSection === 'reviews' && c.clientDetail?.reviewList && (
-              <ClientPanel title={`Assigned Reviews (${c.reviewCount} total, bonus starts after 10)`} items={c.clientDetail.reviewList.map(r => ({ name: r.reviewer, type: `⭐ ${r.rating}/5`, date: r.date, payments: [{ type: 'review', amount: 0, date: `${r.location} — "${r.text}..."` }] }))} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title={`Assigned Reviews (${c.reviewCount} total, bonus starts after 10)`} items={c.clientDetail.reviewList.map(r => ({ name: r.reviewer, dealId: r.dealId, type: `⭐ ${r.rating}/5`, date: r.date, payments: [{ type: 'review', amount: 0, date: `${r.location} — "${r.text}..."` }] }))} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 

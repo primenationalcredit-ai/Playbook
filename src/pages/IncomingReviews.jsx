@@ -58,6 +58,7 @@ function IncomingReviews() {
   const [assigningReview, setAssigningReview] = useState(null);
   const [selectedUser, setSelectedUser] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('');
+  const [assignDealId, setAssignDealId] = useState('');
   
   // Edit modal
   const [editingReview, setEditingReview] = useState(null);
@@ -105,6 +106,8 @@ function IncomingReviews() {
 
   const handleAssign = async () => {
     if (!assigningReview || !selectedUser) return;
+    const dealId = (assignDealId || assigningReview.pipedrive_deal_id || '').trim();
+    if (!dealId || !/^\d+$/.test(dealId)) { alert('A numeric Pipedrive deal ID is required to assign this review.'); return; }
     
     try {
       const url = `https://kkcbpqbcpzcarxhknzza.supabase.co/rest/v1/incoming_reviews?id=eq.${assigningReview.id}`;
@@ -113,6 +116,7 @@ function IncomingReviews() {
         assigned_to: selectedUser,
         assigned_by: currentUser?.id,
         assigned_at: new Date().toISOString(),
+        pipedrive_deal_id: String(dealId),
       };
       
       // Include location if it was changed
@@ -131,9 +135,12 @@ function IncomingReviews() {
         body: JSON.stringify(updateData)
       });
       
+      await postReviewNote(assigningReview, String(dealId));
+
       setAssigningReview(null);
       setSelectedUser('');
       setSelectedLocation('');
+      setAssignDealId('');
       loadData();
     } catch (err) {
       console.error('Error assigning review:', err);
@@ -151,10 +158,25 @@ function IncomingReviews() {
   };
 
   // Approve a team member's claim: assign the review to whoever claimed it (this is what credits their bonus).
+  const postReviewNote = async (review, dealId) => {
+    try {
+      await fetch('/.netlify/functions/review-post-note', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviewId: review.id, dealId, reviewerName: review.reviewer_name, rating: review.rating, reviewText: review.review_text }),
+      });
+    } catch (e) { /* note is best-effort; assignment already saved */ }
+  };
+
   const handleApproveClaim = async (review) => {
     if (!review?.claimed_by) return;
+    let dealId = review.pipedrive_deal_id;
+    if (!dealId) {
+      dealId = (prompt('Enter the Pipedrive deal ID for this review (needed to log it on the client file):') || '').trim();
+      if (!dealId || !/^\d+$/.test(dealId)) { alert('A numeric deal ID is required to approve this review.'); return; }
+    }
     try {
-      await patchReview(review.id, { status: 'assigned', assigned_to: review.claimed_by, assigned_by: currentUser?.id, assigned_at: new Date().toISOString() });
+      await patchReview(review.id, { status: 'assigned', assigned_to: review.claimed_by, assigned_by: currentUser?.id, assigned_at: new Date().toISOString(), pipedrive_deal_id: String(dealId) });
+      await postReviewNote(review, String(dealId));
       loadData();
     } catch (err) { console.error('Error approving claim:', err); alert('Failed to approve claim'); }
   };
@@ -679,6 +701,20 @@ function IncomingReviews() {
                 ))}
               </select>
               
+              {/* Pipedrive Deal ID (required so we can log the review on the client's deal) */}
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Pipedrive Deal ID <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={assignDealId}
+                onChange={(e) => setAssignDealId(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder={assigningReview.pipedrive_deal_id ? `Claimed with deal ${assigningReview.pipedrive_deal_id}` : 'e.g. 12345'}
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-asap-blue mb-1"
+              />
+              <p className="text-xs text-slate-400 mb-4">We will post a note on this deal that a review was left.</p>
+
               {/* User Selection */}
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Assign to Team Member

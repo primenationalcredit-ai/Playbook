@@ -940,7 +940,7 @@ exports.handler = async (event) => {
           finalList: myPayments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date })),
           qualifiedList: qualifiedClients.map(c => ({ name: c.name, dealId: c.dealId, totalPaid: c.totalPaid, org: c.orgName, isAffiliate: c.isAffiliate, payments: c.payments.map(p => ({ type: p.payment_type, amount: p.amount, date: p.payment_date })) })),
           docFeeOnlyList: docFeeOnlyClients.map(c => ({ name: c.name, dealId: c.dealId, totalPaid: c.totalPaid })),
-          reviewList: myReviews.map(r => ({ reviewer: r.reviewer_name, rating: r.rating, date: r.review_date, location: r.location_name, text: (r.review_text || '').substring(0, 100) })),
+          reviewList: myReviews.map(r => ({ reviewer: r.reviewer_name, rating: r.rating, date: r.review_date, location: r.location_name, dealId: r.pipedrive_deal_id || null, text: (r.review_text || '').substring(0, 100) })),
           consultList: myConsultDealIds.map(id => {
             const paid = dealIdsWithDocFee.has(id);
             const payment = allPayments.find(p => p.pipedrive_deal_id === id && p.payment_type === 'doc_fee');

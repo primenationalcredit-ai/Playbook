@@ -324,7 +324,7 @@ export default function AMBonus() {
       approvedCount, pending: pending.length, rejected: rejected.length,
       creditBonus, submissions: amSubs, approvedSubs: approved,
       reviewCount, bbbReviews, reviewBonus,
-      reviewList: amReviews.map(r => ({ reviewer: r.reviewer_name, location: r.location_name, rating: r.rating, text: r.review_text, date: r.review_date || r.created_at })),
+      reviewList: amReviews.map(r => ({ reviewer: r.reviewer_name, location: r.location_name, rating: r.rating, text: r.review_text, dealId: r.pipedrive_deal_id || null, date: r.review_date || r.created_at })),
       stallRate, stallCount, stallTotal, stalledClients, stallBonus,
       additionalRounds, roundsBonus, roundDeals, pastDueRounds,
       referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer, referralDeals,
@@ -770,7 +770,12 @@ export default function AMBonus() {
                       {currentAMMetrics.reviewList.map((rv, i) => (
                         <div key={i} className="text-xs py-1 border-b border-slate-100">
                           <div className="flex justify-between gap-2">
-                            <span className="text-slate-700 font-medium">{rv.reviewer || 'Anonymous'}{rv.location ? <span className="text-slate-400 font-normal"> · {rv.location}</span> : ''}</span>
+                            <span className="text-slate-700 font-medium">
+                              {rv.dealId
+                                ? <a href={DEAL_URL(rv.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{rv.reviewer || 'Anonymous'} ↗</a>
+                                : (rv.reviewer || 'Anonymous')}
+                              {rv.location ? <span className="text-slate-400 font-normal"> · {rv.location}</span> : ''}
+                            </span>
                             <span className="text-amber-500">{rv.rating != null ? `${rv.rating}★` : ''}{rv.date ? <span className="text-slate-400 ml-1">{new Date(rv.date).toLocaleDateString()}</span> : ''}</span>
                           </div>
                           {rv.text && <p className="text-slate-500 italic mt-0.5">"{rv.text}"</p>}
