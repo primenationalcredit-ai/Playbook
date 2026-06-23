@@ -328,7 +328,14 @@ exports.handler = async (event) => {
         // Full name exact match
         if (pName === name.toLowerCase()) return true;
         return false;
-      });
+      }).filter(p =>
+        // Consultants are credited only on new-client acquisition payments. Additional rounds ($299)
+        // belong to Account Managers, never consultants, and unclassified ("unknown") rows are not
+        // creditable consultant sales. Excluding both here keeps them out of sales, commission, counts,
+        // qualified docs, and every client list at once.
+        p.payment_type === 'doc_fee' || p.payment_type === 'partial' ||
+        p.payment_type === 'final' || p.payment_type === 'paid_in_full'
+      );
 
       // === SALES & COMMISSION (from Zoho) ===
       let totalSales = 0, affiliateSales = 0, organicSales = 0;

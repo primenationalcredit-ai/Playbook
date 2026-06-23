@@ -286,7 +286,9 @@ export default function ConsultantBonus() {
               Export PDF
             </button>
           )}
-          <button onClick={() => loadData()} className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"><RefreshCw size={16} /></button>
+          {!isAdmin && (
+            <button onClick={() => loadData()} className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"><RefreshCw size={16} /></button>
+          )}
         </div>
       </div>
 
@@ -597,8 +599,8 @@ export default function ConsultantBonus() {
               <tr key={c.name} className="hover:bg-slate-50">
                 <td className="px-3 py-2.5 font-medium">{c.name.split(' ')[0]}</td>
                 <Cell v={c.reviewCount||0} good={c.meetsReviewStandard} bad={!c.meetsReviewStandard} />
-                <Cell v={c.producingAffiliates||0} good={(c.producingAffiliates||0)>=5} />
-                <Cell v={c.refundCount||0} bad={(c.refundCount||0)>0} />
+                <Cell v={c.producingAffiliates||0} good={(c.producingAffiliates||0)>=5} bad={(c.producingAffiliates||0)<5} />
+                <Cell v={c.refundCount||0} bad={(c.refundCount||0)>0} good={(c.refundCount||0)===0} />
                 <Cell v={c.weeksWon||0} good={(c.weeksWon||0)>0} />
                 <td className="text-center px-3 py-2.5">{c.meetsReviewStandard && (c.producingAffiliates||0)>=5 ? 'Yes' : 'No'}</td>
               </tr>
@@ -1109,10 +1111,10 @@ export default function ConsultantBonus() {
             <p className="text-lg font-bold">{c.reviewCount}</p>
             <p className="text-xs">{c.meetsReviewStandard ? '✅ Meets 10 standard' : `⚠️ ${10 - c.reviewCount} short`}</p>
           </div>
-          <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+          <div className={`p-3 rounded-lg ${c.producingAffiliates >= 5 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className="text-xs text-slate-500"><Tip text="Affiliate partners who sent 3+ clients this month. Standard: 5 minimum.">Active Affiliates</Tip></p>
             <p className="text-lg font-bold">{c.producingAffiliates}</p>
-            <p className="text-xs">{c.producingAffiliates >= 5 ? '✅ 5+ active' : `${5 - c.producingAffiliates} to minimum`}</p>
+            <p className="text-xs">{c.producingAffiliates >= 5 ? '✅ 5+ active' : `⚠️ ${5 - c.producingAffiliates} to minimum`}</p>
           </div>
           <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
             <p className="text-xs text-slate-500"><Tip text="Your doc fee count this week. Top closer wins $150.">Weekly Sprint</Tip></p>
