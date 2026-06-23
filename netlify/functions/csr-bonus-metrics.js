@@ -132,13 +132,24 @@ exports.handler = async (event) => {
     for (const u of csrUsers) if (u.name) { nameToUserId[u.name.trim().toLowerCase()] = u.id; nameToHire[u.name.trim().toLowerCase()] = u.hire_date || null; }
 
     // Live staff roster: the curated names (which match Pipedrive owner spellings and nicknames) PLUS any
-    // customer_support user in the database not already listed, so a newly added CSR shows up automatically
-    // with no code change. Deduped case-insensitively, keeping the curated spelling where it exists.
+    // customer_support user in the database who is not already represented, so a newly added CSR shows up
+    // automatically. A database name is treated as the same person as a curated name when one's word set is
+    // contained in the other (e.g. "Reni" vs "Reni Reyes", "Araceli Carrion" vs "Araceli Carrion Garcia"),
+    // so nickname and full-name variants collapse to a single row instead of doubling up.
+    const normName = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const toks = s => new Set(normName(s).split(' ').filter(Boolean));
+    const subsetOf = (a, b) => { if (!a.size) return false; for (const t of a) if (!b.has(t)) return false; return true; };
     const staff = CSR_STAFF.slice();
-    const staffSeen = new Set(staff.map(n => n.trim().toLowerCase()));
+    const staffSeen = new Set(staff.map(n => normName(n)));
+    const staffToks = staff.map(toks);
     for (const u of csrUsers) {
       const nm = (u.name || '').trim();
-      if (nm && !staffSeen.has(nm.toLowerCase())) { staff.push(nm); staffSeen.add(nm.toLowerCase()); }
+      if (!nm) continue;
+      const key = normName(nm);
+      if (staffSeen.has(key)) continue;
+      const t = toks(nm);
+      if (staffToks.some(st => subsetOf(t, st) || subsetOf(st, t))) continue; // same person, different spelling
+      staff.push(nm); staffSeen.add(key); staffToks.push(t);
     }
 
     // Doc fee conversions: which of these CS deals have a paid doc fee (from consultant_payments)
