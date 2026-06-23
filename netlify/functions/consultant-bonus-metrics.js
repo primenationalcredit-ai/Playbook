@@ -678,11 +678,17 @@ exports.handler = async (event) => {
       const closeDetail = myConsultDealIds.map(id => {
         const byId = dealIdsWithDocFee.has(id);
         const byName = !byId && docFeeNames.has(norm(dealMeta[id]?.name));
+        const paidDocFee = byId || byName;
+        // Show the doc fee actually paid. If no doc fee was paid, show 0, never the Pipedrive quote
+        // value, which would read as a payment that never happened.
+        const docPay = paidDocFee
+          ? allPayments.find(p => p.payment_type === 'doc_fee' && (String(p.pipedrive_deal_id) === String(id) || norm(p.client_name) === norm(dealMeta[id]?.name)))
+          : null;
         return {
           name: dealMeta[id]?.name || `Deal #${id}`,
           dealId: id,
-          amount: dealMeta[id]?.value || 0,
-          paidDocFee: byId || byName,
+          amount: paidDocFee ? (parseFloat(docPay?.amount) || 0) : 0,
+          paidDocFee,
           matchBy: byId ? 'deal id' : (byName ? 'name (no deal id on invoice)' : null),
         };
       }).sort((a, b) => (b.paidDocFee === a.paidDocFee ? a.name.localeCompare(b.name) : (b.paidDocFee ? 1 : -1)));
