@@ -196,11 +196,16 @@ exports.handler = async (event) => {
     // Earliest still-owed invoice due date for a deal, so a client who needs a partial/final shows
     // when their next payment is due and whether it is already past due (follow up).
     const dueTodayStr = new Date().toISOString().slice(0, 10);
-    const nextDueForDeal = (dealId) => {
-      if (!dealId) return null;
-      const owing = invoiceData
-        .filter(inv => String(inv.pipedrive_deal_id) === String(dealId) && (parseFloat(inv.balance) || 0) > 1 && inv.due_date)
-        .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+    const nextDueForDeal = (dealId, clientName) => {
+      const nm = norm(clientName);
+      const owing = invoiceData.filter(inv => {
+        if ((parseFloat(inv.balance) || 0) <= 1 || !inv.due_date) return false;
+        if (dealId && String(inv.pipedrive_deal_id) === String(dealId)) return true;
+        // Invoices frequently have no deal id and store the client name (often deal-id-prefixed),
+        // so also match when the client's real name appears in the invoice customer name.
+        if (nm && nm.length > 4 && norm(inv.customer_name).includes(nm)) return true;
+        return false;
+      }).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
       if (!owing.length) return null;
       const due = String(owing[0].due_date).slice(0, 10);
       return { dueDate: due, overdue: due < dueTodayStr };
@@ -651,7 +656,7 @@ exports.handler = async (event) => {
         const clients = Object.values(roster).map(c => {
           const qualified = c.hasDoc && c.hasAdvanced;
           const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
-          const due = status === 'needs_advance' ? nextDueForDeal(c.dealId) : null;
+          const due = status === 'needs_advance' ? nextDueForDeal(c.dealId, c.name) : null;
           return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         return {
