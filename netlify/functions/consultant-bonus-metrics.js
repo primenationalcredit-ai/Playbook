@@ -73,7 +73,7 @@ exports.handler = async (event) => {
       if (cacheRows && cacheRows[0] && cacheRows[0].cache_value) {
         priorCacheBody = cacheRows[0].cache_value;
         try { priorConsultTotal = JSON.parse(priorCacheBody)?.companyConsultTotal ?? null; } catch(_) {}
-        if (!forceRefresh) {
+        if (!forceRefresh && !params.duedebug) {
           // Always serve cache on the live page load, even if a little stale. The scheduled warm
           // function (and ?refresh=1) do the slow recompute, so the team never blocks on it and the
           // page never fails to load. Freshness comes from the every-10-min warm.
@@ -201,8 +201,15 @@ exports.handler = async (event) => {
       const owing = invoiceData.filter(inv => {
         if ((parseFloat(inv.balance) || 0) <= 1 || !inv.due_date) return false;
         if (dealId && String(inv.pipedrive_deal_id) === String(dealId)) return true;
-        // Invoices frequently have no deal id and store the client name (often deal-id-prefixed),
-        // so also match when the client's real name appears in the invoice customer name.
+        // Invoices frequently carry no deal id. Resolve one from the invoice customer name via the
+        // payment-derived maps and match that, so a client links to its invoice even when the invoice
+        // row itself has no deal id.
+        if (dealId) {
+          const cn = norm(inv.customer_name);
+          const resolved = dealByClientName[cn] || nameToDealId[cn];
+          if (resolved && String(resolved) === String(dealId)) return true;
+        }
+        // Last resort: the client's real name appears in the invoice customer name (deal-id-prefixed names included).
         if (nm && nm.length > 4 && norm(inv.customer_name).includes(nm)) return true;
         return false;
       }).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
@@ -231,6 +238,52 @@ exports.handler = async (event) => {
         if (p.pipedrive_deal_id) dealIdsWithDocFee.add(p.pipedrive_deal_id);
         else if (p.client_name) docFeeNames.add(norm(p.client_name)); // name fallback ONLY for orphan payments with no deal id, so a linked payment can't be borrowed by a same-named different deal
       }
+    }
+
+    // === DUE-DATE DIAGNOSTIC (read-only) ===
+    // ?duedebug=<consultant name> returns each affiliate-referred client for that consultant with the
+    // due-date match attempt and, when no date is found, the reason: no open invoice on file, an invoice
+    // exists but has no due_date, or its balance is already cleared. Lets us see exactly why a date is missing.
+    if (params.duedebug) {
+      const want = norm(params.duedebug);
+      const isDoc = (dealId, name) => (dealId && dealIdsWithDocFee.has(dealId)) || docFeeNames.has(norm(name));
+      const roster = {};
+      for (const p of allPayments) {
+        if (!p.is_affiliate_deal) continue;
+        if (!norm(p.consultant_name).includes(want)) continue;
+        const key = p.pipedrive_deal_id || p.client_name;
+        if (!roster[key]) roster[key] = { name: p.client_name, dealId: p.pipedrive_deal_id || null, org: p.referrer_org, hasDoc: false, hasAdvanced: false };
+        if (p.payment_type === 'doc_fee') roster[key].hasDoc = true;
+        else if (['partial', 'final', 'paid_in_full'].includes(p.payment_type)) roster[key].hasAdvanced = true;
+      }
+      const explain = (dealId, name) => {
+        const nm = norm(name);
+        const linked = invoiceData.filter(inv => {
+          if (dealId && String(inv.pipedrive_deal_id) === String(dealId)) return true;
+          const cn = norm(inv.customer_name);
+          if (dealId && String(dealByClientName[cn] || nameToDealId[cn] || '') === String(dealId)) return true;
+          if (nm && nm.length > 4 && cn.includes(nm)) return true;
+          return false;
+        });
+        const due = nextDueForDeal(dealId, name);
+        if (due) return { matched: true, ...due, invoices_linked: linked.length };
+        let reason = 'no invoice on file matching this deal id or name';
+        if (linked.length) {
+          const noDate = linked.filter(i => !i.due_date).length;
+          const cleared = linked.filter(i => (parseFloat(i.balance) || 0) <= 1).length;
+          reason = `${linked.length} invoice(s) found but none owe with a due date (no due_date: ${noDate}, balance cleared: ${cleared})`;
+        }
+        return { matched: false, reason, invoices_linked: linked.length };
+      };
+      const out = Object.values(roster).map(c => {
+        const status = (c.hasDoc && c.hasAdvanced) ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
+        return { name: c.name, dealId: c.dealId, org: c.org, status, due: status === 'qualified' ? null : explain(c.dealId, c.name) };
+      }).sort((a, b) => a.org.localeCompare(b.org) || a.name.localeCompare(b.name));
+      return { statusCode: 200, headers, body: JSON.stringify({
+        success: true, duedebug: params.duedebug,
+        clients: out.length, with_due_date: out.filter(c => c.due?.matched).length,
+        rows: out
+      }, null, 2) };
     }
 
     // Cached lookup: org creation date (add_time) by org name — for New Affiliate Launch
