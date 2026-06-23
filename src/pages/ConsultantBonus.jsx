@@ -134,11 +134,11 @@ export default function ConsultantBonus() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.department === 'leadership';
 
-  const loadData = async (month) => {
+  const loadData = async (month, forceRefresh = false) => {
     setLoading(true);
     try {
       const m = month || selectedMonth;
-      const res = await fetch(`/.netlify/functions/consultant-bonus-metrics?month=${m}`);
+      const res = await fetch(`/.netlify/functions/consultant-bonus-metrics?month=${m}${forceRefresh ? '&refresh=1' : ''}`);
       if (!res.ok) throw new Error('Failed to load bonus data');
       const json = await res.json();
       setData(json);
@@ -161,7 +161,9 @@ export default function ConsultantBonus() {
     try {
       await fetch('/.netlify/functions/zoho-payment-sync');
       await fetch('/.netlify/functions/payment-enrich');
-      await loadData();
+      // Force the bonus metrics to recompute (not just serve the cached payload) so the synced
+      // payments and any reclassifications show immediately instead of waiting on the warm cron.
+      await loadData(selectedMonth, true);
     } catch (e) {}
     setSyncing(false);
   };
