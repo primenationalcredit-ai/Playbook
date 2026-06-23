@@ -74,7 +74,8 @@ function IncomingReviews() {
     try {
       // Load ALL reviews (every status) so the Pending/Assigned/Completed counts are
       // always complete. The active tab filters the displayed list client-side.
-      let query = 'select=*&order=created_at.desc';
+      // Only surface reviews left on/after June 1, 2026 (launch). Undated rows use their created date.
+      let query = 'select=*&or=(review_date.gte.2026-06-01,and(review_date.is.null,created_at.gte.2026-06-01))&order=created_at.desc';
       if (locationFilter !== 'all') {
         query += `&location_name=eq.${encodeURIComponent(locationFilter)}`;
       }

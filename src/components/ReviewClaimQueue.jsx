@@ -20,7 +20,8 @@ export default function ReviewClaimQueue() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await supabaseFetch('incoming_reviews', 'select=*&status=eq.pending&order=created_at.desc');
+      // Only show reviews left on/after June 1, 2026 (launch). Undated rows use their created date.
+      const data = await supabaseFetch('incoming_reviews', 'select=*&status=eq.pending&or=(review_date.gte.2026-06-01,and(review_date.is.null,created_at.gte.2026-06-01))&order=created_at.desc');
       setReviews(Array.isArray(data) ? data : []);
     } catch (e) {
       setReviews([]);
