@@ -131,6 +131,16 @@ exports.handler = async (event) => {
     const nameToHire = {};
     for (const u of csrUsers) if (u.name) { nameToUserId[u.name.trim().toLowerCase()] = u.id; nameToHire[u.name.trim().toLowerCase()] = u.hire_date || null; }
 
+    // Live staff roster: the curated names (which match Pipedrive owner spellings and nicknames) PLUS any
+    // customer_support user in the database not already listed, so a newly added CSR shows up automatically
+    // with no code change. Deduped case-insensitively, keeping the curated spelling where it exists.
+    const staff = CSR_STAFF.slice();
+    const staffSeen = new Set(staff.map(n => n.trim().toLowerCase()));
+    for (const u of csrUsers) {
+      const nm = (u.name || '').trim();
+      if (nm && !staffSeen.has(nm.toLowerCase())) { staff.push(nm); staffSeen.add(nm.toLowerCase()); }
+    }
+
     // Doc fee conversions: which of these CS deals have a paid doc fee (from consultant_payments)
     const dealIds = rows.map(r => r.deal_id).filter(Boolean);
     const docFeeDealIds = new Set();
@@ -151,7 +161,7 @@ exports.handler = async (event) => {
     const tally = {};
     const ops = {};
     const dist = {};
-    for (const name of CSR_STAFF) {
+    for (const name of staff) {
       tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [] };
       ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
@@ -209,7 +219,7 @@ exports.handler = async (event) => {
 
     // Build per-CSR bonus result
     const csrs = {};
-    for (const name of CSR_STAFF) {
+    for (const name of staff) {
       const t = tally[name];
       const report = computeReportBonus(t.idiq, t.total);
 
@@ -286,7 +296,7 @@ exports.handler = async (event) => {
 
     // Spotlight: IDIQ Top Converter = highest IDIQ enrollment rate among qualified CSRs (>=50 total)
     let topConverter = null, topRate = -1;
-    for (const name of CSR_STAFF) {
+    for (const name of staff) {
       const c = csrs[name];
       if (c.reportBonus.qualified && c.idiqRate > topRate) { topRate = c.idiqRate; topConverter = name; }
     }
@@ -299,21 +309,21 @@ exports.handler = async (event) => {
     // During the current (in-progress) month it's a running leader ("in the hunt"); it finalizes at month-end.
     const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const provisional = month === currentMonthStr;
-    const arr = CSR_STAFF.map(n => csrs[n]);
+    const arr = staff.map(n => csrs[n]);
     const volOf = (c) => c.reports.total + c.conversionBonus.reachedDocs + c.reviewBonus.count;
     const convOf = (c) => (c.conversionBonus.rptsToQuoteRate + c.conversionBonus.quoteToDocsRate) / 2;
     const revOf = (c) => c.reviewBonus.count;
     const maxVol = Math.max(1, ...arr.map(volOf));
     const maxConv = Math.max(1, ...arr.map(convOf));
     const maxRev = Math.max(1, ...arr.map(revOf));
-    for (const name of CSR_STAFF) {
+    for (const name of staff) {
       const c = csrs[name];
       const volume = volOf(c), conv = convOf(c), rev = revOf(c);
       c.spotlight.allStarScore = Math.round(((volume / maxVol) + (conv / maxConv) + (rev / maxRev)) / 3 * 100);
       c.spotlight.allStarParts = { volume, conversion: Math.round(conv), reviews: rev };
     }
     let leader = null, bestScore = -1;
-    for (const name of CSR_STAFF) {
+    for (const name of staff) {
       const c = csrs[name];
       if (c.spotlight.allStarParts.volume > 0 && c.spotlight.allStarScore > bestScore) { bestScore = c.spotlight.allStarScore; leader = name; }
     }
@@ -328,7 +338,7 @@ exports.handler = async (event) => {
     }
 
     // Total each CSR's bonus
-    for (const name of CSR_STAFF) {
+    for (const name of staff) {
       const c = csrs[name];
       c.totalBonus = (c.reportBonus.bonus || 0) + (c.conversionBonus.bonus || 0) + (c.spotlight.bonus || 0) + (c.reviewBonus?.bonus || 0);
     }
