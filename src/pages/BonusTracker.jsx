@@ -18,7 +18,13 @@ export default function BonusTracker() {
   const { currentUser } = useApp();
   const isAdmin = currentUser?.role === 'admin' || currentUser?.department === 'leadership';
 
-  const visible = isAdmin ? ROLE_TABS : ROLE_TABS.filter((t) => t.dept === currentUser?.department);
+  const visible = isAdmin
+    ? ROLE_TABS
+    : ROLE_TABS.filter((t) =>
+        t.dept === currentUser?.department ||
+        // Account managers are identified by department OR by role.
+        (t.key === 'account_managers' && currentUser?.role === 'account_manager')
+      );
   const [active, setActive] = useState(visible[0]?.key);
 
   if (visible.length === 0) {
