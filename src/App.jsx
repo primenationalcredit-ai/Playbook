@@ -16,6 +16,7 @@ import Training from './pages/Training';
 import TrainingCourse from './pages/TrainingCourse';
 import Reviews from './pages/Reviews';
 import IncomingReviews from './pages/IncomingReviews';
+import ClaimReviews from './pages/ClaimReviews';
 import ReviewRandomizer from './pages/ReviewRandomizer';
 import ConsultantPayments from './pages/ConsultantPayments';
 import AllPayments from './pages/AllPayments';
@@ -121,6 +122,7 @@ function App() {
         <Route path="training/:courseId" element={<TrainingCourse />} />
         <Route path="reviews" element={<Reviews />} />
         <Route path="incoming-reviews" element={<IncomingReviews />} />
+        <Route path="claim-reviews" element={<ClaimReviews />} />
         <Route path="review-link" element={<ReviewRandomizer />} />
         <Route path="payments" element={<ConsultantPayments />} />
         <Route path="admin/all-payments" element={<ConsultantPayments />} />

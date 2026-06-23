@@ -140,6 +140,34 @@ function IncomingReviews() {
     }
   };
 
+  const REVIEW_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
+  const patchReview = async (id, data) => {
+    await fetch(`https://kkcbpqbcpzcarxhknzza.supabase.co/rest/v1/incoming_reviews?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { apikey: REVIEW_KEY, Authorization: `Bearer ${REVIEW_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(data),
+    });
+  };
+
+  // Approve a team member's claim: assign the review to whoever claimed it (this is what credits their bonus).
+  const handleApproveClaim = async (review) => {
+    if (!review?.claimed_by) return;
+    try {
+      await patchReview(review.id, { status: 'assigned', assigned_to: review.claimed_by, assigned_by: currentUser?.id, assigned_at: new Date().toISOString() });
+      loadData();
+    } catch (err) { console.error('Error approving claim:', err); alert('Failed to approve claim'); }
+  };
+
+  // Reject a claim: clear the claim so it returns to the available pool.
+  const handleRejectClaim = async (review) => {
+    if (!review?.claimed_by) return;
+    if (!confirm(`Release ${review.claimed_by_name || 'this'} claim and return the review to the available pool?`)) return;
+    try {
+      await patchReview(review.id, { claimed_by: null, claimed_by_name: null, claimed_at: null });
+      loadData();
+    } catch (err) { console.error('Error rejecting claim:', err); alert('Failed to release claim'); }
+  };
+
   const handleEditReview = async () => {
     if (!editingReview) return;
     
@@ -244,12 +272,18 @@ function IncomingReviews() {
       review.review_text?.toLowerCase().includes(query) ||
       review.location_name?.toLowerCase().includes(query)
     );
+  }).sort((a, b) => {
+    // claimed-but-pending float to the top so they're easy to approve
+    const ac = a.status === 'pending' && a.claimed_by ? 1 : 0;
+    const bc = b.status === 'pending' && b.claimed_by ? 1 : 0;
+    return bc - ac;
   });
 
   // Stats
   const pendingCount = reviews.filter(r => r.status === 'pending').length;
   const assignedCount = reviews.filter(r => r.status === 'assigned').length;
   const completedCount = reviews.filter(r => r.status === 'completed').length;
+  const claimedCount = reviews.filter(r => r.status === 'pending' && r.claimed_by).length;
 
   if (loading) {
     return (
@@ -297,6 +331,17 @@ function IncomingReviews() {
           Refresh
         </button>
       </div>
+
+      {/* Claims awaiting approval */}
+      {claimedCount > 0 && (
+        <button
+          onClick={() => setStatusFilter('pending')}
+          className="w-full mb-6 flex items-center gap-3 px-4 py-3 bg-purple-50 border border-purple-200 rounded-xl text-left hover:bg-purple-100 transition-colors"
+        >
+          <Star size={18} className="text-purple-600 fill-purple-200" />
+          <span className="text-sm text-purple-800"><strong>{claimedCount}</strong> review{claimedCount === 1 ? '' : 's'} claimed by team members and waiting for your approval.</span>
+        </button>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -448,6 +493,9 @@ function IncomingReviews() {
                   </div>
                   
                   <div className="flex items-center gap-2">
+                    {review.status === 'pending' && review.claimed_by && (
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 text-purple-700">CLAIMED</span>
+                    )}
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
                       review.status === 'pending' ? 'bg-amber-100 text-amber-700' :
                       review.status === 'assigned' ? 'bg-blue-100 text-blue-700' :
@@ -488,16 +536,34 @@ function IncomingReviews() {
                 {/* Actions */}
                 <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                   <div className="flex items-center gap-3">
+                    {review.status === 'pending' && review.claimed_by && (
+                      <>
+                        <span className="text-sm text-slate-600 mr-1">Claimed by <strong>{review.claimed_by_name || getUserName(review.claimed_by)}</strong></span>
+                        <button
+                          onClick={() => handleApproveClaim(review)}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <CheckCircle2 size={16} />
+                          Approve claim
+                        </button>
+                        <button
+                          onClick={() => handleRejectClaim(review)}
+                          className="flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors"
+                        >
+                          Release
+                        </button>
+                      </>
+                    )}
                     {review.status === 'pending' && (
                       <button
                         onClick={() => {
                           setAssigningReview(review);
                           setSelectedLocation(review.location_name || '');
                         }}
-                        className="flex items-center gap-2 px-4 py-2 bg-asap-blue text-white rounded-lg hover:bg-blue-600 transition-colors"
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${review.claimed_by ? 'border border-slate-200 text-slate-600 hover:bg-slate-50' : 'bg-asap-blue text-white hover:bg-blue-600'}`}
                       >
                         <UserPlus size={16} />
-                        Assign
+                        {review.claimed_by ? 'Assign to someone else' : 'Assign'}
                       </button>
                     )}
                     
