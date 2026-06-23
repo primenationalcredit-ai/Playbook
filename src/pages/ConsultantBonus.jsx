@@ -779,14 +779,63 @@ export default function ConsultantBonus() {
                 <RefreshCw size={20} className={c.reactivationCount > 0 ? 'text-teal-500' : 'text-slate-300'} />
                 <div>
                   <p className="font-medium text-slate-800"><Tip text="$75 one-time bonus for reviving a dormant affiliate. Dormant = affiliate org that has not sent a paying client in 90+ days, then sends a new one.">Reactivation Kicker</Tip></p>
-                  <p className="text-sm text-slate-500">{c.reactivationCount || 0} dormant affiliates revived × $75</p>
+                  <p className="text-sm text-slate-500">{c.reactivationCount || 0} revived × $75{(c.dormantReactivationCount || 0) > 0 ? ` · ${c.dormantReactivationCount} dormant to push` : ''}</p>
                 </div>
               </div>
               <p className={`text-lg font-bold ${c.reactivationBonus > 0 ? 'text-teal-600' : 'text-slate-300'}`}>{fmt(c.reactivationBonus || 0)}</p>
             </div>
-            {c.reactivationCount > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'reactivation' ? null : 'reactivation')} label={`View ${c.reactivationCount} reactivated`} />}
-            {expandedSection === 'reactivation' && c.reactivatedOrgs && (
-              <ClientPanel title="Reactivated Affiliates (90+ Days Dormant)" items={c.reactivatedOrgs.map(o => ({ name: o.name, amount: 75, type: `${o.daysDormant} days dormant`, date: o.reactivatedOn }))} onClose={() => setExpandedSection(null)} />
+            {c.clientDetail?.reactivationProgress?.length > 0 && <DrillButton onClick={() => setExpandedSection(expandedSection === 'reactivation' ? null : 'reactivation')} label="View progress" />}
+            {expandedSection === 'reactivation' && c.clientDetail?.reactivationProgress && (
+              <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="font-semibold text-slate-700 text-sm">Dormant affiliates (90+ days quiet). Get one to send a fresh client this month to earn $75</h4>
+                  <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
+                </div>
+                {c.clientDetail.reactivationProgress.map((o, idx) => (
+                  <div key={idx} className="bg-slate-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-800">{o.name}</span>
+                      <span className="text-xs text-right">{
+                        o.kind === 'reactivated'
+                          ? (o.alreadyAwarded
+                              ? <span className="text-slate-400">$75 already paid (one time)</span>
+                              : <span className="text-green-600 font-medium">Reactivated — $75 added this month</span>)
+                          : <span className="text-amber-600 font-medium">Dormant {o.daysDormant} days — send a fresh client to earn $75</span>
+                      }</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {o.kind === 'reactivated'
+                        ? `Quiet ${o.daysDormant} days, then a new client on ${fmtDate(o.reactivatedOn)}`
+                        : `Last paying client ${fmtDate(o.lastActive)}`}
+                    </p>
+                    {/* Referred clients for this affiliate: deal name, link, and what each needs */}
+                    {o.clients && o.clients.length > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {o.clients.map((cl, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-slate-700">
+                              {cl.dealId
+                                ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} ↗</a>
+                                : cl.name}
+                            </span>
+                            <span className={cl.status === 'qualified' ? 'text-green-600 font-medium' : cl.status === 'needs_advance' ? (cl.overdue ? 'text-red-600 font-medium' : 'text-amber-600') : 'text-slate-500'}>
+                              {cl.status === 'qualified'
+                                ? '✓ Qualified'
+                                : cl.status === 'needs_advance'
+                                  ? (cl.dueDate
+                                      ? (cl.overdue ? `Past due ${fmtDate(cl.dueDate)} — follow up` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
+                                      : 'Paid doc fee — needs a partial or final')
+                                  : 'Referred — needs to pay doc fee'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 mt-2">No referred clients with deals on file yet.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
           )}

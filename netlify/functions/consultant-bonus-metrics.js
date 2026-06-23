@@ -668,6 +668,62 @@ exports.handler = async (event) => {
         };
       }).sort((a, b) => (b.qualifiedClients - a.qualifiedClients) || (b.clients.length - a.clients.length));
 
+      // === REACTIVATION ROSTER ===
+      // A push list, parallel to newAffiliateProgress. Shows affiliate orgs the consultant can revive:
+      //  - dormant   = a real prior payment, then 90+ days quiet, and nothing yet this month (push target)
+      //  - reactivated = sent a fresh client this month after a 90+ day gap (earns the $75)
+      // Each org carries the same per-client roster shape as the new-affiliate panel so the consultant
+      // can see where every referred client stands.
+      const nowTs = new Date();
+      const reactivationProgress = [];
+      for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
+        const sorted = payments.slice().sort((a, b) => a.date.localeCompare(b.date));
+        const thisMonthPays = sorted.filter(p => p.month === targetMonth);
+        const priorPays = sorted.filter(p => p.month < targetMonth);
+        if (priorPays.length === 0) continue; // brand-new affiliate, not a reactivation candidate
+        const lastPrior = priorPays[priorPays.length - 1].date;
+        let kind = null, daysDormant = 0;
+        if (thisMonthPays.length > 0) {
+          const gap = Math.floor((new Date(thisMonthPays[0].date) - new Date(lastPrior)) / (1000 * 60 * 60 * 24));
+          if (gap >= 90) { kind = 'reactivated'; daysDormant = gap; }
+        } else {
+          const quiet = Math.floor((nowTs - new Date(lastPrior)) / (1000 * 60 * 60 * 24));
+          if (quiet >= 90) { kind = 'dormant'; daysDormant = quiet; }
+        }
+        if (!kind) continue;
+        const roster = {};
+        for (const p of allPayments) {
+          if (p.referrer_org === orgName && p.is_affiliate_deal) {
+            const key = p.pipedrive_deal_id || p.client_name;
+            if (!roster[key]) roster[key] = { name: p.client_name, dealId: p.pipedrive_deal_id || null, hasDoc: false, hasAdvanced: false };
+            if (p.payment_type === 'doc_fee') roster[key].hasDoc = true;
+            else if (['partial', 'final', 'paid_in_full'].includes(p.payment_type)) roster[key].hasAdvanced = true;
+          }
+        }
+        for (const id of myConsultDealIds) {
+          if (dealMeta[id]?.orgName === orgName && !roster[id]) {
+            roster[id] = { name: dealMeta[id]?.name || `Deal #${id}`, dealId: id, hasDoc: isPaid(id), hasAdvanced: false };
+          }
+        }
+        const rosterClients = Object.values(roster).map(c => {
+          const qualified = c.hasDoc && c.hasAdvanced;
+          const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
+          const due = status === 'needs_advance' ? nextDueForDeal(c.dealId, c.name) : null;
+          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false };
+        }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
+        reactivationProgress.push({
+          name: orgName, kind, daysDormant, lastActive: lastPrior,
+          reactivatedOn: kind === 'reactivated' ? thisMonthPays[0].date : null,
+          alreadyAwarded: awardedOrgs.has(`reactivation_kicker:${orgName}`),
+          clients: rosterClients
+        });
+      }
+      // Reactivated first, then the longest-dormant orgs at the top of the push list.
+      reactivationProgress.sort((a, b) =>
+        (a.kind === b.kind ? 0 : (a.kind === 'reactivated' ? -1 : 1)) || (b.daysDormant - a.daysDormant)
+      );
+      const dormantReactivationCount = reactivationProgress.filter(o => o.kind === 'dormant').length;
+
       // === PAY-PAST-DOC-FEE RATE ===
       // Of clients who paid doc fee THIS month, how many also paid partial/final?
       const docFeeClientKeys = new Set(myPayments.filter(p => p.payment_type === 'doc_fee').map(p => p.pipedrive_deal_id || p.client_name));
@@ -888,7 +944,7 @@ exports.handler = async (event) => {
         totalClients: clients.length,
         accelerator, docClub, docClubBonus,
         pifCount, pifBonus, pifClients,
-        reactivationCount, reactivationBonus, reactivatedOrgs,
+        reactivationCount, reactivationBonus, reactivatedOrgs, dormantReactivationCount,
         newAffiliateLaunchCount, newAffiliateLaunchBonus, newAffiliateOrgs, newAffiliateAllOrgs,
         producingAffiliates: producingAffiliates.length,
         affiliateDetail: producingAffiliates.map(([n, c]) => ({ name: n, clients: c })),
@@ -933,6 +989,7 @@ exports.handler = async (event) => {
             .sort((a, b) => b.clients - a.clients),
           affiliateGroups,
           newAffiliateProgress,
+          reactivationProgress,
           organicClients: myPayments.filter(p => !p.is_affiliate_deal).map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org || null, orgLabel: 'Org' })),
           affiliateClients: myPayments.filter(p => p.is_affiliate_deal).map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org })),
           docFeeList: myPayments.filter(p => p.payment_type === 'doc_fee').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date })),
