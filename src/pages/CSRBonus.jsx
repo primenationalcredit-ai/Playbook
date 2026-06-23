@@ -14,7 +14,7 @@ function StatCard({ label, value, sub, accent, onClick }) {
   );
 }
 
-const DEAL_URL = (id) => `https://asapcreditrepairusa.pipedrive.com/deal/${id}`;
+const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
 
 function DrillPanel({ drill, onClose }) {
   if (!drill) return null;

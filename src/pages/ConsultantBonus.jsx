@@ -44,7 +44,7 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
                   {item.amount !== undefined && <p className="font-bold text-green-600">{fmt(item.amount)}</p>}
                   {item.totalPaid !== undefined && <p className="font-bold text-green-600">{fmt(item.totalPaid)}</p>}
                 </div>
-                {item.org && <p className="text-xs text-blue-600 mb-1">Affiliate: {item.org}</p>}
+                {item.org && <p className="text-xs text-blue-600 mb-1">{item.orgLabel || 'Affiliate'}: {item.org}</p>}
                 {item.type && <span className={`text-xs px-2 py-0.5 rounded-full ${
                   item.type === 'doc_fee' ? 'bg-amber-100 text-amber-700' :
                   item.type === 'partial' ? 'bg-purple-100 text-purple-700' :

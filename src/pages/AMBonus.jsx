@@ -1161,7 +1161,7 @@ export default function AMBonus() {
                   <tr key={s.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <p className="font-medium">{s.client_name}</p>
-                      {s.pipedrive_deal_id && <p className="text-xs text-slate-400">Deal #{s.pipedrive_deal_id}</p>}
+                      {s.pipedrive_deal_id && <a href={DEAL_URL(s.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Deal #{s.pipedrive_deal_id} ↗</a>}
                     </td>
                     <td className="px-4 py-3">{s.product_name}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">
@@ -1215,7 +1215,7 @@ export default function AMBonus() {
                       <td className="px-4 py-3 font-medium">{submitter?.name || 'Unknown'}</td>
                       <td className="px-4 py-3">
                         <p>{s.client_name}</p>
-                        {s.pipedrive_deal_id && <p className="text-xs text-slate-400">Deal #{s.pipedrive_deal_id}</p>}
+                        {s.pipedrive_deal_id && <a href={DEAL_URL(s.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Deal #{s.pipedrive_deal_id} ↗</a>}
                       </td>
                       <td className="px-4 py-3">{s.product_name}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">
