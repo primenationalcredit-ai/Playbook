@@ -669,19 +669,23 @@ export default function AMBonus() {
                     </div>
                   );
                 })()}
-                {currentAMMetrics.stalledClients && currentAMMetrics.stalledClients.length > 0 && (
+                {(() => {
+                  const reportStalledList = (currentAMMetrics.stalledClients || []).filter(c => c.type === 'report' || c.type === 'both');
+                  if (reportStalledList.length === 0) return null;
+                  return (
                   <details className="mt-2 ml-8">
-                    <summary className="text-xs text-blue-500 cursor-pointer">View {currentAMMetrics.stallCount} stalled clients</summary>
+                    <summary className="text-xs text-blue-500 cursor-pointer">View {reportStalledList.length} stalled clients</summary>
                     <div className="mt-1 max-h-48 overflow-y-auto">
-                      {currentAMMetrics.stalledClients.map((c, i) => (
+                      {reportStalledList.map((c, i) => (
                         <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100 gap-2">
-                          <span className="text-slate-700">{c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name}</span>
+                          <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
                           <span className="text-red-500 text-right">{c.reason || (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd} days past round end` : '')}</span>
                         </div>
                       ))}
                     </div>
                   </details>
-                )}
+                  );
+                })()}
               </div>
 
               {/* 3. Additional Rounds */}
