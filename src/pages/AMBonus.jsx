@@ -670,7 +670,7 @@ export default function AMBonus() {
                   );
                 })()}
                 {(() => {
-                  const reportStalledList = (currentAMMetrics.stalledClients || []).filter(c => c.type === 'report' || c.type === 'both');
+                  const reportStalledList = (currentAMMetrics.stalledClients || []).filter(c => c.type !== 'payment');
                   if (reportStalledList.length === 0) return null;
                   return (
                   <details className="mt-2 ml-8">

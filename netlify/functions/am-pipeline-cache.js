@@ -1,21 +1,18 @@
 // am-pipeline-cache.js  (round-end based report stall; rate-safe, resumable)
 //
 // Stall definition (per Joe):
-//   - Universe = live clients with an OPEN deal in CRS (45) or Sold (7), PLUS
-//     clients moved to Incomplete (71) in the CURRENT calendar month (so an AM
-//     can't dump a post-round client into Incomplete to hide it).
-//   - "Round is over" = the latest round END date on the deal has passed.
-//     Round dates are DEAL date-range fields; end is stored at key + '_until'.
-//   - Denominator = clients whose round is over.
-//   - Stalled = round over AND person Update Status = Logins Not Ready (934) AND
-//     it has been >= 14 days since the round end. Incomplete-this-month + round
-//     over also counts as stalled.
-//   - Payment statuses and the mixed "Round Done Need Reports/Payment" are NOT
-//     counted. Check Logins is NOT counted.
+//   - Universe = clients with an OPEN deal in CRS (45), PLUS clients in
+//     Incomplete (71). Sold (7) is excluded because services have not started.
+//   - Population = clients who STARTED a round (round 1, 2, or 3) within the last
+//     90 days. A round is a DEAL date-range field: start at the key, end at key + '_until'.
+//     Clients whose only rounds started more than 90 days ago are out entirely.
+//   - Stalled = in that population AND person Update Status = Logins Not Ready (934)
+//     AND it has been >= 14 days since the latest round end. No upper cap.
+//   - Payment statuses and Check Logins are NOT counted here.
 //
 // Account Manager + Update Status are PERSON fields; round dates are DEAL fields.
-// So phase 1 pages open deals (round dates + which pipeline + move date), phase 2
-// pages people to read AM + status, then we join and score.
+// So phase 1 pages open deals (round start/end + pipeline), phase 2 pages people
+// to read AM + status, then we join and score.
 //
 // Writes app_cache[am_pipeline_full] (read by am-stall-rate) and
 // app_cache[am_person_to_am]. Progress: am_pipeline_progress_v5.
@@ -28,23 +25,23 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const UPDATE_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
 const LOGINS_NOT_READY = 934;
-const STALL_MIN_DAYS = 14;   // grace period after round end before it counts
-const STALL_MAX_DAYS = 120;  // beyond this the client is cleanup, not a current stall
+const STALL_MIN_DAYS = 14;       // grace period after a round ends before Logins Not Ready counts
+const START_WINDOW_DAYS = 90;    // a client is in scope only if a round STARTED within this many days
 
-// Round date-range deal fields (start at key, end at key + '_until')
-const ROUND_END_FIELDS = [
-  '6979c70df67f42c28dfcff39284ae17d564d600f_until', // Round 1 end
-  'ff3697496664744d64d9f290766f919f40c23aa0_until', // Round 2 end
-  '8d681007c089ee4c7390c02ee2f027ca60374708_until'  // Round 3 end
+// Round date-range deal fields: start is stored at the key, end at key + '_until'.
+const ROUND_KEYS = [
+  '6979c70df67f42c28dfcff39284ae17d564d600f', // Round 1
+  'ff3697496664744d64d9f290766f919f40c23aa0', // Round 2
+  '8d681007c089ee4c7390c02ee2f027ca60374708'  // Round 3
 ];
 
-const PIPELINES = { 45: 'CRS', 7: 'Sold', 71: 'Incomplete' };
+const PIPELINES = { 45: 'CRS', 71: 'Incomplete' }; // Sold (7) excluded: services not started
 const PIPELINE_IDS = new Set(Object.keys(PIPELINES).map(Number));
-const PRIO = { CRS: 3, Sold: 2, Incomplete: 1 };
+const PRIO = { CRS: 2, Incomplete: 1 };
 
 const TIME_BUDGET_MS = 8500;
 const CHECKPOINT_EVERY = 25;
-const PROGRESS_KEY = 'am_pipeline_progress_v6';
+const PROGRESS_KEY = 'am_pipeline_progress_v7';
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 const supaAuth = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 
@@ -68,10 +65,15 @@ async function writeCache(key, data) {
   await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, { method: 'POST', headers: { ...supaAuth, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cache_key: key, cache_value: JSON.stringify(data), updated_at: new Date().toISOString() }) });
 }
 
-function roundEndOfDeal(deal) {
-  const ends = ROUND_END_FIELDS.map(k => parseDate(deal[k])).filter(Boolean);
-  if (!ends.length) return null;
-  return new Date(Math.max(...ends.map(d => d.getTime())));
+function roundDates(deal) {
+  let maxStart = null, maxEnd = null;
+  for (const k of ROUND_KEYS) {
+    const s = parseDate(deal[k]);
+    const e = parseDate(deal[k + '_until']);
+    if (s && (!maxStart || s > maxStart)) maxStart = s;
+    if (e && (!maxEnd || e > maxEnd)) maxEnd = e;
+  }
+  return { maxStart, maxEnd };
 }
 
 async function publish(personData, complete, extra) {
@@ -83,7 +85,7 @@ async function publish(personData, complete, extra) {
     if (!amStats[d.am]) amStats[d.am] = { evaluated: 0, stalled: 0, activeBook: 0, stalledClients: [] };
     const s = amStats[d.am];
     s.activeBook++;
-    if (!d.inWindow) continue;       // only clients in the 14-120 day window are evaluated
+    if (!d.inWindow) continue;       // only clients who started a round within 90 days are evaluated
     s.evaluated++; evaluated++;
     if (d.stalled) {
       s.stalled++; stalledTotal++;
@@ -107,7 +109,7 @@ async function publish(personData, complete, extra) {
   // passes (e.g. a single scheduled chunk) must never overwrite the last good
   // snapshot with empty/half-built data.
   if (complete) {
-    await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, stallWindowDays: { min: STALL_MIN_DAYS, max: STALL_MAX_DAYS }, basis: 'round_end_logins_not_ready', complete, calculatedAt, ...extra });
+    await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, startWindowDays: START_WINDOW_DAYS, basis: 'round_start_90d_logins_not_ready', complete, calculatedAt, ...extra });
     await writeCache('am_person_to_am', { personToAM, calculatedAt });
   }
   return { managers: Object.keys(results).length, evaluated, stalledTotal, sample };
@@ -118,14 +120,13 @@ exports.handler = async (event) => {
   const t0 = Date.now();
   const left = () => (Date.now() - t0) < TIME_BUDGET_MS;
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   try {
     const params = (event && event.queryStringParameters) || {};
 
     // Real AM roster (from the users table) so non-AMs never enter the metric.
     let rosterTokens = [];
     try {
-      const amRes = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.account_managers&select=name`, { headers: localSupa });
+      const amRes = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.account_managers&select=name`, { headers: supaAuth });
       if (amRes.ok) {
         const amUsers = await amRes.json();
         rosterTokens = amUsers.flatMap(u => (u.name || '').toLowerCase().split(/[\s-]+/).filter(p => p.length > 2));
@@ -141,7 +142,7 @@ exports.handler = async (event) => {
     let pr = await readCache(PROGRESS_KEY);
     const fresh = params.reset === '1' || !pr || pr.complete;
     let phase = fresh ? 'deals' : (pr.phase || 'deals');
-    let activeData = fresh ? {} : (pr.activeData || {});   // pid -> {pipeline, roundEnd, movedThisMonth, dealId}
+    let activeData = fresh ? {} : (pr.activeData || {});   // pid -> {pipeline, roundStart, roundEnd, dealId}
     let cursor = fresh ? 0 : (pr.cursor || 0);
     let personData = fresh ? {} : (pr.personData || {});
     let noAm = fresh ? 0 : (pr.noAm || 0);
@@ -160,18 +161,12 @@ exports.handler = async (event) => {
           const pid = d.person_id?.value || d.person_id || null;
           if (!pid) continue;
           const pipeName = PIPELINES[plId];
-          let movedThisMonth = false;
-          if (plId === 71) {
-            // Only the stage-change date marks an actual move into Incomplete.
-            // update_time changes on every sync/touch, so it is NOT a valid signal.
-            const moved = parseDate(d.stage_change_time);
-            if (!moved || moved < monthStart) continue; // skip old Incompletes
-            movedThisMonth = true;
-          }
-          const re = roundEndOfDeal(d);
+          // Incomplete is kept regardless of when it was moved; the round-start-within-90-days
+          // gate in phase 2 decides whether the client actually counts.
+          const { maxStart, maxEnd } = roundDates(d);
           const existing = activeData[pid];
-          const better = !existing || PRIO[pipeName] > PRIO[existing.pipeline] || (!existing.roundEnd && re);
-          if (better) activeData[pid] = { pipeline: pipeName, roundEnd: re ? re.toISOString() : null, movedThisMonth, dealId: d.id };
+          const better = !existing || PRIO[pipeName] > PRIO[existing.pipeline] || (!existing.roundStart && maxStart);
+          if (better) activeData[pid] = { pipeline: pipeName, roundStart: maxStart ? maxStart.toISOString() : null, roundEnd: maxEnd ? maxEnd.toISOString() : null, dealId: d.id };
         }
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
         cursor = res.additional_data?.pagination?.next_start || (cursor + 500);
@@ -196,15 +191,19 @@ exports.handler = async (event) => {
           if (!am || am === 'null') { noAm++; continue; }
           if (!rosterOk(am)) continue; // skip non-AMs (e.g., Rose, Mariana)
           const statusId = statusIdOf(p[UPDATE_STATUS_FIELD]);
+          const rs = ad.roundStart ? new Date(ad.roundStart) : null;
           const re = ad.roundEnd ? new Date(ad.roundEnd) : null;
-          const roundOver = !!(re && re <= now);
-          const daysSince = roundOver ? daysBetween(now, re) : null;
-          // Only clients whose round ended 14-120 days ago are in scope.
-          const inWindow = roundOver && daysSince >= STALL_MIN_DAYS && daysSince <= STALL_MAX_DAYS;
+          // Population: the client started a round (1, 2, or 3) within the last 90 days.
+          const startedWithin90 = !!(rs && rs <= now && daysBetween(now, rs) <= START_WINDOW_DAYS);
+          const roundEnded = !!(re && re <= now);
+          const daysSince = roundEnded ? daysBetween(now, re) : null;
+          const inWindow = startedWithin90;
           let stalled = false, reason = null;
-          if (inWindow && statusId === LOGINS_NOT_READY) { stalled = true; reason = `Logins Not Ready ${daysSince}d past round end`; }
-          else if (inWindow && ad.pipeline === 'Incomplete' && ad.movedThisMonth) { stalled = true; reason = `Moved to Incomplete this month, round over (${daysSince}d)`; }
-          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, roundOver, daysSince, inWindow, stalled, reason };
+          // Stalled: in the population, still Logins Not Ready, and 14+ days past the latest round end.
+          if (inWindow && statusId === LOGINS_NOT_READY && roundEnded && daysSince >= STALL_MIN_DAYS) {
+            stalled = true; reason = `Logins Not Ready ${daysSince}d past round end`;
+          }
+          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, roundEnded, daysSince, inWindow, stalled, reason };
         }
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
         cursor = res.additional_data?.pagination?.next_start || (cursor + 500);
