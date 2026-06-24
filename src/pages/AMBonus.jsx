@@ -504,7 +504,8 @@ export default function AMBonus() {
                       <th className="px-4 py-2 font-medium">Account Manager</th>
                       <th className="px-4 py-2 font-medium text-center">Credit Signups</th>
                       <th className="px-4 py-2 font-medium text-center">Stall Rate</th>
-                      <th className="px-4 py-2 font-medium text-center">Pmt Stall</th>
+                      <th className="px-4 py-2 font-medium text-center">Past Due</th>
+                      <th className="px-4 py-2 font-medium text-center">Overall</th>
                       <th className="px-4 py-2 font-medium text-center">Add'l Rounds</th>
                       <th className="px-4 py-2 font-medium text-center">Referrals</th>
                       <th className="px-4 py-2 font-medium text-center">Reviews</th>
@@ -520,7 +521,8 @@ export default function AMBonus() {
                         </td>
                         <td className="px-4 py-3 text-center">{m?.approvedCount ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.stallRate == null ? '—' : fmtPct(m.stallRate)}</td>
-                        <td className="px-4 py-3 text-center">{m?.paymentStallRate == null ? '—' : fmtPct(m.paymentStallRate)}</td>
+                        <td className="px-4 py-3 text-center">{m?.pastDueRate == null ? '—' : fmtPct(m.pastDueRate)}</td>
+                        <td className="px-4 py-3 text-center">{m?.overallRate == null ? '—' : fmtPct(m.overallRate)}</td>
                         <td className="px-4 py-3 text-center">{m?.additionalRounds ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.referrals ?? 0}{m?.referralPaid != null ? ` (${m.referralPaid} paid)` : ''}</td>
                         <td className="px-4 py-3 text-center">{m?.reviewCount ?? 0}</td>
@@ -533,6 +535,7 @@ export default function AMBonus() {
                     <tr className="bg-slate-50 font-semibold">
                       <td className="px-4 py-3">Totals</td>
                       <td className="px-4 py-3 text-center">{sum('approvedCount')}</td>
+                      <td className="px-4 py-3 text-center">—</td>
                       <td className="px-4 py-3 text-center">—</td>
                       <td className="px-4 py-3 text-center">—</td>
                       <td className="px-4 py-3 text-center">{sum('additionalRounds')}</td>
@@ -569,7 +572,7 @@ export default function AMBonus() {
             <div className="bg-white rounded-xl p-4 border shadow-sm">
               <Clock size={18} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 40 ? 'text-green-500 mb-2' : 'text-red-500 mb-2') : 'text-amber-500 mb-2'} />
               <p className="text-3xl font-bold">{currentAMMetrics.stallRate !== null ? currentAMMetrics.stallRate + '%' : '--'}</p>
-              <p className="text-sm text-slate-500"><Tip text="Share of clients whose latest round ended 14 to 120 days ago that are still in Logins Not Ready. Lower is better. Bonus tiers: 40% or below earns $75, 30% earns $150, 20% earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate</Tip></p>
+              <p className="text-sm text-slate-500"><Tip text="Clients still in Logins Not Ready 14 or more days after their latest round ended, among clients who started a round in the last 90 days. Lower is better. Bonus tiers: 40% or below earns $75, 30% earns $150, 20% earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate</Tip></p>
               {currentAMMetrics.stallRate !== null && <p className="text-xs mt-1">{currentAMMetrics.stallCount} of {currentAMMetrics.stallTotal} clients stalled</p>}
               {currentAMMetrics.stallRate === null && <p className="text-xs text-slate-400 mt-1">Loading from Pipedrive...</p>}
             </div>

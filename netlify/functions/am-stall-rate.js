@@ -46,8 +46,10 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
 
     // Prefer the full-coverage scan written by the scheduled am-pipeline-cache
-    // function. It scans ALL persons, not just the first 5,000, so it is the
-    // authoritative source whenever it is fresh.
+    // function. It scans ALL persons off the round dates, so it is the authoritative
+    // source. The job only runs midday to evening, so keep using the last complete
+    // pass for up to 48 hours. A stale-but-correct round snapshot always beats the
+    // crude person-level fallback, which has no round window and dilutes the rate.
     if (!params.refresh) {
       try {
         const fullRes = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.am_pipeline_full&select=*`, {
@@ -58,7 +60,7 @@ exports.handler = async (event) => {
           if (rows.length > 0) {
             const full = JSON.parse(rows[0].cache_value);
             const age = Date.now() - new Date(full.calculatedAt).getTime();
-            if (full.accountManagers && age < 4 * 3600000) { // 4 hours
+            if (full.accountManagers && age < 48 * 3600000) { // 48 hours
               return { statusCode: 200, headers, body: JSON.stringify({ ...full, fromCache: true, source: 'full_scan' }) };
             }
           }
