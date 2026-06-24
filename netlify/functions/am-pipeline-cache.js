@@ -27,6 +27,8 @@ const UPDATE_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
 const LOGINS_NOT_READY = 934;
 const STALL_MIN_DAYS = 14;       // grace period after a round ends before Logins Not Ready counts
 const START_WINDOW_DAYS = 90;    // a client is in scope only if a round STARTED within this many days
+const PASTDUE_MIN_DAYS = 5;      // grace before an unpaid invoice counts against the AM
+const PASTDUE_MAX_DAYS = 30;     // after this the client is a non-payer, not a collection miss, so it drops off
 
 // Round date-range deal fields: start is stored at the key, end at key + '_until'.
 const ROUND_KEYS = [
@@ -65,6 +67,39 @@ async function writeCache(key, data) {
   await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, { method: 'POST', headers: { ...supaAuth, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cache_key: key, cache_value: JSON.stringify(data), updated_at: new Date().toISOString() }) });
 }
 
+const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+// All Zoho invoices, paged. Used at publish time to flag clients whose invoice is past due.
+async function readInvoices() {
+  const out = []; let offset = 0; const page = 1000;
+  while (true) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?select=customer_name,due_date,balance,pipedrive_deal_id&offset=${offset}&limit=${page}`, { headers: supaAuth });
+    if (!res.ok) break;
+    const batch = await res.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    out.push(...batch);
+    if (batch.length < page) break;
+    offset += page;
+    if (offset > 200000) break;
+  }
+  return out;
+}
+// Deal ids and customer names with an invoice 5 to 30 days past its due date and still owing.
+async function pastDueSets() {
+  const dealIds = new Set(), names = new Set();
+  const today = Date.now();
+  for (const inv of await readInvoices()) {
+    const bal = parseFloat(inv.balance) || 0;
+    if (bal <= 1 || !inv.due_date) continue;
+    const due = parseDate(inv.due_date);
+    if (!due) continue;
+    const daysPast = Math.floor((today - due.getTime()) / 86400000);
+    if (daysPast < PASTDUE_MIN_DAYS || daysPast > PASTDUE_MAX_DAYS) continue;
+    if (inv.pipedrive_deal_id) dealIds.add(String(inv.pipedrive_deal_id));
+    if (inv.customer_name) names.add(norm(inv.customer_name));
+  }
+  return { dealIds, names };
+}
+
 function roundDates(deal) {
   let maxStart = null, maxEnd = null;
   for (const k of ROUND_KEYS) {
@@ -77,15 +112,22 @@ function roundDates(deal) {
 }
 
 async function publish(personData, complete, extra) {
-  const today = new Date();
+  // Past due is only needed when we are going to publish (a complete pass).
+  const pd = complete ? await pastDueSets() : { dealIds: new Set(), names: new Set() };
+  const isPastDue = (d) => pd.dealIds.has(String(d.dealId)) || pd.names.has(norm(d.name));
   const amStats = {}; const personToAM = {};
   let evaluated = 0, stalledTotal = 0, sample = [];
   for (const [id, d] of Object.entries(personData)) {
     personToAM[id] = d.am;
-    if (!amStats[d.am]) amStats[d.am] = { evaluated: 0, stalled: 0, activeBook: 0, stalledClients: [] };
+    if (!amStats[d.am]) amStats[d.am] = { evaluated: 0, stalled: 0, activeBook: 0, crsBook: 0, pastDue: 0, stalledClients: [], pastDueClients: [] };
     const s = amStats[d.am];
     s.activeBook++;
-    if (!d.inWindow) continue;       // only clients who started a round within 90 days are evaluated
+    // Payment past due is measured over the active CRS book only.
+    if (d.pipeline === 'CRS') {
+      s.crsBook++;
+      if (isPastDue(d)) { s.pastDue++; s.pastDueClients.push({ name: d.name, id, dealId: d.dealId }); }
+    }
+    if (!d.inWindow) continue;       // only clients who started a round within 90 days are evaluated for stall
     s.evaluated++; evaluated++;
     if (d.stalled) {
       s.stalled++; stalledTotal++;
@@ -95,13 +137,29 @@ async function publish(personData, complete, extra) {
   }
   const results = {};
   for (const [am, s] of Object.entries(amStats)) {
+    const reportStallRate = s.evaluated > 0 ? Math.round((s.stalled / s.evaluated) * 100) : null;
+    const paymentPastDueRate = s.crsBook > 0 ? Math.round((s.pastDue / s.crsBook) * 100) : null;
+    // Overall = simple average of the two rates, each kept over its own group. If one has no
+    // group to measure, the overall is just the other.
+    let overall = null;
+    if (reportStallRate != null && paymentPastDueRate != null) overall = Math.round((reportStallRate + paymentPastDueRate) / 2);
+    else if (reportStallRate != null) overall = reportStallRate;
+    else if (paymentPastDueRate != null) overall = paymentPastDueRate;
     results[am] = {
-      totalClients: s.evaluated,              // denominator = round-over clients
+      totalClients: s.evaluated,              // report stall denominator = round-started-within-90 clients
       activeBook: s.activeBook,
+      crsBook: s.crsBook,                     // payment past due denominator
       reportStalled: s.stalled,
-      reportStallRate: s.evaluated > 0 ? Math.round((s.stalled / s.evaluated) * 100) : 0,
-      paymentStalled: 0, paymentStallRate: 0, // payment never penalizes
-      stalledClients: s.stalledClients.slice(0, 50)
+      reportStallRate: reportStallRate == null ? 0 : reportStallRate,
+      reportStallRateNull: reportStallRate == null,
+      paymentPastDue: s.pastDue,
+      paymentPastDueRate: paymentPastDueRate == null ? 0 : paymentPastDueRate,
+      paymentPastDueRateNull: paymentPastDueRate == null,
+      overall: overall == null ? 0 : overall,
+      overallNull: overall == null,
+      paymentStalled: 0, paymentStallRate: 0, // legacy fields kept so older UI does not break
+      stalledClients: s.stalledClients.slice(0, 50),
+      pastDueClients: s.pastDueClients.slice(0, 50)
     };
   }
   const calculatedAt = new Date().toISOString();
@@ -109,7 +167,7 @@ async function publish(personData, complete, extra) {
   // passes (e.g. a single scheduled chunk) must never overwrite the last good
   // snapshot with empty/half-built data.
   if (complete) {
-    await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, startWindowDays: START_WINDOW_DAYS, basis: 'round_start_90d_logins_not_ready', complete, calculatedAt, ...extra });
+    await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, startWindowDays: START_WINDOW_DAYS, pastDueWindowDays: { min: PASTDUE_MIN_DAYS, max: PASTDUE_MAX_DAYS }, basis: 'round_start_90d_logins_not_ready', complete, calculatedAt, ...extra });
     await writeCache('am_person_to_am', { personToAM, calculatedAt });
   }
   return { managers: Object.keys(results).length, evaluated, stalledTotal, sample };
@@ -203,7 +261,7 @@ exports.handler = async (event) => {
           if (inWindow && statusId === LOGINS_NOT_READY && roundEnded && daysSince >= STALL_MIN_DAYS) {
             stalled = true; reason = `Logins Not Ready ${daysSince}d past round end`;
           }
-          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, roundEnded, daysSince, inWindow, stalled, reason };
+          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, dealId: ad.dealId, roundEnded, daysSince, inWindow, stalled, reason };
         }
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
         cursor = res.additional_data?.pagination?.next_start || (cursor + 500);
