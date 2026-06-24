@@ -1,14 +1,22 @@
 // am-pipeline-cache.js  (round-end based report stall; rate-safe, resumable)
 //
-// Stall definition (per Joe):
+// Stall definition (per Joe and Astrid):
 //   - Universe = clients with an OPEN deal in CRS (45), PLUS clients in
 //     Incomplete (71). Sold (7) is excluded because services have not started.
-//   - Population = clients who STARTED a round (round 1, 2, or 3) within the last
-//     90 days. A round is a DEAL date-range field: start at the key, end at key + '_until'.
-//     Clients whose only rounds started more than 90 days ago are out entirely.
+//   - Population = clients whose LATEST round (1, 2, or 3) STARTED 45 to 90 days
+//     ago. The 45 day floor removes mid-round clients whose current round is
+//     still running and therefore can't be stalled yet.
 //   - Stalled = in that population AND person Update Status = Logins Not Ready (934)
 //     AND it has been >= 14 days since the latest round end. No upper cap.
 //   - Payment statuses and Check Logins are NOT counted here.
+//
+// Payment Past Due (separate from Reports Stall):
+//   - Denominator = CRS clients with at least one invoice whose original due date
+//     is in the last 30 days, whether they paid or not.
+//   - Numerator = subset whose invoice is 5 or more days past its original due
+//     date and still has a balance owing. The 5 day grace ignores payments in
+//     transit. Anything past 30 days drops off the denominator naturally, so the
+//     client stops counting once they are a clear non-payer.
 //
 // Account Manager + Update Status are PERSON fields; round dates are DEAL fields.
 // So phase 1 pages open deals (round start/end + pipeline), phase 2 pages people
@@ -25,10 +33,11 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const UPDATE_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
 const LOGINS_NOT_READY = 934;
-const STALL_MIN_DAYS = 14;       // grace period after a round ends before Logins Not Ready counts
-const START_WINDOW_DAYS = 90;    // a client is in scope only if a round STARTED within this many days
-const PASTDUE_MIN_DAYS = 5;      // grace before an unpaid invoice counts against the AM
-const PASTDUE_MAX_DAYS = 30;     // after this the client is a non-payer, not a collection miss, so it drops off
+const STALL_MIN_DAYS = 14;            // grace period after a round ends before Logins Not Ready counts
+const START_WINDOW_MIN_DAYS = 45;     // round must have started at least this long ago to be evaluated (cuts out mid-round)
+const START_WINDOW_MAX_DAYS = 90;     // and no more than this long ago (cuts out end-of-service / old clients)
+const PASTDUE_MIN_DAYS = 5;           // grace before an unpaid invoice counts against the AM
+const PAYMENT_WINDOW_DAYS = 30;       // a client is in the payment denominator only if their original due date is within the last 30 days
 
 // Round date-range deal fields: start is stored at the key, end at key + '_until'.
 const ROUND_KEYS = [
@@ -83,28 +92,39 @@ async function readInvoices() {
   }
   return out;
 }
-// Past due lookup: maps a deal id and a normalized client name to the worst past-due invoice
-// (the one with the most days past its due date). Returns null when the client is not past due
-// or their past-due invoice is more than PASTDUE_MAX_DAYS old (non-payer drops off).
-async function pastDueMap() {
-  const byDeal = new Map(), byName = new Map();
+// Payment classification:
+//   - inWindow: clients with at least one invoice whose original due date is in
+//     the last 30 days (any balance, paid or unpaid). This is the denominator.
+//   - pastDue: subset whose invoice is >= 5 days past its due date AND still has
+//     a balance > $1. This is the numerator. Carries the worst invoice's details
+//     (most days past due) for the breakdown UI.
+async function paymentClassification() {
+  const inWindowDeal = new Set(), inWindowName = new Set();
+  const pastDueDeal = new Map(), pastDueName = new Map();
   const today = Date.now();
   const consider = (key, map, entry) => {
     const prev = map.get(key);
     if (!prev || entry.daysPastDue > prev.daysPastDue) map.set(key, entry);
   };
   for (const inv of await readInvoices()) {
-    const bal = parseFloat(inv.balance) || 0;
-    if (bal <= 1 || !inv.due_date) continue;
+    if (!inv.due_date) continue;
     const due = parseDate(inv.due_date);
     if (!due) continue;
     const daysPastDue = Math.floor((today - due.getTime()) / 86400000);
-    if (daysPastDue < PASTDUE_MIN_DAYS || daysPastDue > PASTDUE_MAX_DAYS) continue;
-    const entry = { dueDate: String(inv.due_date).slice(0, 10), daysPastDue, balance: Math.round(bal) };
-    if (inv.pipedrive_deal_id) consider(String(inv.pipedrive_deal_id), byDeal, entry);
-    if (inv.customer_name) consider(norm(inv.customer_name), byName, entry);
+    // Denominator window: due date was within the last 30 days (today through 30 days ago).
+    // Anything older drops off naturally so non-payers stop counting.
+    if (daysPastDue < 0 || daysPastDue > PAYMENT_WINDOW_DAYS) continue;
+    if (inv.pipedrive_deal_id) inWindowDeal.add(String(inv.pipedrive_deal_id));
+    if (inv.customer_name) inWindowName.add(norm(inv.customer_name));
+    // Numerator: 5+ days past due and still owing.
+    const bal = parseFloat(inv.balance) || 0;
+    if (daysPastDue >= PASTDUE_MIN_DAYS && bal > 1) {
+      const entry = { dueDate: String(inv.due_date).slice(0, 10), daysPastDue, balance: Math.round(bal) };
+      if (inv.pipedrive_deal_id) consider(String(inv.pipedrive_deal_id), pastDueDeal, entry);
+      if (inv.customer_name) consider(norm(inv.customer_name), pastDueName, entry);
+    }
   }
-  return { byDeal, byName };
+  return { inWindowDeal, inWindowName, pastDueDeal, pastDueName };
 }
 
 function roundDates(deal) {
@@ -119,48 +139,50 @@ function roundDates(deal) {
 }
 
 async function publish(personData, complete, extra) {
-  // Past due is only needed when we are going to publish (a complete pass).
-  const pd = complete ? await pastDueMap() : { byDeal: new Map(), byName: new Map() };
-  const pastDueDetails = (d) => pd.byDeal.get(String(d.dealId)) || pd.byName.get(norm(d.name)) || null;
+  // Payment classification is only needed when we are going to publish (a complete pass).
+  const pc = complete ? await paymentClassification() : { inWindowDeal: new Set(), inWindowName: new Set(), pastDueDeal: new Map(), pastDueName: new Map() };
+  const hasPaymentDue = (d) => pc.inWindowDeal.has(String(d.dealId)) || pc.inWindowName.has(norm(d.name));
+  const pastDueDetails = (d) => pc.pastDueDeal.get(String(d.dealId)) || pc.pastDueName.get(norm(d.name)) || null;
   const amStats = {}; const personToAM = {};
   let evaluated = 0, stalledTotal = 0, sample = [];
   for (const [id, d] of Object.entries(personData)) {
     personToAM[id] = d.am;
     if (!amStats[d.am]) amStats[d.am] = {
-      evaluated: 0, stalled: 0, activeBook: 0, crsBook: 0, pastDue: 0,
+      evaluated: 0, stalled: 0, activeBook: 0, crsBook: 0,
+      paymentDue: 0, pastDue: 0,
       stalledClients: [], healthyInWindow: [],
-      pastDueClients: [], crsHealthy: []
+      pastDueClients: [], paymentOnTime: []
     };
     const s = amStats[d.am];
     s.activeBook++;
-    // Payment past due is measured over the active CRS book only.
+    // Payment past due is measured over CRS clients who had an invoice due in the last 30 days.
     if (d.pipeline === 'CRS') {
       s.crsBook++;
-      const pdHit = pastDueDetails(d);
-      if (pdHit) {
-        s.pastDue++;
-        s.pastDueClients.push({ name: d.name, id, dealId: d.dealId, dueDate: pdHit.dueDate, daysPastDue: pdHit.daysPastDue, balance: pdHit.balance });
-      } else {
-        s.crsHealthy.push({ name: d.name, id, dealId: d.dealId });
+      if (hasPaymentDue(d)) {
+        s.paymentDue++;
+        const pdHit = pastDueDetails(d);
+        if (pdHit) {
+          s.pastDue++;
+          s.pastDueClients.push({ name: d.name, id, dealId: d.dealId, dueDate: pdHit.dueDate, daysPastDue: pdHit.daysPastDue, balance: pdHit.balance });
+        } else {
+          s.paymentOnTime.push({ name: d.name, id, dealId: d.dealId });
+        }
       }
     }
-    if (!d.inWindow) continue;       // only clients who started a round within 90 days are evaluated for stall
+    if (!d.inWindow) continue;       // only clients whose latest round started 45 to 90 days ago are evaluated for stall
     s.evaluated++; evaluated++;
     if (d.stalled) {
       s.stalled++; stalledTotal++;
       s.stalledClients.push({ name: d.name, id, dealId: d.dealId, daysSinceRoundEnd: d.daysSince, roundEndDate: d.roundEndDate, pipeline: d.pipeline, reason: d.reason });
       if (sample.length < 5) sample.push({ name: d.name, daysSinceRoundEnd: d.daysSince, reason: d.reason });
     } else {
-      // Healthy in-window: started a round in the last 90 days and is NOT stalled.
-      // Carry round end info so the UI can show "round ended X" or "round still open".
       s.healthyInWindow.push({ name: d.name, id, dealId: d.dealId, daysSinceRoundEnd: d.roundEnded ? d.daysSince : null, roundEndDate: d.roundEndDate, roundEnded: d.roundEnded });
     }
   }
   const results = {};
   for (const [am, s] of Object.entries(amStats)) {
     const reportStallRate = s.evaluated > 0 ? Math.round((s.stalled / s.evaluated) * 100) : null;
-    const paymentPastDueRate = s.crsBook > 0 ? Math.round((s.pastDue / s.crsBook) * 100) : null;
-    // Overall = simple average of the two rates, each kept over its own group.
+    const paymentPastDueRate = s.paymentDue > 0 ? Math.round((s.pastDue / s.paymentDue) * 100) : null;
     let overall = null;
     if (reportStallRate != null && paymentPastDueRate != null) overall = Math.round((reportStallRate + paymentPastDueRate) / 2);
     else if (reportStallRate != null) overall = reportStallRate;
@@ -170,6 +192,7 @@ async function publish(personData, complete, extra) {
       totalClients: s.evaluated,
       activeBook: s.activeBook,
       crsBook: s.crsBook,
+      paymentDue: s.paymentDue,           // new denominator for payment past due
       reportStalled: s.stalled,
       reportStallRate: reportStallRate == null ? 0 : reportStallRate,
       reportStallRateNull: reportStallRate == null,
@@ -179,20 +202,15 @@ async function publish(personData, complete, extra) {
       overall: overall == null ? 0 : overall,
       overallNull: overall == null,
       paymentStalled: 0, paymentStallRate: 0,
-      // Stalled and healthy lists for the report stall drill-down. Sorted: stalled by most overdue, healthy by name.
       stalledClients: s.stalledClients.sort((a, b) => (b.daysSinceRoundEnd || 0) - (a.daysSinceRoundEnd || 0)).slice(0, 500),
       healthyInWindow: s.healthyInWindow.sort(sortByName).slice(0, 1000),
-      // Past due and healthy lists for the payment drill-down. Past due sorted by most days past due.
       pastDueClients: s.pastDueClients.sort((a, b) => (b.daysPastDue || 0) - (a.daysPastDue || 0)).slice(0, 500),
-      crsHealthy: s.crsHealthy.sort(sortByName).slice(0, 1000)
+      paymentOnTime: s.paymentOnTime.sort(sortByName).slice(0, 1000)
     };
   }
   const calculatedAt = new Date().toISOString();
-  // Only publish to the live dashboard caches when a pass is COMPLETE. Partial
-  // passes (e.g. a single scheduled chunk) must never overwrite the last good
-  // snapshot with empty/half-built data.
   if (complete) {
-    await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, startWindowDays: START_WINDOW_DAYS, pastDueWindowDays: { min: PASTDUE_MIN_DAYS, max: PASTDUE_MAX_DAYS }, basis: 'round_start_90d_logins_not_ready', complete, calculatedAt, ...extra });
+    await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, startWindowDays: { min: START_WINDOW_MIN_DAYS, max: START_WINDOW_MAX_DAYS }, paymentWindowDays: PAYMENT_WINDOW_DAYS, pastDueMinDays: PASTDUE_MIN_DAYS, basis: 'round_start_45_90d_logins_not_ready', complete, calculatedAt, ...extra });
     await writeCache('am_person_to_am', { personToAM, calculatedAt });
   }
   return { managers: Object.keys(results).length, evaluated, stalledTotal, sample };
@@ -276,11 +294,14 @@ exports.handler = async (event) => {
           const statusId = statusIdOf(p[UPDATE_STATUS_FIELD]);
           const rs = ad.roundStart ? new Date(ad.roundStart) : null;
           const re = ad.roundEnd ? new Date(ad.roundEnd) : null;
-          // Population: the client started a round (1, 2, or 3) within the last 90 days.
-          const startedWithin90 = !!(rs && rs <= now && daysBetween(now, rs) <= START_WINDOW_DAYS);
+          // Population: the latest round started 45 to 90 days ago. The 45 day floor
+          // cuts out clients whose current round is still mid-run; the 90 day ceiling
+          // keeps the metric focused on recent activity.
+          const daysSinceStart = rs && rs <= now ? daysBetween(now, rs) : null;
+          const startedInWindow = daysSinceStart != null && daysSinceStart >= START_WINDOW_MIN_DAYS && daysSinceStart <= START_WINDOW_MAX_DAYS;
           const roundEnded = !!(re && re <= now);
           const daysSince = roundEnded ? daysBetween(now, re) : null;
-          const inWindow = startedWithin90;
+          const inWindow = startedInWindow;
           let stalled = false, reason = null;
           // Stalled: in the population, still Logins Not Ready, and 14+ days past the latest round end.
           if (inWindow && statusId === LOGINS_NOT_READY && roundEnded && daysSince >= STALL_MIN_DAYS) {

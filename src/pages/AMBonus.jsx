@@ -225,7 +225,7 @@ export default function AMBonus() {
     
     let stallRate = null, stallCount = 0, stallTotal = 0, stalledClients = [], healthyInWindow = [];
     let paymentStallRate = null, paymentStallCount = 0;
-    let pastDueRate = null, pastDueCount = 0, crsBook = 0, pastDueClients = [], crsHealthy = [], overallRate = null;
+    let pastDueRate = null, pastDueCount = 0, paymentDue = 0, crsBook = 0, pastDueClients = [], paymentOnTime = [], overallRate = null;
     if (stallData?.accountManagers) {
       // Match AM name to Pipedrive data
       const match = Object.entries(stallData.accountManagers).find(([key]) => 
@@ -242,9 +242,10 @@ export default function AMBonus() {
         paymentStallCount = sd.paymentStalled;
         pastDueRate = sd.paymentPastDueRateNull ? null : (sd.paymentPastDueRate ?? null);
         pastDueCount = sd.paymentPastDue || 0;
+        paymentDue = sd.paymentDue || 0;
         crsBook = sd.crsBook || 0;
         pastDueClients = sd.pastDueClients || [];
-        crsHealthy = sd.crsHealthy || [];
+        paymentOnTime = sd.paymentOnTime || [];
         overallRate = sd.overallNull ? null : (sd.overall ?? null);
       }
     }
@@ -341,12 +342,12 @@ export default function AMBonus() {
       csatAvg, csatResponses, csatEligible, csatOverall,
       agreementPctKept, agreementKept, agreementTotal, agreementNeedsData,
       paymentStallRate, paymentStallCount,
-      pastDueRate, pastDueCount, crsBook, pastDueClients, crsHealthy, overallRate,
+      pastDueRate, pastDueCount, paymentDue, crsBook, pastDueClients, paymentOnTime, overallRate,
       totalBonus
     };
     } catch(e) {
       console.error('getAMMetrics error:', e);
-      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, reviewList: [], stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], healthyInWindow: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, referralDeals: [], csatAvg: null, csatResponses: 0, csatEligible: false, csatOverall: null, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, pastDueRate: null, pastDueCount: 0, crsBook: 0, pastDueClients: [], crsHealthy: [], overallRate: null, totalBonus: 0 };
+      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, reviewList: [], stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], healthyInWindow: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, referralDeals: [], csatAvg: null, csatResponses: 0, csatEligible: false, csatOverall: null, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, pastDueRate: null, pastDueCount: 0, paymentDue: 0, crsBook: 0, pastDueClients: [], paymentOnTime: [], overallRate: null, totalBonus: 0 };
     }
   };
 
@@ -650,8 +651,8 @@ export default function AMBonus() {
                   <div className="flex items-center gap-3">
                     <Clock size={20} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 40 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="Among clients who started a round (1, 2, or 3) in the last 90 days, this is the share still sitting in Logins Not Ready 14 or more days after their latest round ended. Check Logins and payment statuses do not count. Lower is better. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
-                      <p className="text-xs text-slate-500 mt-0.5">Clients still in Logins Not Ready 14+ days past their round end, among clients who started a round in the last 90 days. Lower wins. Earns $75 at 40% or below, $150 at 30%, $250 at 20%.</p>
+                      <p className="font-medium text-slate-800"><Tip text="Among clients whose LATEST round (1, 2, or 3) started 45 to 90 days ago, this is the share still sitting in Logins Not Ready 14 or more days after their latest round ended. The 45 day floor cuts out clients whose current round is still running and can't be stalled yet; the 90 day ceiling keeps the metric focused on recent activity. Check Logins and payment statuses do not count. Lower is better. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Clients still in Logins Not Ready 14+ days past their round end, among clients whose latest round started 45 to 90 days ago. Lower wins. Earns $75 at 40% or below, $150 at 30%, $250 at 20%.</p>
                       <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.stallRate !== null ? <>{currentAMMetrics.stallRate}% — <span className="text-red-600 font-medium">{currentAMMetrics.stallCount} stalled</span> of {currentAMMetrics.stallTotal} in-window clients</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
@@ -731,15 +732,15 @@ export default function AMBonus() {
                   <div className="flex items-center gap-3">
                     <DollarSign size={20} className={currentAMMetrics.pastDueRate !== null ? (currentAMMetrics.pastDueRate <= 20 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="Active CRS clients with an invoice 5 to 30 days past its original due date and still owing, divided by the AM's active CRS book. The 5 day grace ignores payments in transit. Anything past 30 days drops off, since that client is a non-payer, not a collection miss. Tracked for health, not tied to a bonus.">Payment Past Due</Tip></p>
-                      <p className="text-xs text-slate-500 mt-0.5">Active CRS clients with an invoice 5 to 30 days past its original due date. The 5 day grace ignores payments in transit. Past 30 days the client is a non-payer and drops off. Tracked for health, no bonus.</p>
-                      <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.pastDueRate !== null ? <>{currentAMMetrics.pastDueRate}% · <span className="text-red-600 font-medium">{currentAMMetrics.pastDueCount} past due</span> of {currentAMMetrics.crsBook} CRS clients</> : 'Loading from Pipedrive...'}</p>
+                      <p className="font-medium text-slate-800"><Tip text="Out of CRS clients with an invoice whose original due date is in the last 30 days (whether paid or not), the share that is 5 or more days past due and still owing. The 5 day grace ignores payments in transit. Anything past 30 days drops off the denominator naturally, so clear non-payers stop counting. The original due date is locked, so moving an invoice's due date does not hide a late payment. Tracked for health, not tied to a bonus.">Payment Past Due</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Out of CRS clients with an invoice due in the last 30 days, the share that is 5 or more days past due and still owing. Locks on the original due date, so it can't be hidden by rescheduling. Tracked for health, no bonus.</p>
+                      <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.pastDueRate !== null ? <>{currentAMMetrics.pastDueRate}% · <span className="text-red-600 font-medium">{currentAMMetrics.pastDueCount} past due</span> of {currentAMMetrics.paymentDue} clients with a payment due in the last 30 days</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
                 </div>
-                {currentAMMetrics.crsBook > 0 && (
+                {currentAMMetrics.paymentDue > 0 && (
                   <details className="mt-3 ml-8">
-                    <summary className="text-xs text-blue-600 cursor-pointer hover:underline">View breakdown · {currentAMMetrics.pastDueCount} past due and {Math.max(0, currentAMMetrics.crsBook - currentAMMetrics.pastDueCount)} current</summary>
+                    <summary className="text-xs text-blue-600 cursor-pointer hover:underline">View breakdown · {currentAMMetrics.pastDueCount} past due and {Math.max(0, currentAMMetrics.paymentDue - currentAMMetrics.pastDueCount)} on time</summary>
                     <div className="mt-2 space-y-3">
                       {(currentAMMetrics.pastDueClients || []).length > 0 && (
                         <div>
@@ -754,11 +755,11 @@ export default function AMBonus() {
                           </div>
                         </div>
                       )}
-                      {(currentAMMetrics.crsHealthy || []).length > 0 && (
+                      {(currentAMMetrics.paymentOnTime || []).length > 0 && (
                         <div>
-                          <p className="text-[11px] font-semibold text-green-600 uppercase tracking-wide mb-1">Current ({(currentAMMetrics.crsHealthy || []).length})</p>
+                          <p className="text-[11px] font-semibold text-green-600 uppercase tracking-wide mb-1">On time ({(currentAMMetrics.paymentOnTime || []).length})</p>
                           <div className="max-h-48 overflow-y-auto border border-green-100 rounded">
-                            {(currentAMMetrics.crsHealthy || []).map((c, i) => (
+                            {(currentAMMetrics.paymentOnTime || []).map((c, i) => (
                               <div key={i} className="flex justify-between text-xs py-1 px-2 border-b border-slate-100 gap-2 last:border-b-0">
                                 <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
                                 <span className="text-slate-500 text-right">paid or within 5 day grace</span>
@@ -1377,14 +1378,14 @@ export default function AMBonus() {
         const title = isStall ? 'Report Stall Rate' : isPastDue ? 'Payment Past Due' : 'Overall Health';
         const rate = isStall ? m.stallRate : isPastDue ? m.pastDueRate : m.overallRate;
         const description = isStall
-          ? 'Clients still in Logins Not Ready 14 or more days after their latest round ended, among those who started a round (1, 2, or 3) in the last 90 days. Check Logins and payment statuses do not count. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.'
+          ? 'Among clients whose latest round (1, 2, or 3) started 45 to 90 days ago, the share still in Logins Not Ready 14 or more days after their latest round ended. The 45 day floor cuts out clients whose current round is still running and can\u2019t be stalled yet. The 90 day ceiling keeps the metric on recent activity. Check Logins and payment statuses do not count. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.'
           : isPastDue
-          ? 'Active CRS clients with an invoice 5 to 30 days past its original due date and still owing, divided by this AM\u2019s active CRS book. The 5 day grace ignores payments in transit. Past 30 days drops off, since that client is a non-payer, not a collection miss. Tracked for health, no bonus.'
+          ? 'Out of CRS clients with an invoice whose original due date is in the last 30 days, the share that is 5 or more days past due and still owing. The 5 day grace ignores payments in transit. Anything past 30 days drops off the denominator naturally, so clear non-payers stop counting. The original due date is locked, so moving an invoice\u2019s due date does not hide a late payment. Tracked for health, no bonus.'
           : 'The simple average of the Report Stall Rate and the Payment Past Due rate. Each rate is measured over its own group of clients, so the average blends both without bending either number. Lower is better. Tracked for health, no bonus.';
         const stalled = m.stalledClients || [];
         const healthy = m.healthyInWindow || [];
         const pastDueList = m.pastDueClients || [];
-        const current = m.crsHealthy || [];
+        const onTime = m.paymentOnTime || [];
         return (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setBreakdown(null)}>
             <div className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full my-8" onClick={e => e.stopPropagation()}>
@@ -1397,7 +1398,7 @@ export default function AMBonus() {
                   <p className="text-sm text-slate-700 mt-3"><span className="font-semibold text-red-600">{m.stallCount} stalled</span> of {m.stallTotal} in-window clients</p>
                 )}
                 {isPastDue && (
-                  <p className="text-sm text-slate-700 mt-3"><span className="font-semibold text-red-600">{m.pastDueCount} past due</span> of {m.crsBook} active CRS clients</p>
+                  <p className="text-sm text-slate-700 mt-3"><span className="font-semibold text-red-600">{m.pastDueCount} past due</span> of {m.paymentDue} clients with a payment due in the last 30 days</p>
                 )}
                 {isOverall && (
                   <p className="text-sm text-slate-700 mt-3">Report stall {m.stallRate ?? 0}% + past due {m.pastDueRate ?? 0}%, averaged</p>
@@ -1449,11 +1450,11 @@ export default function AMBonus() {
                         </div>
                       </div>
                     ) : <p className="text-sm text-slate-500 italic">No past due clients. Nice work.</p>}
-                    {current.length > 0 && (
+                    {onTime.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">Current ({current.length})</p>
+                        <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">On time ({onTime.length})</p>
                         <div className="border border-green-100 rounded">
-                          {current.map((c, i) => (
+                          {onTime.map((c, i) => (
                             <div key={i} className="flex justify-between text-sm py-1.5 px-3 border-b border-slate-100 gap-2 last:border-b-0">
                               <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
                               <span className="text-slate-500 text-right whitespace-nowrap">paid or within 5 day grace</span>
