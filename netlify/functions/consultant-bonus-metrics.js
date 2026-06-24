@@ -253,6 +253,43 @@ exports.handler = async (event) => {
       owedByDeal[did] = (owedByDeal[did] || 0) + bal;
     }
 
+    // Order-insensitive client to invoice matcher. An invoice belongs to the client when the deal id
+    // matches, when the invoice customer name resolves to that deal id, or when every word of the client
+    // name appears in the invoice customer name (catches "Last, First" ordering and deal-id-prefixed names).
+    const nameTokens = (s) => norm(s).split(' ').filter(t => t.length > 1);
+    const clientMatchesInvoice = (dealId, name, inv) => {
+      if (dealId && String(inv.pipedrive_deal_id) === String(dealId)) return true;
+      const cn = norm(inv.customer_name);
+      if (dealId) {
+        const resolved = dealByClientName[cn] || nameToDealId[cn];
+        if (resolved && String(resolved) === String(dealId)) return true;
+      }
+      const cTok = nameTokens(name);
+      if (cTok.length >= 2) {
+        const invSet = new Set(nameTokens(inv.customer_name));
+        if (cTok.every(t => invSet.has(t))) return true;
+      }
+      return false;
+    };
+    const invoicesForClient = (dealId, name) => invoiceData.filter(inv => clientMatchesInvoice(dealId, name, inv));
+    // Resolve the next owed invoice, the total still owed, and, when no dated invoice exists, the precise
+    // reason, so a roster row always shows a date, an amount owed, or an explicit reason, never a bare status.
+    const resolveDue = (dealId, name) => {
+      const invs = invoicesForClient(dealId, name);
+      const owing = invs.filter(i => (parseFloat(i.balance) || 0) > 1);
+      const owed = Math.round(owing.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0));
+      const dated = owing.filter(i => i.due_date).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+      if (dated.length) {
+        const due = String(dated[0].due_date).slice(0, 10);
+        return { dueDate: due, overdue: due < dueTodayStr, owed, dueReason: null };
+      }
+      let dueReason;
+      if (owing.length) dueReason = 'invoice on file has no due date';
+      else if (invs.length) dueReason = 'invoice paid in full';
+      else dueReason = 'no invoice on file yet';
+      return { dueDate: null, overdue: false, owed, dueReason };
+    };
+
     // === DUE-DATE DIAGNOSTIC (read-only) ===
     // ?duedebug=<consultant name> returns each affiliate-referred client for that consultant with the
     // due-date match attempt and, when no date is found, the reason: no open invoice on file, an invoice
@@ -270,23 +307,10 @@ exports.handler = async (event) => {
         else if (['partial', 'final', 'paid_in_full'].includes(p.payment_type)) roster[key].hasAdvanced = true;
       }
       const explain = (dealId, name) => {
-        const nm = norm(name);
-        const linked = invoiceData.filter(inv => {
-          if (dealId && String(inv.pipedrive_deal_id) === String(dealId)) return true;
-          const cn = norm(inv.customer_name);
-          if (dealId && String(dealByClientName[cn] || nameToDealId[cn] || '') === String(dealId)) return true;
-          if (nm && nm.length > 4 && cn.includes(nm)) return true;
-          return false;
-        });
-        const due = nextDueForDeal(dealId, name);
-        if (due) return { matched: true, ...due, invoices_linked: linked.length };
-        let reason = 'no invoice on file matching this deal id or name';
-        if (linked.length) {
-          const noDate = linked.filter(i => !i.due_date).length;
-          const cleared = linked.filter(i => (parseFloat(i.balance) || 0) <= 1).length;
-          reason = `${linked.length} invoice(s) found but none owe with a due date (no due_date: ${noDate}, balance cleared: ${cleared})`;
-        }
-        return { matched: false, reason, invoices_linked: linked.length };
+        const linked = invoicesForClient(dealId, name);
+        const r = resolveDue(dealId, name);
+        if (r.dueDate) return { matched: true, dueDate: r.dueDate, overdue: r.overdue, owed: r.owed, invoices_linked: linked.length };
+        return { matched: false, reason: r.dueReason, owed: r.owed, invoices_linked: linked.length };
       };
       const out = Object.values(roster).map(c => {
         const status = (c.hasDoc && c.hasAdvanced) ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
@@ -730,8 +754,8 @@ exports.handler = async (event) => {
           const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
           // Show the next owed invoice and its due date for anyone who still owes, whether that is the
           // doc fee (needs_doc) or a partial/final (needs_advance), so the consultant knows who to call.
-          const due = status !== 'qualified' ? nextDueForDeal(c.dealId, c.name) : null;
-          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false, owed: Math.round(owedByDeal[String(c.dealId)] || 0) };
+          const due = status !== 'qualified' ? resolveDue(c.dealId, c.name) : null;
+          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false, owed: due?.owed || 0, dueReason: due?.dueReason || null };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         return {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
@@ -782,8 +806,8 @@ exports.handler = async (event) => {
         const rosterClients = Object.values(roster).map(c => {
           const qualified = c.hasDoc && c.hasAdvanced;
           const status = qualified ? 'qualified' : (c.hasDoc ? 'needs_advance' : 'needs_doc');
-          const due = status !== 'qualified' ? nextDueForDeal(c.dealId, c.name) : null;
-          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false, owed: Math.round(owedByDeal[String(c.dealId)] || 0) };
+          const due = status !== 'qualified' ? resolveDue(c.dealId, c.name) : null;
+          return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false, owed: due?.owed || 0, dueReason: due?.dueReason || null };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
         reactivationProgress.push({
           name: orgName, kind, daysDormant, lastActive: lastPrior,
@@ -1245,6 +1269,7 @@ exports.handler = async (event) => {
         affiliateFlaggedCount: payments.filter(p => p.is_affiliate_deal === true).length,
         orgEmailCount: payments.filter(p => p.org_has_email === true).length,
         sampleOrgs: [...new Set(payments.map(p => p.referrer_org).filter(Boolean))].slice(0, 10),
+        buildTag: 'v286fh',
         updatedAt: now.toISOString()
       });
 

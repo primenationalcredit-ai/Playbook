@@ -31,11 +31,11 @@ function ReferredClientRow({ cl }) {
   } else if (cl.status === 'needs_advance') {
     label = cl.dueDate
       ? (cl.overdue ? `Partial/final past due ${fmtDate(cl.dueDate)} — call` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
-      : (owes ? `Needs partial/final · ${owes}` : 'Paid doc fee — needs a partial or final');
+      : (owes ? `Needs partial/final · ${owes}` : (cl.dueReason ? `Needs partial/final · ${cl.dueReason}` : 'Paid doc fee, needs a partial or final'));
   } else { // needs_doc
     label = cl.dueDate
       ? (cl.overdue ? `Doc fee past due ${fmtDate(cl.dueDate)} — call` : `Needs doc fee · due ${fmtDate(cl.dueDate)}`)
-      : (owes ? `Needs doc fee · ${owes}` : 'Referred — needs to pay doc fee');
+      : (owes ? `Needs doc fee · ${owes}` : (cl.dueReason ? `Needs doc fee · ${cl.dueReason}` : 'Referred, needs to pay doc fee'));
   }
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
