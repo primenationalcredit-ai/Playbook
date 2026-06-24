@@ -9,6 +9,8 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supaHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
 const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
 const PERSON_URL = (id) => `https://asapcreditrepair.pipedrive.com/person/${id}`;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtDate = (s) => { if (!s) return ''; const [y, m, d] = String(s).slice(0, 10).split('-'); if (!y || !m || !d) return s; return `${MONTHS[parseInt(m,10)-1]} ${parseInt(d,10)}`; };
 
 function Tip({ text, children }) {
   const [show, setShow] = React.useState(false);
@@ -220,10 +222,9 @@ export default function AMBonus() {
     const amUser = (users || []).find(u => u.id === amId);
     const amName = amUser?.name || '';
     
-    // Stall rate from Pipedrive
-    let stallRate = null, stallCount = 0, stallTotal = 0, stalledClients = [];
+    let stallRate = null, stallCount = 0, stallTotal = 0, stalledClients = [], healthyInWindow = [];
     let paymentStallRate = null, paymentStallCount = 0;
-    let pastDueRate = null, pastDueCount = 0, crsBook = 0, pastDueClients = [], overallRate = null;
+    let pastDueRate = null, pastDueCount = 0, crsBook = 0, pastDueClients = [], crsHealthy = [], overallRate = null;
     if (stallData?.accountManagers) {
       // Match AM name to Pipedrive data
       const match = Object.entries(stallData.accountManagers).find(([key]) => 
@@ -235,12 +236,14 @@ export default function AMBonus() {
         stallCount = sd.reportStalled;
         stallTotal = sd.totalClients;
         stalledClients = sd.stalledClients || [];
+        healthyInWindow = sd.healthyInWindow || [];
         paymentStallRate = sd.paymentStallRate;
         paymentStallCount = sd.paymentStalled;
         pastDueRate = sd.paymentPastDueRateNull ? null : (sd.paymentPastDueRate ?? null);
         pastDueCount = sd.paymentPastDue || 0;
         crsBook = sd.crsBook || 0;
         pastDueClients = sd.pastDueClients || [];
+        crsHealthy = sd.crsHealthy || [];
         overallRate = sd.overallNull ? null : (sd.overall ?? null);
       }
     }
@@ -331,18 +334,18 @@ export default function AMBonus() {
       creditBonus, submissions: amSubs, approvedSubs: approved,
       reviewCount, bbbReviews, reviewBonus,
       reviewList: amReviews.map(r => ({ reviewer: r.reviewer_name, location: r.location_name, rating: r.rating, text: r.review_text, dealId: r.pipedrive_deal_id || null, date: r.review_date || r.created_at })),
-      stallRate, stallCount, stallTotal, stalledClients, stallBonus,
+      stallRate, stallCount, stallTotal, stalledClients, healthyInWindow, stallBonus,
       additionalRounds, roundsBonus, roundDeals, pastDueRounds,
       referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer, referralDeals,
       csatAvg, csatResponses, csatEligible, csatOverall,
       agreementPctKept, agreementKept, agreementTotal, agreementNeedsData,
       paymentStallRate, paymentStallCount,
-      pastDueRate, pastDueCount, crsBook, pastDueClients, overallRate,
+      pastDueRate, pastDueCount, crsBook, pastDueClients, crsHealthy, overallRate,
       totalBonus
     };
     } catch(e) {
       console.error('getAMMetrics error:', e);
-      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, reviewList: [], stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, referralDeals: [], csatAvg: null, csatResponses: 0, csatEligible: false, csatOverall: null, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, pastDueRate: null, pastDueCount: 0, crsBook: 0, pastDueClients: [], overallRate: null, totalBonus: 0 };
+      return { approvedCount: 0, pending: 0, rejected: 0, creditBonus: 0, submissions: [], approvedSubs: [], reviewCount: 0, bbbReviews: 0, reviewBonus: 0, reviewList: [], stallRate: null, stallCount: 0, stallTotal: 0, stalledClients: [], healthyInWindow: [], stallBonus: 0, additionalRounds: null, roundsBonus: 0, roundDeals: [], referrals: null, referralPaid: null, referralBonus: 0, referralNeedsConfig: false, referralTopProducer: false, referralDeals: [], csatAvg: null, csatResponses: 0, csatEligible: false, csatOverall: null, agreementPctKept: null, agreementKept: null, agreementTotal: null, agreementNeedsData: false, paymentStallRate: null, paymentStallCount: 0, pastDueRate: null, pastDueCount: 0, crsBook: 0, pastDueClients: [], crsHealthy: [], overallRate: null, totalBonus: 0 };
     }
   };
 
@@ -640,8 +643,9 @@ export default function AMBonus() {
                   <div className="flex items-center gap-3">
                     <Clock size={20} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 40 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="Clients still in Logins Not Ready 14 or more days after their latest round ended, among clients who started a round (1, 2, or 3) in the last 90 days. Check Logins and payment statuses do not count. Tiers: 40% or below = $75, 30% = $150, 20% = $250. Minimum 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
-                      <p className="text-sm text-slate-500">{currentAMMetrics.stallRate !== null ? `${currentAMMetrics.stallRate}% — ${currentAMMetrics.stallCount} of ${currentAMMetrics.stallTotal} clients` : 'Loading from Pipedrive...'}</p>
+                      <p className="font-medium text-slate-800"><Tip text="Among clients who started a round (1, 2, or 3) in the last 90 days, this is the share still sitting in Logins Not Ready 14 or more days after their latest round ended. Check Logins and payment statuses do not count. Lower is better. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Clients still in Logins Not Ready 14+ days past their round end, among clients who started a round in the last 90 days. Lower wins. Earns $75 at 40% or below, $150 at 30%, $250 at 20%.</p>
+                      <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.stallRate !== null ? <>{currentAMMetrics.stallRate}% — <span className="text-red-600 font-medium">{currentAMMetrics.stallCount} stalled</span> of {currentAMMetrics.stallTotal} in-window clients</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.stallBonus > 0 ? 'text-green-600' : 'text-slate-300'}`}>{fmt(currentAMMetrics.stallBonus)}</p>
@@ -679,23 +683,39 @@ export default function AMBonus() {
                     </div>
                   );
                 })()}
-                {(() => {
-                  const reportStalledList = (currentAMMetrics.stalledClients || []).filter(c => c.type !== 'payment');
-                  if (reportStalledList.length === 0) return null;
-                  return (
-                  <details className="mt-2 ml-8">
-                    <summary className="text-xs text-blue-500 cursor-pointer">View {reportStalledList.length} stalled clients</summary>
-                    <div className="mt-1 max-h-48 overflow-y-auto">
-                      {reportStalledList.map((c, i) => (
-                        <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100 gap-2">
-                          <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
-                          <span className="text-red-500 text-right">{c.reason || (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd} days past round end` : '')}</span>
+                {currentAMMetrics.stallTotal > 0 && (
+                  <details className="mt-3 ml-8">
+                    <summary className="text-xs text-blue-600 cursor-pointer hover:underline">View breakdown · {currentAMMetrics.stallCount} stalled and {Math.max(0, currentAMMetrics.stallTotal - currentAMMetrics.stallCount)} on time</summary>
+                    <div className="mt-2 space-y-3">
+                      {(currentAMMetrics.stalledClients || []).length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-semibold text-red-600 uppercase tracking-wide mb-1">Stalled ({(currentAMMetrics.stalledClients || []).length})</p>
+                          <div className="max-h-48 overflow-y-auto border border-red-100 rounded">
+                            {(currentAMMetrics.stalledClients || []).map((c, i) => (
+                              <div key={i} className="flex justify-between text-xs py-1 px-2 border-b border-slate-100 gap-2 last:border-b-0">
+                                <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                                <span className="text-red-500 text-right">{c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)} · ${c.daysSinceRoundEnd}d behind` : (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd}d past round end` : (c.reason || ''))}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      ))}
+                      )}
+                      {(currentAMMetrics.healthyInWindow || []).length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-semibold text-green-600 uppercase tracking-wide mb-1">On time ({(currentAMMetrics.healthyInWindow || []).length})</p>
+                          <div className="max-h-48 overflow-y-auto border border-green-100 rounded">
+                            {(currentAMMetrics.healthyInWindow || []).map((c, i) => (
+                              <div key={i} className="flex justify-between text-xs py-1 px-2 border-b border-slate-100 gap-2 last:border-b-0">
+                                <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                                <span className="text-slate-500 text-right">{!c.roundEnded ? 'Round still open' : (c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)}` : (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd}d past round end` : ''))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </details>
-                  );
-                })()}
+                )}
               </div>
 
               {/* 2b. Payment Past Due (separate health metric, not a bonus) */}
@@ -704,21 +724,42 @@ export default function AMBonus() {
                   <div className="flex items-center gap-3">
                     <DollarSign size={20} className={currentAMMetrics.pastDueRate !== null ? (currentAMMetrics.pastDueRate <= 20 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="Active CRS clients with an invoice 5 to 30 days past its original due date and still owing, divided by the AM's active CRS book. The 5 day grace ignores payments in transit, and anything past 30 days drops off since that client is a non-payer, not a collection miss. Tracked for health, not tied to a bonus.">Payment Past Due</Tip></p>
-                      <p className="text-sm text-slate-500">{currentAMMetrics.pastDueRate !== null ? `${currentAMMetrics.pastDueRate}% · ${currentAMMetrics.pastDueCount} of ${currentAMMetrics.crsBook} CRS clients` : 'Loading from Pipedrive...'}</p>
+                      <p className="font-medium text-slate-800"><Tip text="Active CRS clients with an invoice 5 to 30 days past its original due date and still owing, divided by the AM's active CRS book. The 5 day grace ignores payments in transit. Anything past 30 days drops off, since that client is a non-payer, not a collection miss. Tracked for health, not tied to a bonus.">Payment Past Due</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Active CRS clients with an invoice 5 to 30 days past its original due date. The 5 day grace ignores payments in transit. Past 30 days the client is a non-payer and drops off. Tracked for health, no bonus.</p>
+                      <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.pastDueRate !== null ? <>{currentAMMetrics.pastDueRate}% · <span className="text-red-600 font-medium">{currentAMMetrics.pastDueCount} past due</span> of {currentAMMetrics.crsBook} CRS clients</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
                 </div>
-                {currentAMMetrics.pastDueClients && currentAMMetrics.pastDueClients.length > 0 && (
-                  <details className="mt-2 ml-8">
-                    <summary className="text-xs text-blue-500 cursor-pointer">View {currentAMMetrics.pastDueClients.length} past due clients</summary>
-                    <div className="mt-1 max-h-48 overflow-y-auto">
-                      {currentAMMetrics.pastDueClients.map((c, i) => (
-                        <div key={i} className="flex justify-between text-xs py-1 border-b border-slate-100 gap-2">
-                          <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
-                          <span className="text-red-500 text-right">past due</span>
+                {currentAMMetrics.crsBook > 0 && (
+                  <details className="mt-3 ml-8">
+                    <summary className="text-xs text-blue-600 cursor-pointer hover:underline">View breakdown · {currentAMMetrics.pastDueCount} past due and {Math.max(0, currentAMMetrics.crsBook - currentAMMetrics.pastDueCount)} current</summary>
+                    <div className="mt-2 space-y-3">
+                      {(currentAMMetrics.pastDueClients || []).length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-semibold text-red-600 uppercase tracking-wide mb-1">Past due ({(currentAMMetrics.pastDueClients || []).length})</p>
+                          <div className="max-h-48 overflow-y-auto border border-red-100 rounded">
+                            {(currentAMMetrics.pastDueClients || []).map((c, i) => (
+                              <div key={i} className="flex justify-between text-xs py-1 px-2 border-b border-slate-100 gap-2 last:border-b-0">
+                                <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                                <span className="text-red-500 text-right">{c.dueDate ? `Due ${fmtDate(c.dueDate)} · ${c.daysPastDue}d late${c.balance ? ` · $${c.balance}` : ''}` : 'past due'}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      ))}
+                      )}
+                      {(currentAMMetrics.crsHealthy || []).length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-semibold text-green-600 uppercase tracking-wide mb-1">Current ({(currentAMMetrics.crsHealthy || []).length})</p>
+                          <div className="max-h-48 overflow-y-auto border border-green-100 rounded">
+                            {(currentAMMetrics.crsHealthy || []).map((c, i) => (
+                              <div key={i} className="flex justify-between text-xs py-1 px-2 border-b border-slate-100 gap-2 last:border-b-0">
+                                <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                                <span className="text-slate-500 text-right">paid or within 5 day grace</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </details>
                 )}
@@ -730,8 +771,9 @@ export default function AMBonus() {
                   <div className="flex items-center gap-3">
                     <TrendingUp size={20} className={currentAMMetrics.overallRate !== null ? (currentAMMetrics.overallRate <= 30 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
-                      <p className="font-medium text-slate-800"><Tip text="The average of the Report Stall Rate and the Payment Past Due rate. Each is measured over its own group, so the average blends both without bending either number. Lower is better.">Overall (stall + past due)</Tip></p>
-                      <p className="text-sm text-slate-500">{currentAMMetrics.overallRate !== null ? `Report stall ${currentAMMetrics.stallRate ?? 0}% and past due ${currentAMMetrics.pastDueRate ?? 0}%` : 'Loading from Pipedrive...'}</p>
+                      <p className="font-medium text-slate-800"><Tip text="The simple average of the Report Stall Rate and the Payment Past Due rate. Each rate is measured over its own group of clients, so the average blends both without bending either number. Lower is better. Tracked for health, not tied to a bonus.">Overall (stall + past due)</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Simple average of your Report Stall Rate and Payment Past Due rate. Lower wins. Tracked for health, no bonus.</p>
+                      <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.overallRate !== null ? <>Report stall {currentAMMetrics.stallRate ?? 0}% + past due {currentAMMetrics.pastDueRate ?? 0}%</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
                   <p className={`text-lg font-bold ${currentAMMetrics.overallRate !== null ? (currentAMMetrics.overallRate <= 30 ? 'text-green-600' : 'text-red-500') : 'text-slate-300'}`}>{currentAMMetrics.overallRate !== null ? `${currentAMMetrics.overallRate}%` : '--'}</p>

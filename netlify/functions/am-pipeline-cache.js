@@ -83,21 +83,28 @@ async function readInvoices() {
   }
   return out;
 }
-// Deal ids and customer names with an invoice 5 to 30 days past its due date and still owing.
-async function pastDueSets() {
-  const dealIds = new Set(), names = new Set();
+// Past due lookup: maps a deal id and a normalized client name to the worst past-due invoice
+// (the one with the most days past its due date). Returns null when the client is not past due
+// or their past-due invoice is more than PASTDUE_MAX_DAYS old (non-payer drops off).
+async function pastDueMap() {
+  const byDeal = new Map(), byName = new Map();
   const today = Date.now();
+  const consider = (key, map, entry) => {
+    const prev = map.get(key);
+    if (!prev || entry.daysPastDue > prev.daysPastDue) map.set(key, entry);
+  };
   for (const inv of await readInvoices()) {
     const bal = parseFloat(inv.balance) || 0;
     if (bal <= 1 || !inv.due_date) continue;
     const due = parseDate(inv.due_date);
     if (!due) continue;
-    const daysPast = Math.floor((today - due.getTime()) / 86400000);
-    if (daysPast < PASTDUE_MIN_DAYS || daysPast > PASTDUE_MAX_DAYS) continue;
-    if (inv.pipedrive_deal_id) dealIds.add(String(inv.pipedrive_deal_id));
-    if (inv.customer_name) names.add(norm(inv.customer_name));
+    const daysPastDue = Math.floor((today - due.getTime()) / 86400000);
+    if (daysPastDue < PASTDUE_MIN_DAYS || daysPastDue > PASTDUE_MAX_DAYS) continue;
+    const entry = { dueDate: String(inv.due_date).slice(0, 10), daysPastDue, balance: Math.round(bal) };
+    if (inv.pipedrive_deal_id) consider(String(inv.pipedrive_deal_id), byDeal, entry);
+    if (inv.customer_name) consider(norm(inv.customer_name), byName, entry);
   }
-  return { dealIds, names };
+  return { byDeal, byName };
 }
 
 function roundDates(deal) {
@@ -113,42 +120,56 @@ function roundDates(deal) {
 
 async function publish(personData, complete, extra) {
   // Past due is only needed when we are going to publish (a complete pass).
-  const pd = complete ? await pastDueSets() : { dealIds: new Set(), names: new Set() };
-  const isPastDue = (d) => pd.dealIds.has(String(d.dealId)) || pd.names.has(norm(d.name));
+  const pd = complete ? await pastDueMap() : { byDeal: new Map(), byName: new Map() };
+  const pastDueDetails = (d) => pd.byDeal.get(String(d.dealId)) || pd.byName.get(norm(d.name)) || null;
   const amStats = {}; const personToAM = {};
   let evaluated = 0, stalledTotal = 0, sample = [];
   for (const [id, d] of Object.entries(personData)) {
     personToAM[id] = d.am;
-    if (!amStats[d.am]) amStats[d.am] = { evaluated: 0, stalled: 0, activeBook: 0, crsBook: 0, pastDue: 0, stalledClients: [], pastDueClients: [] };
+    if (!amStats[d.am]) amStats[d.am] = {
+      evaluated: 0, stalled: 0, activeBook: 0, crsBook: 0, pastDue: 0,
+      stalledClients: [], healthyInWindow: [],
+      pastDueClients: [], crsHealthy: []
+    };
     const s = amStats[d.am];
     s.activeBook++;
     // Payment past due is measured over the active CRS book only.
     if (d.pipeline === 'CRS') {
       s.crsBook++;
-      if (isPastDue(d)) { s.pastDue++; s.pastDueClients.push({ name: d.name, id, dealId: d.dealId }); }
+      const pdHit = pastDueDetails(d);
+      if (pdHit) {
+        s.pastDue++;
+        s.pastDueClients.push({ name: d.name, id, dealId: d.dealId, dueDate: pdHit.dueDate, daysPastDue: pdHit.daysPastDue, balance: pdHit.balance });
+      } else {
+        s.crsHealthy.push({ name: d.name, id, dealId: d.dealId });
+      }
     }
     if (!d.inWindow) continue;       // only clients who started a round within 90 days are evaluated for stall
     s.evaluated++; evaluated++;
     if (d.stalled) {
       s.stalled++; stalledTotal++;
-      s.stalledClients.push({ name: d.name, id, daysSinceRoundEnd: d.daysSince, pipeline: d.pipeline, reason: d.reason });
+      s.stalledClients.push({ name: d.name, id, dealId: d.dealId, daysSinceRoundEnd: d.daysSince, roundEndDate: d.roundEndDate, pipeline: d.pipeline, reason: d.reason });
       if (sample.length < 5) sample.push({ name: d.name, daysSinceRoundEnd: d.daysSince, reason: d.reason });
+    } else {
+      // Healthy in-window: started a round in the last 90 days and is NOT stalled.
+      // Carry round end info so the UI can show "round ended X" or "round still open".
+      s.healthyInWindow.push({ name: d.name, id, dealId: d.dealId, daysSinceRoundEnd: d.roundEnded ? d.daysSince : null, roundEndDate: d.roundEndDate, roundEnded: d.roundEnded });
     }
   }
   const results = {};
   for (const [am, s] of Object.entries(amStats)) {
     const reportStallRate = s.evaluated > 0 ? Math.round((s.stalled / s.evaluated) * 100) : null;
     const paymentPastDueRate = s.crsBook > 0 ? Math.round((s.pastDue / s.crsBook) * 100) : null;
-    // Overall = simple average of the two rates, each kept over its own group. If one has no
-    // group to measure, the overall is just the other.
+    // Overall = simple average of the two rates, each kept over its own group.
     let overall = null;
     if (reportStallRate != null && paymentPastDueRate != null) overall = Math.round((reportStallRate + paymentPastDueRate) / 2);
     else if (reportStallRate != null) overall = reportStallRate;
     else if (paymentPastDueRate != null) overall = paymentPastDueRate;
+    const sortByName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''));
     results[am] = {
-      totalClients: s.evaluated,              // report stall denominator = round-started-within-90 clients
+      totalClients: s.evaluated,
       activeBook: s.activeBook,
-      crsBook: s.crsBook,                     // payment past due denominator
+      crsBook: s.crsBook,
       reportStalled: s.stalled,
       reportStallRate: reportStallRate == null ? 0 : reportStallRate,
       reportStallRateNull: reportStallRate == null,
@@ -157,9 +178,13 @@ async function publish(personData, complete, extra) {
       paymentPastDueRateNull: paymentPastDueRate == null,
       overall: overall == null ? 0 : overall,
       overallNull: overall == null,
-      paymentStalled: 0, paymentStallRate: 0, // legacy fields kept so older UI does not break
-      stalledClients: s.stalledClients.slice(0, 50),
-      pastDueClients: s.pastDueClients.slice(0, 50)
+      paymentStalled: 0, paymentStallRate: 0,
+      // Stalled and healthy lists for the report stall drill-down. Sorted: stalled by most overdue, healthy by name.
+      stalledClients: s.stalledClients.sort((a, b) => (b.daysSinceRoundEnd || 0) - (a.daysSinceRoundEnd || 0)).slice(0, 500),
+      healthyInWindow: s.healthyInWindow.sort(sortByName).slice(0, 1000),
+      // Past due and healthy lists for the payment drill-down. Past due sorted by most days past due.
+      pastDueClients: s.pastDueClients.sort((a, b) => (b.daysPastDue || 0) - (a.daysPastDue || 0)).slice(0, 500),
+      crsHealthy: s.crsHealthy.sort(sortByName).slice(0, 1000)
     };
   }
   const calculatedAt = new Date().toISOString();
@@ -261,7 +286,7 @@ exports.handler = async (event) => {
           if (inWindow && statusId === LOGINS_NOT_READY && roundEnded && daysSince >= STALL_MIN_DAYS) {
             stalled = true; reason = `Logins Not Ready ${daysSince}d past round end`;
           }
-          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, dealId: ad.dealId, roundEnded, daysSince, inWindow, stalled, reason };
+          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, dealId: ad.dealId, roundEnded, daysSince, roundEndDate: re ? re.toISOString().slice(0, 10) : null, inWindow, stalled, reason };
         }
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
         cursor = res.additional_data?.pagination?.next_start || (cursor + 500);
