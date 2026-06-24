@@ -31,6 +31,7 @@ const GMB_LOCATIONS = [
   { name: 'ASAP Credit Repair Victoria', city: 'Victoria', state: 'TX', url: 'https://g.page/r/CefMoYjyXxjtEBM/review' },
   { name: 'ASAP Credit Repair Fort Washington', city: 'Fort Washington', state: 'MD', url: 'https://g.page/r/CbwZS10T_h7EEBM/review' },
   { name: 'ASAP Credit Repair McAllen', city: 'McAllen', state: 'TX', url: 'https://g.page/r/CUJ_5njlAzcZEBM/review' },
+  { name: 'ASAP Credit Repair New York', city: 'New York', state: 'NY', url: 'https://g.page/r/CVED-GdyL-uiEBM/review' },
 ];
 
 function ReviewRandomizer() {
