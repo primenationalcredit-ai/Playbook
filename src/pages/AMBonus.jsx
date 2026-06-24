@@ -52,6 +52,7 @@ export default function AMBonus() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [breakdown, setBreakdown] = useState(null); // {amName, metric, m}
   const [uploading, setUploading] = useState(false);
   const [proofFile, setProofFile] = useState(null);
   const [viewerUrl, setViewerUrl] = useState(null);
@@ -523,9 +524,15 @@ export default function AMBonus() {
                           <button onClick={() => setSelectedAM(am.id)} className="font-medium text-asap-blue hover:underline">{am.name}</button>
                         </td>
                         <td className="px-4 py-3 text-center">{m?.approvedCount ?? 0}</td>
-                        <td className="px-4 py-3 text-center">{m?.stallRate == null ? '—' : fmtPct(m.stallRate)}</td>
-                        <td className="px-4 py-3 text-center">{m?.pastDueRate == null ? '—' : fmtPct(m.pastDueRate)}</td>
-                        <td className="px-4 py-3 text-center">{m?.overallRate == null ? '—' : fmtPct(m.overallRate)}</td>
+                        <td className="px-4 py-3 text-center">{m?.stallRate == null ? '—' : (
+                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'stall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.stallRate)}</button>
+                        )}</td>
+                        <td className="px-4 py-3 text-center">{m?.pastDueRate == null ? '—' : (
+                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'pastdue', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.pastDueRate)}</button>
+                        )}</td>
+                        <td className="px-4 py-3 text-center">{m?.overallRate == null ? '—' : (
+                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'overall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.overallRate)}</button>
+                        )}</td>
                         <td className="px-4 py-3 text-center">{m?.additionalRounds ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.referrals ?? 0}{m?.referralPaid != null ? ` (${m.referralPaid} paid)` : ''}</td>
                         <td className="px-4 py-3 text-center">{m?.reviewCount ?? 0}</td>
@@ -1362,6 +1369,118 @@ export default function AMBonus() {
           </div>
         </div>
       )}
+      {breakdown && (() => {
+        const { amName, metric, m } = breakdown;
+        const isStall = metric === 'stall';
+        const isPastDue = metric === 'pastdue';
+        const isOverall = metric === 'overall';
+        const title = isStall ? 'Report Stall Rate' : isPastDue ? 'Payment Past Due' : 'Overall Health';
+        const rate = isStall ? m.stallRate : isPastDue ? m.pastDueRate : m.overallRate;
+        const description = isStall
+          ? 'Clients still in Logins Not Ready 14 or more days after their latest round ended, among those who started a round (1, 2, or 3) in the last 90 days. Check Logins and payment statuses do not count. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.'
+          : isPastDue
+          ? 'Active CRS clients with an invoice 5 to 30 days past its original due date and still owing, divided by this AM\u2019s active CRS book. The 5 day grace ignores payments in transit. Past 30 days drops off, since that client is a non-payer, not a collection miss. Tracked for health, no bonus.'
+          : 'The simple average of the Report Stall Rate and the Payment Past Due rate. Each rate is measured over its own group of clients, so the average blends both without bending either number. Lower is better. Tracked for health, no bonus.';
+        const stalled = m.stalledClients || [];
+        const healthy = m.healthyInWindow || [];
+        const pastDueList = m.pastDueClients || [];
+        const current = m.crsHealthy || [];
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setBreakdown(null)}>
+            <div className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full my-8" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setBreakdown(null)} className="absolute top-3 right-3 text-slate-400 hover:text-slate-700"><X size={20} /></button>
+              <div className="p-5 border-b border-slate-100">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">{amName}</p>
+                <h2 className="text-xl font-bold text-slate-800 mt-0.5">{title} <span className={`ml-2 ${rate <= 30 ? 'text-green-600' : 'text-red-600'}`}>{rate}%</span></h2>
+                <p className="text-sm text-slate-600 mt-2 leading-relaxed">{description}</p>
+                {isStall && (
+                  <p className="text-sm text-slate-700 mt-3"><span className="font-semibold text-red-600">{m.stallCount} stalled</span> of {m.stallTotal} in-window clients</p>
+                )}
+                {isPastDue && (
+                  <p className="text-sm text-slate-700 mt-3"><span className="font-semibold text-red-600">{m.pastDueCount} past due</span> of {m.crsBook} active CRS clients</p>
+                )}
+                {isOverall && (
+                  <p className="text-sm text-slate-700 mt-3">Report stall {m.stallRate ?? 0}% + past due {m.pastDueRate ?? 0}%, averaged</p>
+                )}
+              </div>
+              <div className="p-5 max-h-[60vh] overflow-y-auto space-y-4">
+                {isStall && (
+                  <>
+                    {stalled.length > 0 ? (
+                      <div>
+                        <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Stalled ({stalled.length})</p>
+                        <div className="border border-red-100 rounded">
+                          {stalled.map((c, i) => (
+                            <div key={i} className="flex justify-between text-sm py-1.5 px-3 border-b border-slate-100 gap-2 last:border-b-0">
+                              <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                              <span className="text-red-500 text-right whitespace-nowrap">{c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)} · ${c.daysSinceRoundEnd}d behind` : (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd}d past round end` : (c.reason || ''))}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : <p className="text-sm text-slate-500 italic">No stalled clients. Nice work.</p>}
+                    {healthy.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">On time ({healthy.length})</p>
+                        <div className="border border-green-100 rounded">
+                          {healthy.map((c, i) => (
+                            <div key={i} className="flex justify-between text-sm py-1.5 px-3 border-b border-slate-100 gap-2 last:border-b-0">
+                              <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                              <span className="text-slate-500 text-right whitespace-nowrap">{!c.roundEnded ? 'Round still open' : (c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)}` : '')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {isPastDue && (
+                  <>
+                    {pastDueList.length > 0 ? (
+                      <div>
+                        <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Past due ({pastDueList.length})</p>
+                        <div className="border border-red-100 rounded">
+                          {pastDueList.map((c, i) => (
+                            <div key={i} className="flex justify-between text-sm py-1.5 px-3 border-b border-slate-100 gap-2 last:border-b-0">
+                              <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                              <span className="text-red-500 text-right whitespace-nowrap">{c.dueDate ? `Due ${fmtDate(c.dueDate)} · ${c.daysPastDue}d late${c.balance ? ` · $${c.balance}` : ''}` : 'past due'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : <p className="text-sm text-slate-500 italic">No past due clients. Nice work.</p>}
+                    {current.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-green-600 uppercase tracking-wide mb-2">Current ({current.length})</p>
+                        <div className="border border-green-100 rounded">
+                          {current.map((c, i) => (
+                            <div key={i} className="flex justify-between text-sm py-1.5 px-3 border-b border-slate-100 gap-2 last:border-b-0">
+                              <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
+                              <span className="text-slate-500 text-right whitespace-nowrap">paid or within 5 day grace</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {isOverall && (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between p-3 bg-slate-50 rounded">
+                      <button onClick={() => setBreakdown({ amName, metric: 'stall', m })} className="text-blue-600 hover:underline">Open Report Stall Rate breakdown</button>
+                      <span className="font-medium">{m.stallRate ?? 0}%</span>
+                    </div>
+                    <div className="flex justify-between p-3 bg-slate-50 rounded">
+                      <button onClick={() => setBreakdown({ amName, metric: 'pastdue', m })} className="text-blue-600 hover:underline">Open Payment Past Due breakdown</button>
+                      <span className="font-medium">{m.pastDueRate ?? 0}%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
