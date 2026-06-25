@@ -34,6 +34,53 @@ const GMB_LOCATIONS = [
   { name: 'ASAP Credit Repair New York', city: 'New York', state: 'NY', url: 'https://g.page/r/CVED-GdyL-uiEBM/review' },
 ];
 
+// Review distribution strategy: heavily push whichever location has the fewest
+// all-time reviews while it is below the target. Auto-shifts to the next-lowest
+// once a location hits the target. Locations that have hit the target still get
+// a small share so they stay active in Google. When every location reaches the
+// target, the system falls back to inverse-count balancing.
+const REVIEW_TARGET = 100;
+const PRIORITY_SHARE = 0.70;      // the current priority location gets 70% of clicks
+const KEEP_ACTIVE_SHARE = 0.10;   // 10% split across all at-or-above-target locations
+// Remaining 20% is split across the other below-target locations by inverse count.
+
+function assignWeights(stats) {
+  const below = stats.filter(s => s.totalReviewCount < REVIEW_TARGET);
+  const above = stats.filter(s => s.totalReviewCount >= REVIEW_TARGET);
+
+  // All locations at target: fall back to original inverse-count balancing.
+  if (below.length === 0) {
+    const maxCount = Math.max(...stats.map(s => s.totalReviewCount), 1);
+    stats.forEach(s => { s.weight = maxCount - s.totalReviewCount + 1; s.priority = false; });
+    return;
+  }
+
+  // Priority = the lowest-count below-target location.
+  const priority = [...below].sort((a, b) => a.totalReviewCount - b.totalReviewCount)[0];
+  const otherBelow = below.filter(s => s !== priority);
+  stats.forEach(s => { s.priority = (s === priority); });
+
+  // Distribute the remaining shares with sensible fallbacks at the edges.
+  const priorityWeight = PRIORITY_SHARE * 100;
+  let activeWeight = above.length > 0 ? KEEP_ACTIVE_SHARE * 100 : 0;
+  let otherWeight = 100 - priorityWeight - activeWeight;
+  if (otherBelow.length === 0) {
+    if (above.length > 0) { activeWeight += otherWeight; otherWeight = 0; }
+    else { otherWeight = 0; }
+  }
+
+  priority.weight = priorityWeight;
+  if (above.length > 0) above.forEach(s => { s.weight = activeWeight / above.length; });
+  if (otherBelow.length > 0 && otherWeight > 0) {
+    const maxCount = Math.max(...otherBelow.map(s => s.totalReviewCount), 1);
+    const inv = otherBelow.map(s => Math.max(1, maxCount - s.totalReviewCount + 1));
+    const totalInv = inv.reduce((a, b) => a + b, 0);
+    otherBelow.forEach((s, i) => { s.weight = otherWeight * (inv[i] / totalInv); });
+  } else {
+    otherBelow.forEach(s => { s.weight = 0; });
+  }
+}
+
 function ReviewRandomizer() {
   const { supabaseFetch } = useApp();
   
@@ -56,67 +103,50 @@ function ReviewRandomizer() {
   const loadReviewStats = async () => {
     setLoading(true);
     try {
-      // Calculate date range
-      let dateFilter = '';
-      const now = new Date();
-      if (timeframe === 'week') {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        dateFilter = `&review_date=gte.${weekAgo.toISOString().split('T')[0]}`;
-      } else if (timeframe === 'month') {
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        dateFilter = `&review_date=gte.${monthAgo.toISOString().split('T')[0]}`;
-      }
+      // Fetch every review once. We compute both all-time totals (used for the
+      // 100 target logic) and timeframe-filtered counts (used for the stats
+      // display) from the same data set.
+      const reviews = await supabaseFetch('incoming_reviews', `select=location_name,review_date`);
 
-      // Fetch incoming reviews to count by location
-      const reviews = await supabaseFetch('incoming_reviews', `select=location_name,review_date${dateFilter}`);
-      
-      // Count reviews per location
-      const reviewCounts = {};
+      let threshold = null;
+      const now = new Date();
+      if (timeframe === 'week') threshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      else if (timeframe === 'month') threshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const totalCounts = {};
+      const periodCounts = {};
       if (reviews && Array.isArray(reviews)) {
         reviews.forEach(r => {
           const loc = r.location_name;
-          reviewCounts[loc] = (reviewCounts[loc] || 0) + 1;
+          if (!loc) return;
+          totalCounts[loc] = (totalCounts[loc] || 0) + 1;
+          if (!threshold || (r.review_date && new Date(r.review_date) >= threshold)) {
+            periodCounts[loc] = (periodCounts[loc] || 0) + 1;
+          }
         });
       }
 
-      // Calculate stats for each location
-      const stats = GMB_LOCATIONS.map(loc => {
-        const count = reviewCounts[loc.name] || 0;
-        return {
-          ...loc,
-          reviewCount: count,
-        };
-      });
+      const stats = GMB_LOCATIONS.map(loc => ({
+        ...loc,
+        totalReviewCount: totalCounts[loc.name] || 0,
+        reviewCount: periodCounts[loc.name] || 0,
+      }));
 
-      // Calculate weights (inverse of review count)
-      const maxCount = Math.max(...stats.map(s => s.reviewCount), 1);
-      const totalLocations = stats.length;
-      
-      stats.forEach(s => {
-        // Locations with fewer reviews get higher weight
-        // Weight = (maxCount - reviewCount + 1) to ensure minimum weight of 1
-        s.weight = maxCount - s.reviewCount + 1;
-      });
+      assignWeights(stats);
 
-      // Normalize weights to percentages
-      const totalWeight = stats.reduce((sum, s) => sum + s.weight, 0);
-      stats.forEach(s => {
-        s.probability = ((s.weight / totalWeight) * 100).toFixed(1);
-      });
+      const totalWeight = stats.reduce((sum, s) => sum + s.weight, 0) || 1;
+      stats.forEach(s => { s.probability = ((s.weight / totalWeight) * 100).toFixed(1); });
 
-      // Sort by review count (ascending) to show which need more reviews
-      stats.sort((a, b) => a.reviewCount - b.reviewCount);
+      // Sort by all-time count ascending so locations needing the most help are on top.
+      stats.sort((a, b) => a.totalReviewCount - b.totalReviewCount);
 
       setLocationStats(stats);
     } catch (err) {
       console.error('Error loading stats:', err);
-      // If no data, just set equal weights
-      const stats = GMB_LOCATIONS.map(loc => ({
-        ...loc,
-        reviewCount: 0,
-        weight: 1,
-        probability: (100 / GMB_LOCATIONS.length).toFixed(1),
-      }));
+      const stats = GMB_LOCATIONS.map(loc => ({ ...loc, totalReviewCount: 0, reviewCount: 0 }));
+      assignWeights(stats);
+      const totalWeight = stats.reduce((sum, s) => sum + s.weight, 0) || 1;
+      stats.forEach(s => { s.probability = ((s.weight / totalWeight) * 100).toFixed(1); });
       setLocationStats(stats);
     } finally {
       setLoading(false);
@@ -211,6 +241,32 @@ function ReviewRandomizer() {
           Locations with fewer recent reviews are more likely to be selected.
         </p>
       </div>
+
+      {/* Target progress banner: shifts to the next-lowest location as each one hits the target. */}
+      {(() => {
+        if (!locationStats.length) return null;
+        const priority = locationStats.find(s => s.priority);
+        const aboveCount = locationStats.filter(s => s.totalReviewCount >= REVIEW_TARGET).length;
+        const total = locationStats.length;
+        if (!priority) {
+          return (
+            <div className="mb-6 p-4 rounded-xl border border-green-200 bg-green-50">
+              <p className="text-sm font-semibold text-green-900">All {total} locations have hit {REVIEW_TARGET} reviews. The randomizer is auto-balancing by inverse count.</p>
+            </div>
+          );
+        }
+        const remaining = Math.max(0, REVIEW_TARGET - priority.totalReviewCount);
+        return (
+          <div className="mb-6 p-4 rounded-xl border border-blue-200 bg-blue-50">
+            <p className="text-sm font-semibold text-blue-900">
+              Currently pushing {priority.city}, {priority.state}: {priority.totalReviewCount} of {REVIEW_TARGET} reviews, {remaining} to go.
+            </p>
+            <p className="text-xs text-blue-700 mt-1">
+              {priority.probability}% of clicks routed to {priority.city}. {aboveCount} of {total} locations have hit {REVIEW_TARGET}. Locations already at the target keep a small share so they stay active in Google, and the system auto-shifts to the next-lowest below-target location once {priority.city} reaches {REVIEW_TARGET}.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Main Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 mb-6">
@@ -372,6 +428,7 @@ function ReviewRandomizer() {
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">Location</th>
+                  <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">All-Time / {REVIEW_TARGET}</th>
                   <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">Reviews ({timeframe})</th>
                   <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">Selection %</th>
                   <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">Status</th>
@@ -388,6 +445,19 @@ function ReviewRandomizer() {
                       <td className="px-4 py-3">
                         <div className="font-medium text-slate-800">{loc.city}, {loc.state}</div>
                         <div className="text-xs text-slate-400">{loc.name}</div>
+                      </td>
+                      <td className="text-center px-4 py-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${loc.totalReviewCount >= REVIEW_TARGET ? 'bg-green-500' : 'bg-blue-500'}`}
+                              style={{ width: `${Math.min((loc.totalReviewCount / REVIEW_TARGET) * 100, 100)}%` }}
+                            />
+                          </div>
+                          <span className={`text-sm font-semibold ${loc.totalReviewCount >= REVIEW_TARGET ? 'text-green-600' : loc.priority ? 'text-blue-600' : 'text-slate-700'}`}>
+                            {loc.totalReviewCount}{loc.priority ? ' ★' : ''}
+                          </span>
+                        </div>
                       </td>
                       <td className="text-center px-4 py-3">
                         <span className={`font-semibold ${
