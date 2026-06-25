@@ -20,6 +20,7 @@ import ClaimReviews from './pages/ClaimReviews';
 import ReviewRandomizer from './pages/ReviewRandomizer';
 import ConsultantPayments from './pages/ConsultantPayments';
 import AllPayments from './pages/AllPayments';
+import Invoices from './pages/Invoices';
 import SecuredCards from './pages/SecuredCards';
 import CSRDashboard from './pages/CSRDashboard';
 import Paysheet from './pages/Paysheet';
@@ -125,6 +126,7 @@ function App() {
         <Route path="claim-reviews" element={<ClaimReviews />} />
         <Route path="review-link" element={<ReviewRandomizer />} />
         <Route path="payments" element={<ConsultantPayments />} />
+        <Route path="invoices" element={<Invoices />} />
         <Route path="admin/all-payments" element={<ConsultantPayments />} />
         <Route path="secured-cards" element={<SecuredCards />} />
         <Route path="paysheet" element={<Paysheet />} />

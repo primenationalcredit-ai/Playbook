@@ -38,6 +38,7 @@ import {
   Link,
   BarChart3,
   Trophy,
+  FileText,
 } from 'lucide-react';
 import CoverageAlerts from './CoverageAlerts';
 
@@ -137,9 +138,12 @@ function Layout() {
                        currentUser?.role === 'admin';
   const isCSR = currentUser?.department === 'customer_support' || currentUser?.role === 'admin';
 
+  const isAM = currentUser?.department === 'account_managers' || currentUser?.role === 'admin' || isLeadership;
+
   // Core department items (Payment Dashboard & Paysheet - shown in main nav)
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
+    ...(isAM ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];
@@ -156,6 +160,7 @@ function Layout() {
   const departmentItems = isJoe ? [
     ...(isConsultant ? [{ path: '/affiliates', icon: Users2, label: 'Affiliates' }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
+    { path: '/invoices', icon: FileText, label: 'Invoices' },
     ...((isConsultant || isCSR) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
