@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { DollarSign, Plus, Search, RefreshCw, X, Check, Pencil } from 'lucide-react';
+import { DollarSign, Plus, Search, RefreshCw, X, Check, Pencil, Trash2 } from 'lucide-react';
 
 const SUPABASE_URL = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
@@ -150,6 +150,24 @@ function AllPayments({ embedded = false }) {
 
   const closeModal = () => { setShowAdd(false); setEditId(null); };
 
+  const deletePayment = async (p) => {
+    const label = `${p.client_name || 'this payment'} — ${fmt(p.amount)} on ${fmtDate(p.payment_date)}`;
+    if (!window.confirm(`Delete this payment?\n\n${label}\n\nThis cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/.netlify/functions/all-payments`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: p.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || 'error');
+      setMsg({ ok: true, text: 'Payment deleted.' });
+      load();
+    } catch (e) {
+      setMsg({ ok: false, text: 'Could not delete: ' + (e.message || 'error').slice(0, 140) });
+    }
+  };
+
   const saveManual = async () => {
     if (!form.client_name.trim() || !form.amount || !form.payment_date) {
       setMsg({ ok: false, text: 'Client, amount, and date are required.' }); return;
@@ -259,7 +277,7 @@ function AllPayments({ embedded = false }) {
                   <th className="px-5 py-2 font-medium">Deal</th>
                   <th className="px-5 py-2 font-medium">Source</th>
                   <th className="px-5 py-2 font-medium text-right">Amount</th>
-                  <th className="px-5 py-2 font-medium text-right">Edit</th>
+                  <th className="px-5 py-2 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -279,9 +297,14 @@ function AllPayments({ embedded = false }) {
                     </td>
                     <td className="px-5 py-3 text-right font-semibold text-slate-800">{fmt(p.amount)}</td>
                     <td className="px-5 py-3 text-right">
-                      <button onClick={() => openEdit(p)} className="inline-flex items-center gap-1 text-xs font-medium text-asap-blue hover:underline" title="Edit this payment (fix consultant, deal, amount, etc.)">
-                        <Pencil size={13} /> Edit
-                      </button>
+                      <div className="inline-flex items-center gap-3">
+                        <button onClick={() => openEdit(p)} className="inline-flex items-center gap-1 text-xs font-medium text-asap-blue hover:underline" title="Edit this payment (fix consultant, deal, amount, etc.)">
+                          <Pencil size={13} /> Edit
+                        </button>
+                        <button onClick={() => deletePayment(p)} className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 hover:underline" title="Delete this payment">
+                          <Trash2 size={13} /> Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

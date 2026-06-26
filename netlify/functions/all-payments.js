@@ -5,7 +5,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'Content-Type': 'application/json',
 };
 
@@ -87,6 +87,28 @@ exports.handler = async (event) => {
         return { statusCode: 500, headers, body: JSON.stringify({ error: t.slice(0, 200) }) };
       }
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (event.httpMethod === 'DELETE') {
+      const b = JSON.parse(event.body || '{}');
+      // Two modes:
+      //   { id }            -> delete a single payment row
+      //   { client_email }  -> delete ALL payments with that exact email (test cleanup)
+      let filter = null, scope = null;
+      if (b.id) { filter = `id=eq.${encodeURIComponent(b.id)}`; scope = `id ${b.id}`; }
+      else if (b.client_email) { filter = `client_email=eq.${encodeURIComponent(String(b.client_email).trim())}`; scope = `email ${b.client_email}`; }
+      else return { statusCode: 400, headers, body: JSON.stringify({ error: 'id or client_email is required' }) };
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?${filter}`, {
+        method: 'DELETE',
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        return { statusCode: 500, headers, body: JSON.stringify({ error: t.slice(0, 200) }) };
+      }
+      const deleted = await res.json().catch(() => []);
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, deleted: Array.isArray(deleted) ? deleted.length : 0, scope }) };
     }
 
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
