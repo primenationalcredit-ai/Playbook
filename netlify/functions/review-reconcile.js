@@ -26,6 +26,7 @@ const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 
 const REVIEW_CAP = parseInt(process.env.REVIEW_RECONCILE_CAP || '25', 10); // newest reviews pulled per location
 const PROGRESS_KEY = 'review_reconcile_progress';
+const SCHEDULED_BUDGET_MS = 24000; // when run on the daily schedule, loop locations until ~24s elapsed
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 const supa = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
@@ -121,7 +122,24 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, ...result }) };
     }
 
-    // Resumable pass across all locations
+    // Scheduled / full-run mode: process EVERY location in one invocation, bounded
+    // by a time budget. Netlify invokes this daily with no query params, so the
+    // absence of the manual button's 'step' param marks a scheduled/full run.
+    const isScheduled = !params.step;
+    if (isScheduled) {
+      const started = Date.now();
+      let flagged = 0, cleared = 0, reviewsPulled = 0, locationsDone = 0;
+      const queue = [...allLocations];
+      while (queue.length && (Date.now() - started) < SCHEDULED_BUDGET_MS) {
+        const loc = queue.shift();
+        const r = await reconcileLocation(loc);
+        flagged += r.flagged || 0; cleared += r.cleared || 0; reviewsPulled += r.reviewsPulled || 0; locationsDone++;
+      }
+      await writeCache(PROGRESS_KEY, { startedFor: allLocations.join('|'), queue, doneCount: locationsDone, totalFlagged: flagged, totalCleared: cleared, reviewsPulled, finishedAt: new Date().toISOString(), partial: queue.length > 0 });
+      return { statusCode: 200, headers, body: JSON.stringify({ done: queue.length === 0, remaining: queue.length, totals: { flagged, cleared, reviewsPulled, locations: locationsDone } }) };
+    }
+
+    // Resumable pass across all locations (manual button: one location per call)
     let prog = params.reset ? null : await readCache(PROGRESS_KEY);
     if (!prog || !Array.isArray(prog.queue) || prog.queue.length === 0 || prog.startedFor !== allLocations.join('|')) {
       prog = { startedFor: allLocations.join('|'), queue: [...allLocations], doneCount: 0, totalFlagged: 0, totalCleared: 0, reviewsPulled: 0 };

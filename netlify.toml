@@ -65,6 +65,12 @@
 [functions."round2-survey-trigger"]
   schedule = "0 15 * * 1-6"
 
+# Daily Google review reconcile. Flags incoming_reviews that have dropped off
+# Google (delisted). Runs once a day; one invocation loops every location that
+# has pending/assigned reviews, within a time budget.
+[functions."review-reconcile"]
+  schedule = "0 14 * * *"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

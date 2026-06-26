@@ -81,7 +81,7 @@ function IncomingReviews() {
       // Loop one location per call until the pass reports done. reset=1 on the
       // first call starts a fresh pass.
       while (rounds < 40) {
-        const url = `/.netlify/functions/review-reconcile${reset ? '?reset=1' : ''}`;
+        const url = `/.netlify/functions/review-reconcile?step=1${reset ? '&reset=1' : ''}`;
         const r = await fetch(url);
         const d = await r.json().catch(() => ({}));
         reset = false;
