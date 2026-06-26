@@ -5,7 +5,7 @@ import {
   DollarSign, TrendingUp, Users, FileText, 
   Calendar, ChevronLeft, ChevronRight, Award,
   ExternalLink, RefreshCw, Trophy, Zap,
-  FileCheck, CreditCard, AlertCircle, ArrowUp, ArrowDown
+  FileCheck, CreditCard, AlertCircle, ArrowUp, ArrowDown, Repeat
 } from 'lucide-react';
 import { format, subMonths, addMonths, startOfMonth, endOfMonth, startOfYear, subYears, getDaysInMonth, getDate } from 'date-fns';
 
@@ -20,7 +20,7 @@ function ConsultantPayments() {
   // Stats
   const [todayStats, setTodayStats] = useState({ sales: 0, docs: 0, partials: 0, finals: 0, count: 0 });
   const [todayConsultants, setTodayConsultants] = useState([]); // Today's earnings by consultant
-  const [mtdStats, setMtdStats] = useState({ sales: 0, docs: 0, docsAmount: 0, partials: 0, partialsAmount: 0, finals: 0, finalsAmount: 0, count: 0, projection: 0 });
+  const [mtdStats, setMtdStats] = useState({ sales: 0, docs: 0, docsAmount: 0, partials: 0, partialsAmount: 0, finals: 0, finalsAmount: 0, additionalRounds: 0, additionalRoundsAmount: 0, count: 0, projection: 0 });
   const [ytdStats, setYtdStats] = useState({ sales: 0, docs: 0, partials: 0, finals: 0, count: 0 });
   const [lastYearStats, setLastYearStats] = useState({ sales: 0, count: 0 });
   const [lastYearTodayStats, setLastYearTodayStats] = useState({ sales: 0, count: 0 }); // Same day last year
@@ -46,17 +46,25 @@ function ConsultantPayments() {
   const getFeeCategory = (row) => {
     const code = (row.code || '').toString().toLowerCase().trim();
     const feeType = (row.fee_type || '').toString().toLowerCase().trim();
-    
+    const amt = Math.round(parseFloat(row.fee_paid) || 0);
+
     // Primary: use Code column
     if (code.includes('doc')) return 'doc';
     if (code.includes('par')) return 'partial';
     if (code.includes('fin')) return 'final';
-    
+    if (code.includes('add') || code.includes('round') || code === 'ar' || code === 'rd') return 'additional_round';
+
     // Fallback: use Fee Type column
     if (feeType === 'doc fee' || feeType.includes('doc')) return 'doc';
     if (feeType.includes('partial')) return 'partial';
     if (feeType.includes('final')) return 'final';
-    
+    if (feeType.includes('additional') || feeType.includes('round')) return 'additional_round';
+
+    // Amount fallback only when nothing else matched: $249 / $299 are additional
+    // rounds in this system (same rule the Zoho sync uses). Never overrides a real
+    // doc/partial/final code above, so it can't steal from those tiles.
+    if (amt === 249 || amt === 299) return 'additional_round';
+
     return 'other';
   };
 
@@ -71,7 +79,7 @@ function ConsultantPayments() {
 
   // Process data into stats
   const processStats = (data) => {
-    let sales = 0, docs = 0, docsAmount = 0, partials = 0, partialsAmount = 0, finals = 0, finalsAmount = 0;
+    let sales = 0, docs = 0, docsAmount = 0, partials = 0, partialsAmount = 0, finals = 0, finalsAmount = 0, additionalRounds = 0, additionalRoundsAmount = 0;
     
     (data || []).forEach(row => {
       const amount = parseFloat(row.fee_paid) || 0;
@@ -88,10 +96,13 @@ function ConsultantPayments() {
       } else if (category === 'final') {
         finals++;
         finalsAmount += amount;
+      } else if (category === 'additional_round') {
+        additionalRounds++;
+        additionalRoundsAmount += amount;
       }
     });
     
-    return { sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount, count: (data || []).length };
+    return { sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount, additionalRounds, additionalRoundsAmount, count: (data || []).length };
   };
 
   // Process today's data by consultant
@@ -665,7 +676,7 @@ function ConsultantPayments() {
           </div>
 
           {/* Fee Breakdown Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
@@ -703,6 +714,19 @@ function ConsultantPayments() {
                 </div>
               </div>
               <p className="text-lg font-semibold text-emerald-600">{formatCurrency(mtdStats.finalsAmount)}</p>
+            </div>
+
+            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <Repeat className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Additional Rounds</p>
+                  <p className="text-xl font-bold text-slate-800">{mtdStats.additionalRounds}</p>
+                </div>
+              </div>
+              <p className="text-lg font-semibold text-indigo-600">{formatCurrency(mtdStats.additionalRoundsAmount)}</p>
             </div>
 
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
