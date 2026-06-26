@@ -92,7 +92,38 @@ async function readInvoices() {
   }
   return out;
 }
-// Payment classification:
+// Doc-fee payments actually received, keyed by deal id and by normalized client
+// name, as CONSUMABLE counts (amount -> how many doc fees of that amount were paid).
+// Used to forgive accidental duplicate doc-fee invoices: when a client was billed
+// two doc fees by mistake and paid one, the unpaid duplicate keeps its full balance
+// and would otherwise be flagged past due. We forgive at most one duplicate per paid
+// doc fee of the same amount, so a client who truly never paid still counts.
+async function readDocFeePaid() {
+  const byDeal = new Map(), byName = new Map();
+  const bump = (map, key, amt) => {
+    if (!key) return;
+    const r = Math.round(parseFloat(amt) || 0);
+    if (r <= 0) return;
+    let inner = map.get(key);
+    if (!inner) { inner = new Map(); map.set(key, inner); }
+    inner.set(r, (inner.get(r) || 0) + 1);
+  };
+  let offset = 0; const page = 1000;
+  while (true) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_type=eq.doc_fee&select=client_name,pipedrive_deal_id,amount&offset=${offset}&limit=${page}`, { headers: supaAuth });
+    if (!res.ok) break;
+    const batch = await res.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    for (const p of batch) {
+      if (p.pipedrive_deal_id) bump(byDeal, String(p.pipedrive_deal_id), p.amount);
+      if (p.client_name) bump(byName, norm(p.client_name), p.amount);
+    }
+    if (batch.length < page) break;
+    offset += page;
+    if (offset > 200000) break;
+  }
+  return { byDeal, byName };
+}
 //   - inWindow: clients with at least one invoice whose original due date is in
 //     the last 30 days (any balance, paid or unpaid). This is the denominator.
 //   - pastDue: subset whose invoice is >= 5 days past its due date AND still has
@@ -106,6 +137,25 @@ async function paymentClassification() {
     const prev = map.get(key);
     if (!prev || entry.daysPastDue > prev.daysPastDue) map.set(key, entry);
   };
+
+  // Consumable copy of paid doc fees. When a past-due invoice's balance matches a
+  // doc fee the client already paid, treat it as the accidental duplicate and skip
+  // it. Consuming the count means one paid doc fee forgives exactly one duplicate.
+  const docPaid = await readDocFeePaid();
+  const dealLeft = new Map(); for (const [k, m] of docPaid.byDeal) dealLeft.set(k, new Map(m));
+  const nameLeft = new Map(); for (const [k, m] of docPaid.byName) nameLeft.set(k, new Map(m));
+  const forgiveDuplicate = (dealKey, nameKey, roundedBal) => {
+    for (const [leftMap, key] of [[dealLeft, dealKey], [nameLeft, nameKey]]) {
+      if (!key) continue;
+      const inner = leftMap.get(key);
+      if (inner && (inner.get(roundedBal) || 0) > 0) {
+        inner.set(roundedBal, inner.get(roundedBal) - 1);
+        return true;
+      }
+    }
+    return false;
+  };
+
   for (const inv of await readInvoices()) {
     if (!inv.due_date) continue;
     const due = parseDate(inv.due_date);
@@ -114,14 +164,21 @@ async function paymentClassification() {
     // Denominator window: due date was within the last 30 days (today through 30 days ago).
     // Anything older drops off naturally so non-payers stop counting.
     if (daysPastDue < 0 || daysPastDue > PAYMENT_WINDOW_DAYS) continue;
-    if (inv.pipedrive_deal_id) inWindowDeal.add(String(inv.pipedrive_deal_id));
-    if (inv.customer_name) inWindowName.add(norm(inv.customer_name));
+    const dealKey = inv.pipedrive_deal_id ? String(inv.pipedrive_deal_id) : null;
+    const nameKey = inv.customer_name ? norm(inv.customer_name) : null;
+    if (dealKey) inWindowDeal.add(dealKey);
+    if (nameKey) inWindowName.add(nameKey);
     // Numerator: 5+ days past due and still owing.
     const bal = parseFloat(inv.balance) || 0;
     if (daysPastDue >= PASTDUE_MIN_DAYS && bal > 1) {
-      const entry = { dueDate: String(inv.due_date).slice(0, 10), daysPastDue, balance: Math.round(bal) };
-      if (inv.pipedrive_deal_id) consider(String(inv.pipedrive_deal_id), pastDueDeal, entry);
-      if (inv.customer_name) consider(norm(inv.customer_name), pastDueName, entry);
+      const roundedBal = Math.round(bal);
+      // Accidental duplicate doc-fee invoice already satisfied by the real doc-fee
+      // payment -> do not count as past due. Client stays in the denominator (in
+      // window) but is treated as on time.
+      if (forgiveDuplicate(dealKey, nameKey, roundedBal)) continue;
+      const entry = { dueDate: String(inv.due_date).slice(0, 10), daysPastDue, balance: roundedBal };
+      if (dealKey) consider(dealKey, pastDueDeal, entry);
+      if (nameKey) consider(nameKey, pastDueName, entry);
     }
   }
   return { inWindowDeal, inWindowName, pastDueDeal, pastDueName };
