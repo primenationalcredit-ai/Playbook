@@ -34,6 +34,7 @@ function AllPayments({ embedded = false }) {
   const autoRan = useRef(false);
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [consultants, setConsultants] = useState([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [form, setForm] = useState({ client_name: '', amount: '', payment_type: 'doc_fee', payment_date: now.toISOString().slice(0, 10), consultant_name: '', pipedrive_deal_id: '' });
@@ -49,6 +50,23 @@ function AllPayments({ embedded = false }) {
   };
 
   useEffect(() => { load(); }, [month]);
+
+  // Load the credit consultant roster once so the edit form can offer a pick list
+  // instead of free typing. Sorted by name. Free text is still allowed as a fallback.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.credit_consultants&select=name&order=name.asc`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        });
+        if (res.ok) {
+          const rows = await res.json();
+          const names = Array.from(new Set((rows || []).map(u => (u.name || '').trim()).filter(Boolean)));
+          setConsultants(names);
+        }
+      } catch (e) { /* noop — form falls back to free text */ }
+    })();
+  }, []);
 
   // Auto-run enrichment to completion once when the tab opens
   useEffect(() => {
@@ -300,7 +318,24 @@ function AllPayments({ embedded = false }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-500 mb-1 block">Consultant (optional)</label>
-                  <input value={form.consultant_name} onChange={e => setForm({ ...form, consultant_name: e.target.value })} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Name" />
+                  <select
+                    value={consultants.includes(form.consultant_name) || form.consultant_name === '' ? form.consultant_name : '__other__'}
+                    onChange={e => setForm({ ...form, consultant_name: e.target.value === '__other__' ? ' ' : e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                  >
+                    <option value="">— None —</option>
+                    {consultants.map(n => <option key={n} value={n}>{n}</option>)}
+                    <option value="__other__">Other (type a name)</option>
+                  </select>
+                  {!(consultants.includes(form.consultant_name) || form.consultant_name === '') && (
+                    <input
+                      value={form.consultant_name.trim() === '' ? '' : form.consultant_name}
+                      onChange={e => setForm({ ...form, consultant_name: e.target.value })}
+                      className="w-full mt-2 px-3 py-2 border rounded-lg text-sm"
+                      placeholder="Type consultant name"
+                      autoFocus
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="text-xs text-slate-500 mb-1 block">Deal ID (optional)</label>
