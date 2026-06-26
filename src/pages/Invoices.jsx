@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ExternalLink, RefreshCw, FileText, AlertTriangle, CheckCircle2, Clock, XCircle, DollarSign } from 'lucide-react';
+import { Search, ExternalLink, RefreshCw, FileText, AlertTriangle, CheckCircle2, Clock, XCircle, DollarSign, CalendarClock, PauseCircle, PlayCircle, Zap, Undo2, ChevronDown, ChevronUp, AlarmClock } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useApp } from '../context/AppContext';
 
 const PIPEDRIVE_DOMAIN = 'asapcredit';
 const DEAL_URL = (id) => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${id}`;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const RESTRICTED_LEADER_IDS = [
+  'f7b8bc3a-74e6-46c2-a378-d19d204d7133', // Mariana Navarro
+  '3ae5ad73-46eb-404f-8dc9-6d5cf53e9df0', // Kim Sanchez
+];
 
 const fmtMoney = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
 const fmtDate = (s) => {
@@ -12,6 +18,14 @@ const fmtDate = (s) => {
   if (d.length !== 3) return s;
   return `${MONTHS[parseInt(d[1], 10) - 1]} ${parseInt(d[2], 10)}, ${d[0]}`;
 };
+const fmtDateTime = (s) => {
+  if (!s) return '';
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  const h = d.getHours() % 12 || 12;
+  const am = d.getHours() >= 12 ? 'PM' : 'AM';
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${h}:${String(d.getMinutes()).padStart(2, '0')} ${am}`;
+};
 const daysUntil = (s) => {
   if (!s) return null;
   const d = new Date(s);
@@ -19,11 +33,19 @@ const daysUntil = (s) => {
   d.setHours(0, 0, 0, 0); today.setHours(0, 0, 0, 0);
   return Math.round((d - today) / 86400000);
 };
+const chargeLabel = (idx, total) => {
+  if (total <= 1) return 'Final Payment';
+  if (idx === total - 1) return 'Final Payment';
+  if (total === 2 && idx === 0) return 'Partial Payment';
+  return `Payment #${idx + 1}`;
+};
 
 async function callApi(action, payload = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const authHeader = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
   const res = await fetch('/.netlify/functions/invoices-api', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader },
     body: JSON.stringify({ action, ...payload })
   });
   const data = await res.json().catch(() => ({}));
@@ -62,11 +84,240 @@ function SummaryTile({ label, value, tone = 'default', sub }) {
   );
 }
 
-function DealView({ data }) {
-  const { deal_id, client_name, client_email, client_phone, initial_payment, scheduled_charges = [], doc_fee, has_card_on_file } = data;
+function DocFeeCard({ token, isAdmin, onAction }) {
+  if (!token) {
+    return <p className="text-sm text-slate-400 italic text-center py-4">No payment token found for this deal yet.</p>;
+  }
+  const isPaid = token.status === 'used' && token.transaction_id;
+  const refunded = !!token.refunded_at;
+  const leftBorder = refunded ? 'border-l-slate-400 bg-slate-50 opacity-90' : isPaid ? 'border-l-green-500' : 'border-l-slate-300';
+  return (
+    <div className={`border border-slate-200 border-l-[4px] ${leftBorder} rounded-lg p-4`}>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <p className="font-semibold text-slate-800">Doc Fee</p>
+          <StatusPill status={token.status} refunded={refunded} />
+        </div>
+        <p className="text-2xl font-bold text-asap-blue">{fmtMoney(token.initial_amount)}</p>
+      </div>
+      <div className="text-xs text-slate-600 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 mb-3">
+        {isPaid && (<><span className="text-slate-400">Paid</span><span className="font-semibold">{fmtDate(token.used_at)}</span></>)}
+        {token.transaction_id && (<><span className="text-slate-400">Txn ID</span><span className="font-mono text-[11px] truncate" title={token.transaction_id}>{token.transaction_id}</span></>)}
+        {token.card_last_4 && (<><span className="text-slate-400">Card</span><span className="font-semibold">{token.card_type || 'Card'} ending {String(token.card_last_4).replace(/X+/, '')}</span></>)}
+        {token.zoho_doc_fee_invoice_id && (<><span className="text-slate-400">Zoho Invoice</span><span className="font-mono text-[11px] truncate" title={token.zoho_doc_fee_invoice_id}>{token.zoho_doc_fee_invoice_id}</span></>)}
+        {token.zoho_doc_fee_marked_paid_at && (<><span className="text-slate-400">Zoho Marked Paid</span><span className="font-semibold">{fmtDate(token.zoho_doc_fee_marked_paid_at)}</span></>)}
+        {refunded && (<><span className="text-slate-400">Refunded</span><span className="font-semibold">{fmtDate(token.refunded_at)}</span></>)}
+        {token.refund_reason && (<><span className="text-slate-400">Refund reason</span><span className="font-semibold italic">{token.refund_reason}</span></>)}
+      </div>
+      {isAdmin && isPaid && !refunded && (
+        <div className="pt-3 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() => onAction({ type: 'refund_initial', token_id: token.id, amount: token.initial_amount, cardLast4: token.card_last_4 })}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700"
+          >
+            <Undo2 size={12} /> Refund {fmtMoney(token.initial_amount)}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction }) {
+  const c = charge;
+  const refunded = !!c.refunded_at;
+  const isPaid = c.status === 'paid';
+  const isPaused = c.status === 'paused';
+  const isFailed = c.status === 'failed';
+  const isScheduled = c.status === 'scheduled';
+
+  const leftBorder =
+    refunded   ? 'border-l-slate-400 bg-slate-50 opacity-90' :
+    isPaid     ? 'border-l-green-500' :
+    isScheduled? 'border-l-blue-500' :
+    isFailed   ? 'border-l-red-500 bg-red-50' :
+    isPaused   ? 'border-l-amber-500 bg-amber-50' :
+                 'border-l-slate-300';
+
+  const days = !isPaid && !refunded ? daysUntil(c.due_date) : null;
+  let urgency = null;
+  if (days != null) {
+    if (days < 0) urgency = <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-red-100 text-red-700">{Math.abs(days)} days overdue</span>;
+    else if (days <= 3) urgency = <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-700">Due in {days} day{days === 1 ? '' : 's'}</span>;
+    else urgency = <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">Due in {days} days</span>;
+  }
+
+  return (
+    <div className={`border border-slate-200 border-l-[4px] ${leftBorder} rounded-lg p-4`}>
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <p className="font-semibold text-slate-800">{label}</p>
+          <StatusPill status={c.status} refunded={refunded} />
+          {urgency}
+        </div>
+        <p className="text-2xl font-bold text-asap-blue">{fmtMoney(c.amount)}</p>
+      </div>
+      <div className="text-xs text-slate-600 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 mb-3">
+        <span className="text-slate-400">Due date</span><span className="font-semibold">{fmtDate(c.due_date)}</span>
+        {c.charged_at && (<><span className="text-slate-400">Charged</span><span className="font-semibold">{fmtDate(c.charged_at)}</span></>)}
+        {c.transaction_id && (<><span className="text-slate-400">Txn ID</span><span className="font-mono text-[11px] truncate" title={c.transaction_id}>{c.transaction_id}</span></>)}
+        {c.zoho_invoice_id && (<><span className="text-slate-400">Zoho Invoice</span><span className="font-mono text-[11px] truncate" title={c.zoho_invoice_id}>{c.zoho_invoice_id}</span></>)}
+        {c.pause_until_date && !c.pause_indefinite && (<><span className="text-slate-400">Paused until</span><span className="font-semibold">{fmtDate(c.pause_until_date)}</span></>)}
+        {c.pause_indefinite && (<><span className="text-slate-400">Paused</span><span className="font-semibold">Indefinitely</span></>)}
+        {c.pause_reason && (<><span className="text-slate-400">Pause reason</span><span className="italic">{c.pause_reason}</span></>)}
+        {refunded && (<><span className="text-slate-400">Refunded</span><span className="font-semibold">{fmtDate(c.refunded_at)}</span></>)}
+        {c.refund_reason && (<><span className="text-slate-400">Refund reason</span><span className="italic">{c.refund_reason}</span></>)}
+      </div>
+
+      {c.last_decline_reason && !isPaid && (
+        <div className="mb-3 p-2 rounded border border-red-200 bg-red-50 text-xs text-red-700">
+          <span className="font-semibold">Last decline:</span> {c.last_decline_reason}{c.retry_count ? ` · retry ${c.retry_count}` : ''}
+        </div>
+      )}
+
+      {/* Admin direct actions */}
+      {isAdmin && !refunded && (
+        <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2">
+          {(isScheduled || isFailed) && (
+            <>
+              <button onClick={() => onAction({ type: 'charge_now', charge_id: c.id, amount: c.amount, cardLast4: c.card_last_4 })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700">
+                <Zap size={12} /> Charge Now
+              </button>
+              <button onClick={() => onAction({ type: 'update_due_date', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+                <CalendarClock size={12} /> Edit Date
+              </button>
+              <button onClick={() => onAction({ type: 'pause_admin', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700">
+                <PauseCircle size={12} /> Pause
+              </button>
+            </>
+          )}
+          {isPaused && (
+            <>
+              <button onClick={() => onAction({ type: 'resume', charge_id: c.id, amount: c.amount })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700">
+                <PlayCircle size={12} /> Resume
+              </button>
+              <button onClick={() => onAction({ type: 'update_due_date', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+                <CalendarClock size={12} /> Edit Date
+              </button>
+            </>
+          )}
+          {isPaid && (
+            <button onClick={() => onAction({ type: 'refund_scheduled', charge_id: c.id, amount: c.amount, cardLast4: c.card_last_4 })}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700">
+              <Undo2 size={12} /> Refund {fmtMoney(c.amount)}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Non-admin (AM / Consultant) request buttons - only on charges that aren't paid/refunded */}
+      {!isAdmin && canRequest && !refunded && !isPaid && (
+        <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+          <button onClick={() => onAction({ type: 'request_date_change', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+            <CalendarClock size={12} /> Request date change
+          </button>
+          <button onClick={() => onAction({ type: 'request_pause', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-white border border-amber-500 rounded hover:bg-amber-50">
+            <PauseCircle size={12} /> Request pause
+          </button>
+          <span className="text-[11px] text-slate-400 self-center">Requires leadership approval</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivitiesSection({ activities }) {
+  if (!activities || activities.length === 0) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+        <h3 className="text-base font-semibold text-asap-blue mb-3 pb-3 border-b border-slate-100">Pipedrive Activities</h3>
+        <p className="text-sm text-slate-400 italic text-center py-4">No open activities on this deal.</p>
+      </div>
+    );
+  }
+  const open = activities.filter(a => !a.done);
+  const sortedOpen = [...open].sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+      <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+        <h3 className="text-base font-semibold text-asap-blue">Pipedrive Activities</h3>
+        <span className="text-xs text-slate-500">({sortedOpen.length} open)</span>
+      </div>
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1"><AlarmClock size={12} /> Open / Upcoming</p>
+      <div className="space-y-2">
+        {sortedOpen.slice(0, 12).map(a => {
+          const days = daysUntil(a.due_date);
+          const overdue = days != null && days < 0;
+          return (
+            <div key={a.id} className={`flex items-start gap-3 p-2 rounded border ${overdue ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-100'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${overdue ? 'bg-red-200 text-red-700' : 'bg-slate-200 text-slate-500'}`}>
+                {overdue ? <AlertTriangle size={14} /> : <Clock size={14} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800 truncate" title={a.subject}>{a.subject || '(no subject)'}</p>
+                <p className="text-[11px] text-slate-500">{a.type_name || a.type || 'Activity'}</p>
+                <p className={`text-[11px] ${overdue ? 'text-red-700 font-semibold' : 'text-slate-500'}`}>
+                  {overdue ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue — was due ${fmtDate(a.due_date)}` :
+                    days === 0 ? `Due today (${fmtDate(a.due_date)})` :
+                    days != null ? `Due in ${days} day${days === 1 ? '' : 's'} (${fmtDate(a.due_date)})` :
+                    a.due_date ? fmtDate(a.due_date) : ''}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+        {sortedOpen.length > 12 && <p className="text-[11px] text-slate-400 italic text-center pt-1">+{sortedOpen.length - 12} more, see Pipedrive</p>}
+      </div>
+    </div>
+  );
+}
+
+function NotesSection({ notes }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!notes || notes.length === 0) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+        <h3 className="text-base font-semibold text-asap-blue mb-3 pb-3 border-b border-slate-100">Recent Notes</h3>
+        <p className="text-sm text-slate-400 italic text-center py-4">No notes on this deal yet.</p>
+      </div>
+    );
+  }
+  const sorted = [...notes].sort((a, b) => (b.add_time || '').localeCompare(a.add_time || ''));
+  const shown = expanded ? sorted : sorted.slice(0, 3);
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+      <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+        <h3 className="text-base font-semibold text-asap-blue">Recent Notes</h3>
+        {sorted.length > 3 && (
+          <button onClick={() => setExpanded(!expanded)} className="text-xs font-semibold text-asap-blue hover:underline inline-flex items-center gap-1">
+            {expanded ? <>Show recent only <ChevronUp size={12} /></> : <>Show all {sorted.length} <ChevronDown size={12} /></>}
+          </button>
+        )}
+      </div>
+      <div className="space-y-3">
+        {shown.map(n => (
+          <div key={n.id} className="p-3 rounded bg-slate-50 border border-slate-100">
+            <p className="text-[11px] text-slate-500 mb-1">{fmtDateTime(n.add_time)}</p>
+            <div className="text-sm text-slate-700 [&_a]:text-asap-blue [&_a]:underline [&_p]:my-1 [&_b]:font-semibold prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: n.content || '' }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DealView({ data, isAdmin, canRequest, onAction }) {
+  const { deal_id, client_name, client_email, client_phone, initial_payment, scheduled_charges = [], doc_fee, has_card_on_file, activities = [], notes = [] } = data;
   const token = initial_payment;
 
-  // Summary numbers
   let collected = 0, pending = 0, refunded = 0;
   if (token && token.status === 'used' && token.transaction_id && !token.refunded_at) collected += parseFloat(token.initial_amount || 0);
   if (token && token.refunded_at) refunded += parseFloat(token.initial_amount || 0);
@@ -78,11 +329,12 @@ function DealView({ data }) {
   });
   const lifetime = collected + pending + refunded;
 
-  const cardOnFile = token && token.card_last_4 ? `${token.card_type || 'Card'} ending in ${token.card_last_4}` : 'No card on file yet';
+  const cardOnFile = token && token.card_last_4 ? `${token.card_type || 'Card'} ending in ${String(token.card_last_4).replace(/X+/, '')}` : 'No card on file yet';
+
+  const sortedCharges = [...scheduled_charges].sort((a, b) => (a.sequence_number || 0) - (b.sequence_number || 0));
 
   return (
     <div className="space-y-5">
-      {/* Doc fee banner */}
       {doc_fee && (
         doc_fee.paid ? (
           <div className="flex items-start gap-3 p-4 rounded-lg border border-green-200 bg-green-50">
@@ -107,7 +359,6 @@ function DealView({ data }) {
         )
       )}
 
-      {/* Client Info */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
           <h3 className="text-base font-semibold text-asap-blue">Client Information</h3>
@@ -123,7 +374,6 @@ function DealView({ data }) {
         </dl>
       </div>
 
-      {/* Summary tiles */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
         <h3 className="text-base font-semibold text-asap-blue mb-4 pb-3 border-b border-slate-100">Summary</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -134,109 +384,33 @@ function DealView({ data }) {
         </div>
       </div>
 
-      {/* Initial Payment (Doc Fee) */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
         <h3 className="text-base font-semibold text-asap-blue mb-4 pb-3 border-b border-slate-100">Initial Payment (Doc Fee)</h3>
-        {!token ? (
-          <p className="text-sm text-slate-400 italic text-center py-4">No payment token found for this deal yet.</p>
-        ) : (
-          <PaymentCard
-            isInitial
-            amount={token.initial_amount}
-            status={token.status}
-            statusOverride={token.status === 'used' && token.transaction_id ? 'paid' : token.status}
-            refundedAt={token.refunded_at}
-            usedAt={token.used_at}
-            transactionId={token.transaction_id}
-            cardLast4={token.card_last_4}
-            cardType={token.card_type}
-            createdAt={token.created_at}
-          />
-        )}
+        <DocFeeCard token={token} isAdmin={isAdmin} onAction={onAction} />
       </div>
 
-      {/* Scheduled Charges */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-        <h3 className="text-base font-semibold text-asap-blue mb-4 pb-3 border-b border-slate-100">Scheduled Payments ({scheduled_charges.length})</h3>
-        {scheduled_charges.length === 0 ? (
+        <h3 className="text-base font-semibold text-asap-blue mb-4 pb-3 border-b border-slate-100">Scheduled Payments ({sortedCharges.length})</h3>
+        {sortedCharges.length === 0 ? (
           <p className="text-sm text-slate-400 italic text-center py-4">No scheduled payments for this deal.</p>
         ) : (
           <div className="space-y-3">
-            {scheduled_charges
-              .slice()
-              .sort((a, b) => (a.sequence_number || 0) - (b.sequence_number || 0))
-              .map((c, i, arr) => (
-                <PaymentCard
-                  key={c.id || i}
-                  title={`Payment #${c.sequence_number || (i + 1)}${i === arr.length - 1 && arr.length > 1 ? ' (Final)' : ''}`}
-                  amount={c.amount}
-                  status={c.status}
-                  refundedAt={c.refunded_at}
-                  chargedAt={c.charged_at}
-                  dueDate={c.due_date}
-                  transactionId={c.transaction_id}
-                  description={c.description}
-                  pauseUntil={c.pause_until_date}
-                  pauseIndefinite={c.pause_indefinite}
-                  lastDeclineReason={c.last_decline_reason}
-                  retryCount={c.retry_count}
-                />
-              ))}
+            {sortedCharges.map((c, i) => (
+              <ScheduledChargeCard
+                key={c.id || i}
+                charge={c}
+                label={chargeLabel(i, sortedCharges.length)}
+                isAdmin={isAdmin}
+                canRequest={canRequest}
+                onAction={onAction}
+              />
+            ))}
           </div>
         )}
       </div>
-    </div>
-  );
-}
 
-function PaymentCard({ title, isInitial, amount, status, statusOverride, refundedAt, usedAt, chargedAt, dueDate, transactionId, cardLast4, cardType, description, createdAt, pauseUntil, pauseIndefinite, lastDeclineReason, retryCount }) {
-  const effectiveStatus = statusOverride || status;
-  const isPaid = effectiveStatus === 'paid' || effectiveStatus === 'used';
-  const leftBorder =
-    refundedAt ? 'border-l-slate-400 bg-slate-50 opacity-90' :
-    isPaid     ? 'border-l-green-500' :
-    effectiveStatus === 'scheduled' ? 'border-l-blue-500' :
-    effectiveStatus === 'failed'    ? 'border-l-red-500 bg-red-50' :
-    effectiveStatus === 'paused'    ? 'border-l-amber-500 bg-amber-50' :
-                                       'border-l-slate-300';
-  const days = !isPaid && !refundedAt ? daysUntil(dueDate) : null;
-  let urgency = null;
-  if (days != null) {
-    if (days < 0) urgency = <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-red-100 text-red-700">{Math.abs(days)} days overdue</span>;
-    else if (days <= 3) urgency = <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-700">Due in {days} day{days === 1 ? '' : 's'}</span>;
-    else urgency = <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">Due in {days} days</span>;
-  }
-  return (
-    <div className={`border border-slate-200 border-l-[4px] ${leftBorder} rounded-lg p-4`}>
-      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div>
-          <p className="font-semibold text-slate-800">{title || 'Doc Fee'}</p>
-          {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          {urgency}
-          <StatusPill status={effectiveStatus} refunded={!!refundedAt} />
-        </div>
-      </div>
-      <div className="flex items-end justify-between gap-3 flex-wrap">
-        <p className="text-2xl font-bold text-asap-blue">{fmtMoney(amount)}</p>
-        <div className="text-xs text-slate-600 grid grid-cols-2 gap-x-4 gap-y-1 min-w-[280px]">
-          {dueDate && !isPaid && !refundedAt && (<><span className="text-slate-400">Due date</span><span className="font-semibold">{fmtDate(dueDate)}</span></>)}
-          {chargedAt && (<><span className="text-slate-400">Charged</span><span className="font-semibold">{fmtDate(chargedAt)}</span></>)}
-          {usedAt && (<><span className="text-slate-400">Paid</span><span className="font-semibold">{fmtDate(usedAt)}</span></>)}
-          {refundedAt && (<><span className="text-slate-400">Refunded</span><span className="font-semibold">{fmtDate(refundedAt)}</span></>)}
-          {transactionId && (<><span className="text-slate-400">Txn ID</span><span className="font-mono text-[11px] truncate" title={transactionId}>{transactionId}</span></>)}
-          {(cardLast4 && isInitial) && (<><span className="text-slate-400">Card</span><span className="font-semibold">{cardType || 'Card'} ending {cardLast4}</span></>)}
-          {createdAt && isInitial && !usedAt && (<><span className="text-slate-400">Created</span><span className="font-semibold">{fmtDate(createdAt)}</span></>)}
-          {pauseUntil && !pauseIndefinite && (<><span className="text-slate-400">Paused until</span><span className="font-semibold">{fmtDate(pauseUntil)}</span></>)}
-          {pauseIndefinite && (<><span className="text-slate-400">Paused</span><span className="font-semibold">Indefinitely</span></>)}
-        </div>
-      </div>
-      {lastDeclineReason && (
-        <div className="mt-3 p-2 rounded border border-red-200 bg-red-50 text-xs text-red-700">
-          <span className="font-semibold">Last decline:</span> {lastDeclineReason}{retryCount ? ` · retry ${retryCount}` : ''}
-        </div>
-      )}
+      <ActivitiesSection activities={activities} />
+      <NotesSection notes={notes} />
     </div>
   );
 }
@@ -348,17 +522,112 @@ function BrowseView({ data, filter, onFilterChange }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 export default function Invoices() {
-  const [dealInput, setDealInput] = useState('');
+  const { currentUser } = useApp();
+
+  const isRestrictedLeader = RESTRICTED_LEADER_IDS.includes(currentUser?.id);
+  // Admin (in the Playbook UI sense): can take direct actions on invoices.
+  // Mariana and Kim are restricted leaders even if they're "admin" elsewhere.
+  const isAdmin = !!currentUser && (currentUser.role === 'admin' || currentUser.department === 'leadership') && !isRestrictedLeader;
+  // AMs and Consultants (and restricted leaders) can REQUEST changes through approvals.
+  const canRequest = !!currentUser && !isAdmin && (
+    currentUser.department === 'account_managers' ||
+    currentUser.department === 'credit_consultants' ||
+    currentUser.role === 'account_manager' ||
+    isRestrictedLeader
+  );
+
+  const initialDeal = (() => {
+    try { return new URLSearchParams(window.location.search).get('deal') || ''; } catch { return ''; }
+  })();
+  const [dealInput, setDealInput] = useState(initialDeal);
   const [dealData, setDealData] = useState(null);
   const [browseData, setBrowseData] = useState(null);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
-  const [mode, setMode] = useState('lookup'); // 'lookup' | 'browse'
+  const [mode, setMode] = useState('lookup');
 
-  const lookup = async () => {
-    const id = dealInput.trim();
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
+
+  const openAction = (info) => {
+    setModal(info);
+    if (info.type === 'update_due_date') setForm({ new_due_date: '' });
+    else if (info.type === 'pause_admin') setForm({ pause_until_date: '', pause_indefinite: false });
+    else if (info.type === 'request_date_change') setForm({ new_due_date: '', reason: '' });
+    else if (info.type === 'request_pause') setForm({ pause_until_date: '', pause_indefinite: false, reason: '' });
+    else if (info.type === 'refund_initial' || info.type === 'refund_scheduled') setForm({ reason: '', passcode: '' });
+    else if (info.type === 'charge_now') setForm({});
+    else if (info.type === 'resume') setForm({});
+    setNotice(null);
+  };
+
+  const submitAction = async () => {
+    if (!modal) return;
+    setBusy(true); setNotice(null);
+    try {
+      if (modal.type === 'update_due_date') {
+        if (!form.new_due_date) throw new Error('Pick a new due date');
+        await callApi('update_due_date', { charge_id: modal.charge_id, due_date: form.new_due_date });
+        setNotice({ type: 'success', text: 'Due date updated.' });
+      } else if (modal.type === 'pause_admin') {
+        if (!form.pause_indefinite && !form.pause_until_date) throw new Error('Set a pause-until date or check Indefinite');
+        // Admin direct pause via the request_pause handler which applies immediately for admins.
+        await callApi('request_pause', {
+          charge_id: modal.charge_id,
+          pause_indefinite: form.pause_indefinite,
+          pause_until_date: form.pause_indefinite ? null : form.pause_until_date,
+          reason: 'Direct admin pause'
+        });
+        setNotice({ type: 'success', text: 'Charge paused.' });
+      } else if (modal.type === 'resume') {
+        await callApi('resume', { charge_id: modal.charge_id });
+        setNotice({ type: 'success', text: 'Charge resumed.' });
+      } else if (modal.type === 'charge_now') {
+        await callApi('charge_now', { charge_id: modal.charge_id });
+        setNotice({ type: 'success', text: 'Charge submitted.' });
+      } else if (modal.type === 'refund_initial') {
+        if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
+        if (!form.passcode) throw new Error('Manager passcode required');
+        await callApi('refund_initial', { token_id: modal.token_id, reason: form.reason, passcode: form.passcode });
+        setNotice({ type: 'success', text: 'Refund submitted.' });
+      } else if (modal.type === 'refund_scheduled') {
+        if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
+        if (!form.passcode) throw new Error('Manager passcode required');
+        await callApi('refund_scheduled', { charge_id: modal.charge_id, reason: form.reason, passcode: form.passcode });
+        setNotice({ type: 'success', text: 'Refund submitted.' });
+      } else if (modal.type === 'request_date_change') {
+        if (!form.new_due_date) throw new Error('Pick a new due date');
+        if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
+        const r = await callApi('request_date_change', { charge_id: modal.charge_id, new_due_date: form.new_due_date, reason: form.reason });
+        setNotice({ type: 'success', text: r.message || 'Request submitted for approval.' });
+      } else if (modal.type === 'request_pause') {
+        if (!form.pause_indefinite && !form.pause_until_date) throw new Error('Set a pause-until date or check Indefinite');
+        if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
+        const r = await callApi('request_pause', {
+          charge_id: modal.charge_id,
+          pause_indefinite: form.pause_indefinite,
+          pause_until_date: form.pause_indefinite ? null : form.pause_until_date,
+          reason: form.reason
+        });
+        setNotice({ type: 'success', text: r.message || 'Pause request submitted for approval.' });
+      }
+      setTimeout(() => { setModal(null); lookup(dealInput); }, 1400);
+    } catch (e) {
+      setNotice({ type: 'error', text: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lookup = async (idOverride) => {
+    const id = (idOverride ?? dealInput).trim();
     if (!id) { setErr('Enter a Pipedrive Deal ID.'); return; }
     setLoading(true); setErr(null); setBrowseData(null); setMode('lookup');
     try {
@@ -379,6 +648,22 @@ export default function Invoices() {
     } finally { setLoading(false); }
   };
 
+  useEffect(() => {
+    if (initialDeal) lookup(initialDeal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const modalTitles = {
+    update_due_date: 'Edit Due Date',
+    pause_admin: 'Pause Invoice',
+    resume: 'Resume Invoice',
+    charge_now: 'Charge Now',
+    refund_initial: 'Refund Doc Fee',
+    refund_scheduled: 'Refund Payment',
+    request_date_change: 'Request date change',
+    request_pause: 'Request pause',
+  };
+
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto">
       <div className="mb-6">
@@ -387,7 +672,11 @@ export default function Invoices() {
           Invoices
         </h1>
         <p className="text-slate-500 text-sm">
-          Track doc fees and scheduled payments from the autobill processor. Read-only. Use the payment processor dashboard for actions like refunds, pauses, and date changes.
+          {isAdmin
+            ? 'Look up a client and take direct action on their doc fee and scheduled payments.'
+            : canRequest
+              ? 'Look up a client to view their invoices. Use Request date change or Request pause on any unpaid charge to send it to leadership for approval.'
+              : 'Track doc fees and scheduled payments. Read-only.'}
         </p>
       </div>
 
@@ -405,7 +694,7 @@ export default function Invoices() {
             />
           </div>
           <div className="flex gap-2">
-            <button onClick={lookup} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-60">
+            <button onClick={() => lookup()} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-60">
               <Search size={16} /> Look Up
             </button>
             <button onClick={browse} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-white text-asap-blue border border-asap-blue text-sm font-semibold rounded hover:bg-blue-50 disabled:opacity-60">
@@ -428,12 +717,95 @@ export default function Invoices() {
         </div>
       )}
 
-      {!loading && mode === 'lookup' && dealData && <DealView data={dealData} />}
+      {!loading && mode === 'lookup' && dealData && <DealView data={dealData} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} />}
       {!loading && mode === 'browse' && browseData && <BrowseView data={browseData} filter={filter} onFilterChange={setFilter} />}
 
       {!loading && !dealData && !browseData && !err && (
         <div className="text-center py-12 text-slate-400 text-sm italic">
           Look up a deal by ID or show all invoices from the last 90 days.
+        </div>
+      )}
+
+      {modal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => !busy && setModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-asap-blue mb-1">{modalTitles[modal.type] || modal.type}</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              {modal.label ? `${modal.label} — ` : ''}{fmtMoney(modal.amount)}
+              {modal.current_due_date && <span className="text-slate-500"> · current due {fmtDate(modal.current_due_date)}</span>}
+              {(modal.type === 'request_date_change' || modal.type === 'request_pause') && <span className="block text-xs text-slate-500 mt-1">Leadership will review before any change is applied.</span>}
+              {modal.type === 'charge_now' && <span className="block text-xs text-amber-700 mt-1">This will attempt to charge the card on file immediately.</span>}
+              {(modal.type === 'refund_initial' || modal.type === 'refund_scheduled') && <span className="block text-xs text-amber-700 mt-1">This will refund {fmtMoney(modal.amount)} {modal.cardLast4 ? `to the card ending in ${String(modal.cardLast4).replace(/X+/, '')}` : ''}. Manager passcode required.</span>}
+            </p>
+
+            {(modal.type === 'update_due_date' || modal.type === 'request_date_change') && (
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">New due date</label>
+                <input type="date" value={form.new_due_date || ''} onChange={e => setForm({ ...form, new_due_date: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+            )}
+
+            {(modal.type === 'pause_admin' || modal.type === 'request_pause') && (
+              <>
+                <div className="mb-3">
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" checked={!!form.pause_indefinite} onChange={e => setForm({ ...form, pause_indefinite: e.target.checked })} />
+                    Pause indefinitely
+                  </label>
+                </div>
+                {!form.pause_indefinite && (
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Pause until</label>
+                    <input type="date" value={form.pause_until_date || ''} onChange={e => setForm({ ...form, pause_until_date: e.target.value })}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  </div>
+                )}
+              </>
+            )}
+
+            {(modal.type === 'refund_initial' || modal.type === 'refund_scheduled') && (
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Manager passcode</label>
+                <input type="password" value={form.passcode || ''} onChange={e => setForm({ ...form, passcode: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+            )}
+
+            {(modal.type === 'request_date_change' || modal.type === 'request_pause' || modal.type === 'refund_initial' || modal.type === 'refund_scheduled') && (
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Reason (required)</label>
+                <textarea value={form.reason || ''} onChange={e => setForm({ ...form, reason: e.target.value })}
+                  placeholder="Explain why so leadership / the audit trail has context."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+            )}
+
+            {notice && (
+              <div className={`p-2 rounded text-sm mb-3 ${notice.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+                {notice.text}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setModal(null)} disabled={busy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800 disabled:opacity-50">Cancel</button>
+              <button onClick={submitAction} disabled={busy}
+                className={`px-4 py-2 text-sm font-semibold text-white rounded disabled:opacity-60 ${
+                  modal.type === 'charge_now' ? 'bg-green-600 hover:bg-green-700' :
+                  (modal.type === 'refund_initial' || modal.type === 'refund_scheduled') ? 'bg-amber-600 hover:bg-amber-700' :
+                  'bg-asap-blue hover:bg-blue-800'
+                }`}>
+                {busy ? 'Submitting...' : (
+                  modal.type === 'charge_now' ? `Charge ${fmtMoney(modal.amount)}` :
+                  (modal.type === 'refund_initial' || modal.type === 'refund_scheduled') ? `Refund ${fmtMoney(modal.amount)}` :
+                  modal.type === 'resume' ? 'Resume' :
+                  modal.type.startsWith('request_') ? 'Submit for approval' :
+                  'Apply'
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
