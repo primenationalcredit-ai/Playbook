@@ -141,7 +141,7 @@ function AllPayments({ embedded = false }) {
       payment_type: p.payment_type || 'doc_fee',
       payment_date: String(p.payment_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
       // never carry the internal placeholder into the editable field
-      consultant_name: (p.consultant_name && p.consultant_name !== 'pending_enrichment') ? p.consultant_name : '',
+      consultant_name: (p.consultant_name && p.consultant_name !== 'pending_enrichment' && p.consultant_name !== 'needs_manual') ? p.consultant_name : '',
       pipedrive_deal_id: p.pipedrive_deal_id || '',
     });
     setMsg(null);
@@ -268,7 +268,11 @@ function AllPayments({ embedded = false }) {
                     <td className="px-5 py-3 text-slate-500">{fmtDate(p.payment_date)}</td>
                     <td className="px-5 py-3 font-medium text-slate-800">{p.client_name || '—'}</td>
                     <td className="px-5 py-3 text-slate-600">{typeLabel(p.payment_type)}</td>
-                    <td className="px-5 py-3 text-slate-600">{p.consultant_name && p.consultant_name !== 'pending_enrichment' ? p.consultant_name : '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">
+                      {p.consultant_name === 'needs_manual'
+                        ? <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">Needs manual</span>
+                        : (p.consultant_name && p.consultant_name !== 'pending_enrichment' ? p.consultant_name : '—')}
+                    </td>
                     <td className="px-5 py-3 text-slate-500">{p.pipedrive_deal_id || '—'}</td>
                     <td className="px-5 py-3">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${p.zoho_payment_id ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-700'}`}>{p.zoho_payment_id ? 'Zoho' : 'Manual'}</span>
