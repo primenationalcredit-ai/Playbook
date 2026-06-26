@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { DollarSign, Plus, Search, RefreshCw, X, Check } from 'lucide-react';
+import { DollarSign, Plus, Search, RefreshCw, X, Check, Pencil } from 'lucide-react';
 
 const SUPABASE_URL = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
@@ -33,6 +33,7 @@ function AllPayments({ embedded = false }) {
   const [remaining, setRemaining] = useState(null);
   const autoRan = useRef(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [form, setForm] = useState({ client_name: '', amount: '', payment_type: 'doc_fee', payment_date: now.toISOString().slice(0, 10), consultant_name: '', pipedrive_deal_id: '' });
@@ -105,6 +106,32 @@ function AllPayments({ embedded = false }) {
     setEnriching(false);
   };
 
+  const blankForm = () => ({ client_name: '', amount: '', payment_type: 'doc_fee', payment_date: new Date().toISOString().slice(0, 10), consultant_name: '', pipedrive_deal_id: '' });
+
+  const openAdd = () => {
+    setEditId(null);
+    setForm(blankForm());
+    setMsg(null);
+    setShowAdd(true);
+  };
+
+  const openEdit = (p) => {
+    setEditId(p.id);
+    setForm({
+      client_name: p.client_name || '',
+      amount: p.amount != null ? String(p.amount) : '',
+      payment_type: p.payment_type || 'doc_fee',
+      payment_date: String(p.payment_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+      // never carry the internal placeholder into the editable field
+      consultant_name: (p.consultant_name && p.consultant_name !== 'pending_enrichment') ? p.consultant_name : '',
+      pipedrive_deal_id: p.pipedrive_deal_id || '',
+    });
+    setMsg(null);
+    setShowAdd(true);
+  };
+
+  const closeModal = () => { setShowAdd(false); setEditId(null); };
+
   const saveManual = async () => {
     if (!form.client_name.trim() || !form.amount || !form.payment_date) {
       setMsg({ ok: false, text: 'Client, amount, and date are required.' }); return;
@@ -119,18 +146,28 @@ function AllPayments({ embedded = false }) {
         consultant_name: form.consultant_name.trim() || null,
         pipedrive_deal_id: form.pipedrive_deal_id.trim() || null,
       };
-      const res = await fetch(`/.netlify/functions/all-payments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      let res;
+      if (editId) {
+        res = await fetch(`/.netlify/functions/all-payments`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editId, ...body }),
+        });
+      } else {
+        res = await fetch(`/.netlify/functions/all-payments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) throw new Error(data.error || 'error');
-      setMsg({ ok: true, text: 'Payment added.' });
-      setShowAdd(false);
+      setMsg({ ok: true, text: editId ? 'Payment updated.' : 'Payment added.' });
+      const wasEdit = !!editId;
+      closeModal();
       const addedMonth = form.payment_date.slice(0, 7);
-      setForm({ client_name: '', amount: '', payment_type: 'doc_fee', payment_date: new Date().toISOString().slice(0, 10), consultant_name: '', pipedrive_deal_id: '' });
-      if (month !== 'all' && addedMonth !== month) setMonth(addedMonth); else load();
+      setForm(blankForm());
+      if (!wasEdit && month !== 'all' && addedMonth !== month) setMonth(addedMonth); else load();
     } catch (e) {
       setMsg({ ok: false, text: 'Could not save: ' + (e.message || 'error').slice(0, 140) });
     }
@@ -165,7 +202,7 @@ function AllPayments({ embedded = false }) {
           <button onClick={runSync} disabled={syncing} className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium disabled:opacity-50">
             <RefreshCw size={18} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Syncing...' : 'Sync from Zoho'}
           </button>
-          <button onClick={() => { setShowAdd(true); setMsg(null); }} className="flex items-center gap-2 px-4 py-2.5 bg-asap-blue text-white rounded-xl font-medium hover:bg-blue-600">
+          <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2.5 bg-asap-blue text-white rounded-xl font-medium hover:bg-blue-600">
             <Plus size={18} /> Add Payment
           </button>
         </div>
@@ -204,6 +241,7 @@ function AllPayments({ embedded = false }) {
                   <th className="px-5 py-2 font-medium">Deal</th>
                   <th className="px-5 py-2 font-medium">Source</th>
                   <th className="px-5 py-2 font-medium text-right">Amount</th>
+                  <th className="px-5 py-2 font-medium text-right">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -218,6 +256,11 @@ function AllPayments({ embedded = false }) {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${p.zoho_payment_id ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-700'}`}>{p.zoho_payment_id ? 'Zoho' : 'Manual'}</span>
                     </td>
                     <td className="px-5 py-3 text-right font-semibold text-slate-800">{fmt(p.amount)}</td>
+                    <td className="px-5 py-3 text-right">
+                      <button onClick={() => openEdit(p)} className="inline-flex items-center gap-1 text-xs font-medium text-asap-blue hover:underline" title="Edit this payment (fix consultant, deal, amount, etc.)">
+                        <Pencil size={13} /> Edit
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -227,11 +270,11 @@ function AllPayments({ embedded = false }) {
       </div>
 
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowAdd(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={closeModal}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg text-slate-800">Add Payment Manually</h3>
-              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+              <h3 className="font-bold text-lg text-slate-800">{editId ? 'Edit Payment' : 'Add Payment Manually'}</h3>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
             </div>
             <div className="space-y-3">
               <div>
@@ -266,9 +309,9 @@ function AllPayments({ embedded = false }) {
               </div>
             </div>
             <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowAdd(false)} className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200">Cancel</button>
+              <button onClick={closeModal} className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200">Cancel</button>
               <button onClick={saveManual} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-asap-blue text-white rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50">
-                <Check size={16} /> {saving ? 'Saving...' : 'Add Payment'}
+                <Check size={16} /> {saving ? 'Saving...' : (editId ? 'Save Changes' : 'Add Payment')}
               </button>
             </div>
           </div>

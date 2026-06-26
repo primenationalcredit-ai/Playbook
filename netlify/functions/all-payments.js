@@ -5,7 +5,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
   'Content-Type': 'application/json',
 };
 
@@ -52,6 +52,35 @@ exports.handler = async (event) => {
         method: 'POST',
         headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify(row),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        return { statusCode: 500, headers, body: JSON.stringify({ error: t.slice(0, 200) }) };
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+    }
+
+    if (event.httpMethod === 'PATCH') {
+      const b = JSON.parse(event.body || '{}');
+      if (!b.id) return { statusCode: 400, headers, body: JSON.stringify({ error: 'id is required' }) };
+      // Only set the fields that were sent. Empty string clears the optional fields.
+      const patch = {};
+      if (b.client_name !== undefined) patch.client_name = String(b.client_name || '').trim();
+      if (b.amount !== undefined && b.amount !== null && b.amount !== '') patch.amount = parseFloat(b.amount);
+      if (b.payment_type !== undefined) patch.payment_type = b.payment_type;
+      if (b.payment_date !== undefined && b.payment_date) {
+        patch.payment_date = b.payment_date;
+        patch.payment_month = String(b.payment_date).slice(0, 7);
+      }
+      if (b.consultant_name !== undefined) patch.consultant_name = b.consultant_name ? String(b.consultant_name).trim() : null;
+      if (b.pipedrive_deal_id !== undefined) patch.pipedrive_deal_id = b.pipedrive_deal_id ? String(b.pipedrive_deal_id).trim() : null;
+      if (Object.keys(patch).length === 0) {
+        return { statusCode: 400, headers, body: JSON.stringify({ error: 'nothing to update' }) };
+      }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?id=eq.${encodeURIComponent(b.id)}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify(patch),
       });
       if (!res.ok) {
         const t = await res.text();
