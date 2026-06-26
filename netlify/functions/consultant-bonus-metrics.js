@@ -424,8 +424,17 @@ exports.handler = async (event) => {
         if (bal <= EPS) paidInFull += total;
       }
       const qualified = owed <= EPS ? true : paidInFull >= owed;
-      const reason = qualified ? null : `$${Math.round(owed)} of $${Math.round(billed)} balance still owed`;
-      return { qualified, reason, paid: Math.round(billed - owed), owed: Math.round(owed) };
+      // Reason text credits the doc fee that was actually received. Without this, a client
+      // who paid $149 against a $550 deal shows as "$550 of $550 balance still owed" because
+      // we silently dropped one of the duplicate invoices as "the doc fee invoice" and the
+      // other untouched $550 is what's in nonDoc. Surfacing the doc fee makes it clear the
+      // client did pay something and only the balance is open.
+      const reason = qualified ? null : (
+        docAmt > 0
+          ? `Doc fee paid ($${Math.round(docAmt)}). $${Math.round(owed)} balance still open.`
+          : `$${Math.round(owed)} of $${Math.round(billed)} balance still owed`
+      );
+      return { qualified, reason, paid: Math.round(docAmt + (billed - owed)), owed: Math.round(owed) };
     }
 
     const results = {};
