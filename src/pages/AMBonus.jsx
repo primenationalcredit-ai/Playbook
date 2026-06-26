@@ -126,6 +126,21 @@ export default function AMBonus() {
 
   useEffect(() => { loadData(); }, [selectedMonth]);
 
+  // Access guard: a non-leadership Account Manager may only ever view their own
+  // bonus sheet or the All-Managers comparison. If selectedAM lands on anyone
+  // else (stale state, manual nav), snap it back to their own sheet. Leadership
+  // and admins are unrestricted. The All comparison view stays open to everyone.
+  useEffect(() => {
+    if (!isAdmin && selectedAM && selectedAM !== 'ALL' && selectedAM !== currentUser?.id) {
+      setSelectedAM(currentUser?.id || 'ALL');
+    }
+  }, [selectedAM, isAdmin, currentUser]);
+
+  // True when the signed-in user is allowed to open a given AM's individual sheet
+  // or drill into their client-level breakdowns. Leadership/admin: anyone.
+  // Regular AM: only themselves.
+  const canDrillInto = (amId) => isAdmin || amId === currentUser?.id;
+
   const submitCreditBuilding = async () => {
     if (!formData.client_name || !formData.product_name) return;
     setUploading(true);
@@ -432,7 +447,7 @@ export default function AMBonus() {
             <select value={selectedAM || ''} onChange={e => setSelectedAM(e.target.value)}
               className="px-3 py-1.5 border rounded-lg text-sm font-medium">
               <option value="ALL">All Account Managers</option>
-              {amList.map(am => (
+              {(isAdmin ? amList : amList.filter(am => am.id === currentUser?.id)).map(am => (
                 <option key={am.id} value={am.id}>{am.name}</option>
               ))}
             </select>
@@ -500,7 +515,7 @@ export default function AMBonus() {
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100">
                 <h3 className="font-bold text-slate-800">All Account Managers — {selectedMonth === new Date().toISOString().slice(0, 7) ? 'this month' : selectedMonth}</h3>
-                <p className="text-xs text-slate-500">Every AM's numbers at a glance. Click a name to open their full dashboard.</p>
+                <p className="text-xs text-slate-500">Every AM's numbers at a glance.{isAdmin ? ' Click a name to open their full dashboard.' : ''}</p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -522,17 +537,25 @@ export default function AMBonus() {
                     {rows.map(({ am, m }) => (
                       <tr key={am.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3">
-                          <button onClick={() => setSelectedAM(am.id)} className="font-medium text-asap-blue hover:underline">{am.name}</button>
+                          {canDrillInto(am.id)
+                            ? <button onClick={() => setSelectedAM(am.id)} className="font-medium text-asap-blue hover:underline">{am.name}</button>
+                            : <span className="font-medium text-slate-700">{am.name}</span>}
                         </td>
                         <td className="px-4 py-3 text-center">{m?.approvedCount ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.stallRate == null ? '—' : (
-                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'stall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.stallRate)}</button>
+                          canDrillInto(am.id)
+                            ? <button onClick={() => setBreakdown({ amName: am.name, metric: 'stall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.stallRate)}</button>
+                            : <span className="font-medium text-slate-700">{fmtPct(m.stallRate)}</span>
                         )}</td>
                         <td className="px-4 py-3 text-center">{m?.pastDueRate == null ? '—' : (
-                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'pastdue', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.pastDueRate)}</button>
+                          canDrillInto(am.id)
+                            ? <button onClick={() => setBreakdown({ amName: am.name, metric: 'pastdue', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.pastDueRate)}</button>
+                            : <span className="font-medium text-slate-700">{fmtPct(m.pastDueRate)}</span>
                         )}</td>
                         <td className="px-4 py-3 text-center">{m?.overallRate == null ? '—' : (
-                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'overall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.overallRate)}</button>
+                          canDrillInto(am.id)
+                            ? <button onClick={() => setBreakdown({ amName: am.name, metric: 'overall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.overallRate)}</button>
+                            : <span className="font-medium text-slate-700">{fmtPct(m.overallRate)}</span>
                         )}</td>
                         <td className="px-4 py-3 text-center">{m?.additionalRounds ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.referrals ?? 0}{m?.referralPaid != null ? ` (${m.referralPaid} paid)` : ''}</td>
