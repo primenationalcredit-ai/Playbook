@@ -652,7 +652,6 @@ export default function AMBonus() {
                     <Clock size={20} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 40 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
                       <p className="font-medium text-slate-800"><Tip text="Among clients whose LATEST round (1, 2, or 3) started 45 to 90 days ago, this is the share still sitting in Logins Not Ready 14 or more days after their latest round ended. The 45 day floor cuts out clients whose current round is still running and can't be stalled yet; the 90 day ceiling keeps the metric focused on recent activity. Check Logins and payment statuses do not count. Lower is better. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
-                      <p className="text-xs text-slate-500 mt-0.5">Clients still in Logins Not Ready 14+ days past their round end, among clients whose latest round started 45 to 90 days ago. Lower wins. Earns $75 at 40% or below, $150 at 30%, $250 at 20%.</p>
                       <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.stallRate !== null ? <>{currentAMMetrics.stallRate}% — <span className="text-red-600 font-medium">{currentAMMetrics.stallCount} stalled</span> of {currentAMMetrics.stallTotal} in-window clients</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
