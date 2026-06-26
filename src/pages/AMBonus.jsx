@@ -732,7 +732,6 @@ export default function AMBonus() {
                     <DollarSign size={20} className={currentAMMetrics.pastDueRate !== null ? (currentAMMetrics.pastDueRate <= 20 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
                       <p className="font-medium text-slate-800"><Tip text="Out of CRS clients with an invoice whose original due date is in the last 30 days (whether paid or not), the share that is 5 or more days past due and still owing. The 5 day grace ignores payments in transit. Anything past 30 days drops off the denominator naturally, so clear non-payers stop counting. The original due date is locked, so moving an invoice's due date does not hide a late payment. Tracked for health, not tied to a bonus.">Payment Past Due</Tip></p>
-                      <p className="text-xs text-slate-500 mt-0.5">Out of CRS clients with an invoice due in the last 30 days, the share that is 5 or more days past due and still owing. Locks on the original due date, so it can't be hidden by rescheduling. Tracked for health, no bonus.</p>
                       <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.pastDueRate !== null ? <>{currentAMMetrics.pastDueRate}% · <span className="text-red-600 font-medium">{currentAMMetrics.pastDueCount} past due</span> of {currentAMMetrics.paymentDue} clients with a payment due in the last 30 days</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
@@ -779,7 +778,6 @@ export default function AMBonus() {
                     <TrendingUp size={20} className={currentAMMetrics.overallRate !== null ? (currentAMMetrics.overallRate <= 30 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
                       <p className="font-medium text-slate-800"><Tip text="The simple average of the Report Stall Rate and the Payment Past Due rate. Each rate is measured over its own group of clients, so the average blends both without bending either number. Lower is better. Tracked for health, not tied to a bonus.">Overall (stall + past due)</Tip></p>
-                      <p className="text-xs text-slate-500 mt-0.5">Simple average of your Report Stall Rate and Payment Past Due rate. Lower wins. Tracked for health, no bonus.</p>
                       <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.overallRate !== null ? <>Report stall {currentAMMetrics.stallRate ?? 0}% + past due {currentAMMetrics.pastDueRate ?? 0}%</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
