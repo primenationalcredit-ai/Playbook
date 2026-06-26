@@ -18,6 +18,7 @@ import {
   Building2,
   Edit3,
   Trash2,
+  ShieldAlert,
 } from 'lucide-react';
 
 // GMB Locations
@@ -53,6 +54,8 @@ function IncomingReviews() {
   const [statusFilter, setStatusFilter] = useState('pending');
   const [locationFilter, setLocationFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [rechecking, setRechecking] = useState(false);
+  const [recheckMsg, setRecheckMsg] = useState(null);
   
   // Assignment modal
   const [assigningReview, setAssigningReview] = useState(null);
@@ -68,6 +71,36 @@ function IncomingReviews() {
   useEffect(() => {
     loadData();
   }, [locationFilter]);
+
+  const runRecheck = async () => {
+    if (rechecking) return;
+    setRechecking(true);
+    setRecheckMsg(null);
+    let flagged = 0, cleared = 0, rounds = 0, reset = true;
+    try {
+      // Loop one location per call until the pass reports done. reset=1 on the
+      // first call starts a fresh pass.
+      while (rounds < 40) {
+        const url = `/.netlify/functions/review-reconcile${reset ? '?reset=1' : ''}`;
+        const r = await fetch(url);
+        const d = await r.json().catch(() => ({}));
+        reset = false;
+        flagged += d.flagged || 0;
+        cleared += d.cleared || 0;
+        rounds++;
+        if (d.error) { setRecheckMsg({ ok: false, text: d.error }); break; }
+        if (d.done) {
+          const t = d.totals || { flagged, cleared };
+          setRecheckMsg({ ok: true, text: `Re-check complete. ${t.flagged || flagged} newly delisted, ${t.cleared || cleared} restored.` });
+          break;
+        }
+      }
+      await loadData();
+    } catch (e) {
+      setRecheckMsg({ ok: false, text: 'Re-check failed. Try again.' });
+    }
+    setRechecking(false);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -307,6 +340,7 @@ function IncomingReviews() {
   const assignedCount = reviews.filter(r => r.status === 'assigned').length;
   const completedCount = reviews.filter(r => r.status === 'completed').length;
   const claimedCount = reviews.filter(r => r.status === 'pending' && r.claimed_by).length;
+  const delistedCount = reviews.filter(r => r.delisted_at).length;
 
   if (loading) {
     return (
@@ -346,14 +380,38 @@ function IncomingReviews() {
           <p className="text-slate-500">Google reviews from all locations - assign to team members</p>
         </div>
         
-        <button
-          onClick={loadData}
-          className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl hover:bg-slate-50"
-        >
-          <RefreshCw size={18} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={runRecheck}
+            disabled={rechecking}
+            title="Re-check Google to flag reviews that have dropped off (delisted)"
+            className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50"
+          >
+            <ShieldAlert size={18} className={rechecking ? 'animate-pulse' : ''} />
+            {rechecking ? 'Re-checking…' : 'Re-check Google'}
+          </button>
+          <button
+            onClick={loadData}
+            className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl hover:bg-slate-50"
+          >
+            <RefreshCw size={18} />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {recheckMsg && (
+        <div className={`mb-4 px-4 py-2.5 rounded-xl text-sm ${recheckMsg.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {recheckMsg.text}
+        </div>
+      )}
+
+      {delistedCount > 0 && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-50 border border-rose-200">
+          <ShieldAlert size={18} className="text-rose-600" />
+          <span className="text-sm text-rose-800"><strong>{delistedCount}</strong> review{delistedCount === 1 ? '' : 's'} dropped off Google (delisted). They stay assigned but are flagged so the team knows they no longer count.</span>
+        </div>
+      )}
 
       {/* Claims awaiting approval */}
       {claimedCount > 0 && (
@@ -483,7 +541,8 @@ function IncomingReviews() {
           filteredReviews.map(review => (
             <div 
               key={review.id} 
-              className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${
+              className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${review.delisted_at ? 'opacity-60 grayscale-[35%]' : ''} ${
+                review.delisted_at ? 'border-rose-200' :
                 review.status === 'pending' ? 'border-amber-200' :
                 review.status === 'assigned' ? 'border-blue-200' :
                 'border-slate-100'
@@ -516,6 +575,11 @@ function IncomingReviews() {
                   </div>
                   
                   <div className="flex items-center gap-2">
+                    {review.delisted_at && (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-100 text-rose-700" title={`No longer on Google as of ${format(parseISO(review.delisted_at), 'MMM d, yyyy')}`}>
+                        <ShieldAlert size={12} /> DELISTED
+                      </span>
+                    )}
                     {review.status === 'pending' && review.claimed_by && (
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 text-purple-700">CLAIMED</span>
                     )}
