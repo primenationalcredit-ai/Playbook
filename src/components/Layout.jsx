@@ -110,7 +110,8 @@ function Layout() {
           if (res.ok) {
             const d = await res.json().catch(() => ({}));
             const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
-            payments = arr.filter(a => (a.status || 'pending') === 'pending').length;
+            const pendingInArr = arr.filter(a => (a.status || 'pending') === 'pending').length;
+            payments = typeof d.count === 'number' ? d.count : pendingInArr;
           }
         } catch (e) {}
       }

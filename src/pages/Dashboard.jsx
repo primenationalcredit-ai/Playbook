@@ -77,7 +77,9 @@ function Dashboard() {
       if (res.ok) {
         const d = await res.json().catch(() => ({}));
         const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
-        setPendingPaymentApprovals(arr.filter(a => (a.status || 'pending') === 'pending').length);
+        const pendingInArr = arr.filter(a => (a.status || 'pending') === 'pending').length;
+        // The API returns a `count` of pending approvals; prefer it, fall back to the array.
+        setPendingPaymentApprovals(typeof d.count === 'number' ? d.count : pendingInArr);
       }
     } catch (e) {
       console.error('Error loading payment approvals:', e);
