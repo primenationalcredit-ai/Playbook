@@ -97,6 +97,15 @@ function RequestSummary({ a }) {
           </>
         )}
       </div>
+      {a.pipedrive_deal_id && (
+        <div className="mt-4 pt-3 border-t border-slate-200">
+          <a href={`/invoices?deal=${a.pipedrive_deal_id}`}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded-lg hover:bg-blue-800">
+            <FileText size={16} /> Go to customer invoice
+          </a>
+          <p className="text-[11px] text-slate-400 mt-1.5">Open this client's invoices to verify the date change or pause.</p>
+        </div>
+      )}
     </div>
   );
 }
