@@ -117,7 +117,7 @@ function Layout() {
           } catch (e) {}
           const res = await fetch('/.netlify/functions/invoices-api', {
             method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
-            body: JSON.stringify({ action: 'list_pending_approvals' }),
+            body: JSON.stringify({ action: 'list_pending_approvals', include_my_decisions: true }),
           });
           if (res.ok) {
             const d = await res.json().catch(() => ({}));

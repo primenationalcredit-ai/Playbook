@@ -302,15 +302,33 @@ function ListView({ isAdmin, myEmail, onOpen }) {
   const [filter, setFilter] = useState('pending');
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
+  const [dismissed, setDismissed] = useState({}); // approval_id -> true (hidden for this AM)
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      // Leadership can browse all statuses; AMs only ever see currently-pending.
-      const payload = isAdmin ? { statuses: ['pending', 'approved', 'rejected'], limit: 300 } : {};
-      const d = await callApi('list_pending_approvals', payload);
-      const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
-      setItems(arr);
+      if (isAdmin) {
+        const d = await callApi('list_pending_approvals', { statuses: ['pending', 'approved', 'rejected'], limit: 300 });
+        const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
+        setItems(arr);
+      } else {
+        // AMs: all pending (everyone's, for cover) + their OWN decided requests (last 14 days).
+        const [pendRes, mineRes] = await Promise.all([
+          callApi('list_pending_approvals', {}),
+          callApi('list_pending_approvals', { statuses: ['approved', 'rejected'], mine: true, limit: 100 }),
+        ]);
+        const pend = Array.isArray(pendRes) ? pendRes : (pendRes.approvals || []);
+        const mine = Array.isArray(mineRes) ? mineRes : (mineRes.approvals || []);
+        const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+        const recentDecided = mine.filter(a => {
+          const when = a.approved_at || a.updated_at || a.requested_at;
+          return when && new Date(when).getTime() >= cutoff;
+        });
+        // merge, de-dupe by id
+        const byId = {};
+        [...pend, ...recentDecided].forEach(a => { byId[a.id] = a; });
+        setItems(Object.values(byId));
+      }
     } catch (e) {
       setErr(e.message); setItems([]);
     } finally {
@@ -324,18 +342,34 @@ function ListView({ isAdmin, myEmail, onOpen }) {
     return () => clearInterval(t);
   }, [load]);
 
-  // AMs are always pending-only. Leadership can filter.
-  const effFilter = isAdmin ? filter : 'pending';
-  const shown = items.filter(a => effFilter === 'all' ? true : (a.status || 'pending') === effFilter);
-  const counts = {
-    pending: items.filter(a => (a.status || 'pending') === 'pending').length,
-    approved: items.filter(a => a.status === 'approved').length,
-    rejected: items.filter(a => a.status === 'rejected').length,
+  const dismiss = async (e, approvalId) => {
+    e.stopPropagation();
+    setDismissed(prev => ({ ...prev, [approvalId]: true }));
+    // mark read so it also clears the alert count
+    callApi('mark_approval_read', { approval_id: approvalId }).catch(() => {});
   };
+
+  // Tabs: AMs get Pending + Decisions; leadership keeps full status filter.
+  const effFilter = filter;
+  const visible = items.filter(a => !dismissed[a.id]);
+  const counts = {
+    pending: visible.filter(a => (a.status || 'pending') === 'pending').length,
+    approved: visible.filter(a => a.status === 'approved').length,
+    rejected: visible.filter(a => a.status === 'rejected').length,
+    decisions: visible.filter(a => a.status === 'approved' || a.status === 'rejected').length,
+  };
+  let shown;
+  if (isAdmin) {
+    shown = visible.filter(a => effFilter === 'all' ? true : (a.status || 'pending') === effFilter);
+  } else {
+    shown = effFilter === 'decisions'
+      ? visible.filter(a => a.status === 'approved' || a.status === 'rejected')
+      : visible.filter(a => (a.status || 'pending') === 'pending');
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {isAdmin && ['pending', 'approved', 'rejected', 'all'].map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize ${filter === f ? 'bg-asap-blue text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
@@ -343,9 +377,17 @@ function ListView({ isAdmin, myEmail, onOpen }) {
           </button>
         ))}
         {!isAdmin && (
-          <span className="px-3 py-1.5 rounded-lg text-sm font-medium bg-asap-blue text-white">
-            Pending ({counts.pending})
-          </span>
+          <>
+            <button onClick={() => setFilter('pending')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${filter === 'pending' ? 'bg-asap-blue text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+              Pending ({counts.pending})
+            </button>
+            <button onClick={() => setFilter('decisions')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 ${filter === 'decisions' ? 'bg-asap-blue text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+              My Decisions ({counts.decisions})
+              {counts.decisions > 0 && filter !== 'decisions' && <span className="w-2 h-2 rounded-full bg-asap-red" />}
+            </button>
+          </>
         )}
         <button onClick={load} className="ml-auto px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1">
           <RefreshCw size={14} /> Refresh
@@ -358,38 +400,67 @@ function ListView({ isAdmin, myEmail, onOpen }) {
         <div className="p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700">{err}</div>
       ) : shown.length === 0 ? (
         <div className="text-center py-12 text-slate-400 text-sm italic">
-          {isAdmin ? `No ${effFilter === 'all' ? '' : effFilter + ' '}approval requests.` : 'No pending approval requests right now.'}
+          {isAdmin
+            ? `No ${effFilter === 'all' ? '' : effFilter + ' '}approval requests.`
+            : effFilter === 'decisions' ? 'No recent decisions to review.' : 'No pending approval requests right now.'}
         </div>
       ) : (
         <div className="space-y-2">
           {shown.map(a => {
             const isPause = a.request_type === 'pause';
             const unread = (a.unread_count || 0) > 0;
+            const decided = a.status === 'approved' || a.status === 'rejected';
+            const denied = a.status === 'rejected';
             return (
-              <button key={a.id} onClick={() => onOpen(a.id)}
-                className={`w-full text-left bg-white rounded-xl shadow-sm border p-4 transition-colors ${unread ? 'border-asap-blue ring-1 ring-blue-100' : 'border-slate-100 hover:border-asap-blue'}`}>
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {unread && <span className="w-2.5 h-2.5 rounded-full bg-asap-blue flex-shrink-0" title="New message" />}
-                    {isPause ? <PauseCircle size={18} className="text-amber-600 flex-shrink-0" /> : <CalendarClock size={18} className="text-asap-blue flex-shrink-0" />}
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-800 truncate">
-                        {isPause ? 'Pause' : 'Date change'} · {a.client_name || 'Client'} · {fmtMoney(a.amount)}
-                      </p>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {isPause
-                          ? <>Pause {a.pause_indefinite ? 'indefinitely' : `until ${fmtDate(a.pause_until_date)}`}</>
-                          : <>{fmtDate(a.current_due_date)} → {fmtDate(a.new_due_date)}</>}
-                        {' · by '}{a.requested_by_name || a.requested_by_email}
-                      </p>
+              <div key={a.id}
+                className={`w-full bg-white rounded-xl shadow-sm border transition-colors ${
+                  denied ? 'border-red-200' : a.status === 'approved' ? 'border-green-200' :
+                  unread ? 'border-asap-blue ring-1 ring-blue-100' : 'border-slate-100 hover:border-asap-blue'
+                }`}>
+                <button onClick={() => onOpen(a.id)} className="w-full text-left p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {unread && <span className="w-2.5 h-2.5 rounded-full bg-asap-blue flex-shrink-0" title="New message" />}
+                      {isPause ? <PauseCircle size={18} className="text-amber-600 flex-shrink-0" /> : <CalendarClock size={18} className="text-asap-blue flex-shrink-0" />}
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-800 truncate">
+                          {isPause ? 'Pause' : 'Date change'} · {a.client_name || 'Client'} · {fmtMoney(a.amount)}
+                        </p>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          {isPause
+                            ? <>Pause {a.pause_indefinite ? 'indefinitely' : `until ${fmtDate(a.pause_until_date)}`}</>
+                            : <>{fmtDate(a.current_due_date)} → {fmtDate(a.new_due_date)}</>}
+                          {' · by '}{a.requested_by_name || a.requested_by_email}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {unread && <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-asap-blue text-white">New reply</span>}
+                      <StatusPill status={a.status} />
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {unread && <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-asap-blue text-white">New reply</span>}
-                    <StatusPill status={a.status} />
+
+                  {/* Decision banner for approved/denied requests */}
+                  {decided && (
+                    <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${denied ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+                      <span className="font-semibold">{denied ? 'DENIED' : 'APPROVED'}</span>
+                      {denied
+                        ? <> by leadership{a.rejection_reason ? <> — {a.rejection_reason}</> : ''}. Please reach out to the client.</>
+                        : <>. The change has been applied.</>}
+                    </div>
+                  )}
+                </button>
+
+                {/* Dismiss for decided requests */}
+                {decided && (
+                  <div className="px-4 pb-3 -mt-1 flex justify-end">
+                    <button onClick={(e) => dismiss(e, a.id)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700">
+                      <XCircle size={13} /> Dismiss
+                    </button>
                   </div>
-                </div>
-              </button>
+                )}
+              </div>
             );
           })}
         </div>
