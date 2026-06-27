@@ -32,32 +32,10 @@ const fmtWhen = (s) => {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${h}:${String(d.getMinutes()).padStart(2, '0')} ${am}`;
 };
 
-// --- Unread tracking (Option A: client-side last-seen per approval) -----------
-// We store, per signed-in user, the last time they opened each approval thread.
-// A request is "unread" if its updated_at (bumped when a message is posted) is
-// newer than when this user last opened it. Per-device (localStorage); good
-// enough for desk use, upgradeable to server-side later.
-const seenKey = (email) => `approval_seen_${(email || 'anon').toLowerCase()}`;
-function getSeenMap(email) {
-  try { return JSON.parse(localStorage.getItem(seenKey(email)) || '{}') || {}; }
-  catch { return {}; }
-}
-function markSeen(email, approvalId, ts) {
-  try {
-    const m = getSeenMap(email);
-    m[approvalId] = ts || new Date().toISOString();
-    localStorage.setItem(seenKey(email), JSON.stringify(m));
-  } catch {}
-}
-function isUnread(approval, email) {
-  if (!approval || !approval.updated_at) return false;
-  // Baseline: when this user last opened it, or the request's creation time if never opened.
-  // updated_at is only bumped when a message is posted, so updated_at > baseline means
-  // there's a message this user hasn't seen.
-  const baseline = getSeenMap(email)[approval.id] || approval.created_at;
-  if (!baseline) return false;
-  return new Date(approval.updated_at) > new Date(baseline);
-}
+// --- Unread tracking (server-side) -------------------------------------------
+// The backend returns `unread_count` per approval for the calling user (messages
+// newer than their last read, excluding their own). Opening a thread calls
+// mark_approval_read to clear it. Precise and cross-device.
 
 async function callApi(action, payload = {}) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -167,15 +145,14 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
       const d = await callApi('list_approval_messages', { approval_id: approvalId });
       setApproval(d.approval || null);
       setMessages(d.messages || []);
-      // Mark this approval as seen for the current user (clears the unread indicator).
-      const latest = (d.messages || []).reduce((acc, m) => (m.created_at > acc ? m.created_at : acc), (d.approval && d.approval.updated_at) || '');
-      markSeen(myEmail, approvalId, latest || new Date().toISOString());
+      // Mark this approval read for the current user (clears unread on server).
+      callApi('mark_approval_read', { approval_id: approvalId }).catch(() => {});
     } catch (e) {
       setErr(e.message);
     } finally {
       setLoading(false);
     }
-  }, [approvalId, myEmail]);
+  }, [approvalId]);
 
   useEffect(() => {
     load();
@@ -387,7 +364,7 @@ function ListView({ isAdmin, myEmail, onOpen }) {
         <div className="space-y-2">
           {shown.map(a => {
             const isPause = a.request_type === 'pause';
-            const unread = isUnread(a, myEmail);
+            const unread = (a.unread_count || 0) > 0;
             return (
               <button key={a.id} onClick={() => onOpen(a.id)}
                 className={`w-full text-left bg-white rounded-xl shadow-sm border p-4 transition-colors ${unread ? 'border-asap-blue ring-1 ring-blue-100' : 'border-slate-100 hover:border-asap-blue'}`}>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { supabase } from '../lib/supabase';
 import FloatingTools from './FloatingTools';
 import EventNotifications from './EventNotifications';
 import {
@@ -108,8 +109,13 @@ function Layout() {
       // Restricted leaders don't see payment financials.
       if (!isRestrictedLeader) {
         try {
+          let authHeader = {};
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) authHeader = { Authorization: `Bearer ${session.access_token}` };
+          } catch (e) {}
           const res = await fetch('/.netlify/functions/invoices-api', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
             body: JSON.stringify({ action: 'list_pending_approvals' }),
           });
           if (res.ok) {
@@ -117,18 +123,10 @@ function Layout() {
             const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
             const pendingArr = arr.filter(a => (a.status || 'pending') === 'pending');
             payments = typeof d.count === 'number' ? d.count : pendingArr.length;
-            // unread: a pending request whose updated_at is newer than this user's last-seen
-            // (or its created_at if never opened). Mirrors the Approvals page logic.
-            try {
-              const email = (currentUser?.email || 'anon').toLowerCase();
-              let seen = {};
-              try { seen = JSON.parse(localStorage.getItem(`approval_seen_${email}`) || '{}') || {}; } catch (e) {}
-              unread = pendingArr.filter(a => {
-                if (!a.updated_at) return false;
-                const baseline = seen[a.id] || a.created_at;
-                return baseline && new Date(a.updated_at) > new Date(baseline);
-              }).length;
-            } catch (e) {}
+            // Server returns total_unread (messages this user hasn't read). Use it directly.
+            unread = typeof d.total_unread === 'number'
+              ? d.total_unread
+              : arr.reduce((s, a) => s + (a.unread_count || 0), 0);
           }
         } catch (e) {}
       }

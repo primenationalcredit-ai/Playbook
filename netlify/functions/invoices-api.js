@@ -13,7 +13,7 @@ const PLAYBOOK_SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process
 const READ_ONLY = new Set(['get_deal', 'list_recent_invoices', 'list_pending_approvals', 'list_approval_messages']);
 const WRITE_ACTIONS = new Set([
   // Approval workflow (used by AMs and Consultants, and by admins reviewing)
-  'request_date_change', 'request_pause', 'post_approval_message', 'approve_request', 'reject_request',
+  'request_date_change', 'request_pause', 'post_approval_message', 'approve_request', 'reject_request', 'mark_approval_read',
   // Admin direct actions (the payment processor still gates these via isAdmin)
   'update_due_date', 'pause', 'resume', 'charge_now', 'refund_initial', 'refund_scheduled'
 ]);
