@@ -32,6 +32,33 @@ const fmtWhen = (s) => {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${h}:${String(d.getMinutes()).padStart(2, '0')} ${am}`;
 };
 
+// --- Unread tracking (Option A: client-side last-seen per approval) -----------
+// We store, per signed-in user, the last time they opened each approval thread.
+// A request is "unread" if its updated_at (bumped when a message is posted) is
+// newer than when this user last opened it. Per-device (localStorage); good
+// enough for desk use, upgradeable to server-side later.
+const seenKey = (email) => `approval_seen_${(email || 'anon').toLowerCase()}`;
+function getSeenMap(email) {
+  try { return JSON.parse(localStorage.getItem(seenKey(email)) || '{}') || {}; }
+  catch { return {}; }
+}
+function markSeen(email, approvalId, ts) {
+  try {
+    const m = getSeenMap(email);
+    m[approvalId] = ts || new Date().toISOString();
+    localStorage.setItem(seenKey(email), JSON.stringify(m));
+  } catch {}
+}
+function isUnread(approval, email) {
+  if (!approval || !approval.updated_at) return false;
+  // Baseline: when this user last opened it, or the request's creation time if never opened.
+  // updated_at is only bumped when a message is posted, so updated_at > baseline means
+  // there's a message this user hasn't seen.
+  const baseline = getSeenMap(email)[approval.id] || approval.created_at;
+  if (!baseline) return false;
+  return new Date(approval.updated_at) > new Date(baseline);
+}
+
 async function callApi(action, payload = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   const authHeader = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
@@ -140,12 +167,15 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
       const d = await callApi('list_approval_messages', { approval_id: approvalId });
       setApproval(d.approval || null);
       setMessages(d.messages || []);
+      // Mark this approval as seen for the current user (clears the unread indicator).
+      const latest = (d.messages || []).reduce((acc, m) => (m.created_at > acc ? m.created_at : acc), (d.approval && d.approval.updated_at) || '');
+      markSeen(myEmail, approvalId, latest || new Date().toISOString());
     } catch (e) {
       setErr(e.message);
     } finally {
       setLoading(false);
     }
-  }, [approvalId]);
+  }, [approvalId, myEmail]);
 
   useEffect(() => {
     load();
@@ -290,7 +320,7 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
   );
 }
 
-function ListView({ isAdmin, onOpen }) {
+function ListView({ isAdmin, myEmail, onOpen }) {
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState('pending');
   const [loading, setLoading] = useState(true);
@@ -357,11 +387,13 @@ function ListView({ isAdmin, onOpen }) {
         <div className="space-y-2">
           {shown.map(a => {
             const isPause = a.request_type === 'pause';
+            const unread = isUnread(a, myEmail);
             return (
               <button key={a.id} onClick={() => onOpen(a.id)}
-                className="w-full text-left bg-white rounded-xl shadow-sm border border-slate-100 p-4 hover:border-asap-blue transition-colors">
+                className={`w-full text-left bg-white rounded-xl shadow-sm border p-4 transition-colors ${unread ? 'border-asap-blue ring-1 ring-blue-100' : 'border-slate-100 hover:border-asap-blue'}`}>
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2 min-w-0">
+                    {unread && <span className="w-2.5 h-2.5 rounded-full bg-asap-blue flex-shrink-0" title="New message" />}
                     {isPause ? <PauseCircle size={18} className="text-amber-600 flex-shrink-0" /> : <CalendarClock size={18} className="text-asap-blue flex-shrink-0" />}
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-800 truncate">
@@ -375,7 +407,10 @@ function ListView({ isAdmin, onOpen }) {
                       </p>
                     </div>
                   </div>
-                  <StatusPill status={a.status} />
+                  <div className="flex items-center gap-2">
+                    {unread && <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-asap-blue text-white">New reply</span>}
+                    <StatusPill status={a.status} />
+                  </div>
                 </div>
               </button>
             );
@@ -410,7 +445,7 @@ export default function Approvals() {
 
       {id
         ? <DetailView approvalId={id} isAdmin={isAdmin} myEmail={myEmail} onBack={() => navigate('/approvals')} onChanged={() => {}} />
-        : <ListView isAdmin={isAdmin} onOpen={(aid) => navigate(`/approvals/${aid}`)} />}
+        : <ListView isAdmin={isAdmin} myEmail={myEmail} onOpen={(aid) => navigate(`/approvals/${aid}`)} />}
     </div>
   );
 }

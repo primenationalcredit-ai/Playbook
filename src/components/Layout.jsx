@@ -56,8 +56,10 @@ function Layout() {
   // Combined "needs approval" badge for leadership: payment date-change/pause
   // requests (from the payment processor, via the proxy) plus pending time-off
   // requests (Playbook db). Built generic so more approval types can be added.
-  const [approvalCounts, setApprovalCounts] = useState({ payments: 0, timeOff: 0 });
+  const [approvalCounts, setApprovalCounts] = useState({ payments: 0, timeOff: 0, unread: 0 });
   const approvalsBadge = approvalCounts.payments + approvalCounts.timeOff;
+  // When there are unread replies, surface that count (more actionable than total pending).
+  const approvalsUnread = approvalCounts.unread || 0;
 
   const handleLogout = () => {
     logout();
@@ -100,8 +102,8 @@ function Layout() {
     const isAMForCount = currentUser?.department === 'account_managers' || currentUser?.role === 'account_manager';
     const showsApprovals = hasFullNavAccess || isAMForCount;
     const loadApprovalCounts = async () => {
-      if (!showsApprovals) { if (!cancelled) setApprovalCounts({ payments: 0, timeOff: 0 }); return; }
-      let payments = 0, timeOff = 0;
+      if (!showsApprovals) { if (!cancelled) setApprovalCounts({ payments: 0, timeOff: 0, unread: 0 }); return; }
+      let payments = 0, timeOff = 0, unread = 0;
       // payment approvals: all pending (AMs see all account managers' requests; leadership too).
       // Restricted leaders don't see payment financials.
       if (!isRestrictedLeader) {
@@ -113,8 +115,20 @@ function Layout() {
           if (res.ok) {
             const d = await res.json().catch(() => ({}));
             const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
-            const pendingInArr = arr.filter(a => (a.status || 'pending') === 'pending').length;
-            payments = typeof d.count === 'number' ? d.count : pendingInArr;
+            const pendingArr = arr.filter(a => (a.status || 'pending') === 'pending');
+            payments = typeof d.count === 'number' ? d.count : pendingArr.length;
+            // unread: a pending request whose updated_at is newer than this user's last-seen
+            // (or its created_at if never opened). Mirrors the Approvals page logic.
+            try {
+              const email = (currentUser?.email || 'anon').toLowerCase();
+              let seen = {};
+              try { seen = JSON.parse(localStorage.getItem(`approval_seen_${email}`) || '{}') || {}; } catch (e) {}
+              unread = pendingArr.filter(a => {
+                if (!a.updated_at) return false;
+                const baseline = seen[a.id] || a.created_at;
+                return baseline && new Date(a.updated_at) > new Date(baseline);
+              }).length;
+            } catch (e) {}
           }
         } catch (e) {}
       }
@@ -127,7 +141,7 @@ function Layout() {
           if (res.ok) { const d = await res.json(); timeOff = Array.isArray(d) ? d.length : 0; }
         } catch (e) {}
       }
-      if (!cancelled) setApprovalCounts({ payments, timeOff });
+      if (!cancelled) setApprovalCounts({ payments, timeOff, unread });
     };
     loadApprovalCounts();
     const t = setInterval(loadApprovalCounts, 60000);
@@ -180,7 +194,7 @@ function Layout() {
     { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
     { path: '/reviews', icon: Star, label: 'Reviews' },
     { path: '/review-link', icon: Shuffle, label: 'Get Review Link' },
-    { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge },
+    { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsUnread > 0 ? approvalsUnread : approvalsBadge },
     { path: '/updates', icon: Bell, label: 'Updates', badge: unreadNotifications },
   ] : coreNavItems;
 
@@ -197,7 +211,7 @@ function Layout() {
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...(isAM ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
-    ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge }] : []),
+    ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsUnread > 0 ? approvalsUnread : approvalsBadge }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];
