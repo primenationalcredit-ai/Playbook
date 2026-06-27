@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Users,
   Bell,
+  MessageSquare,
   ShieldCheck,
   Settings,
   LogOut,
@@ -192,7 +193,7 @@ function Layout() {
     { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
     { path: '/reviews', icon: Star, label: 'Reviews' },
     { path: '/review-link', icon: Shuffle, label: 'Get Review Link' },
-    { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsUnread > 0 ? approvalsUnread : approvalsBadge },
+    { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge, unread: approvalsUnread },
     { path: '/updates', icon: Bell, label: 'Updates', badge: unreadNotifications },
   ] : coreNavItems;
 
@@ -209,7 +210,7 @@ function Layout() {
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...(isAM ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
-    ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsUnread > 0 ? approvalsUnread : approvalsBadge }] : []),
+    ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge, unread: approvalsUnread }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];
@@ -335,9 +336,22 @@ function Layout() {
                 ${!sidebarOpen && 'justify-center'}
               `}
             >
-              <item.icon size={20} />
+              <span className="relative">
+                <item.icon size={20} />
+                {/* collapsed sidebar: red dot on the icon when there are new messages */}
+                {!sidebarOpen && item.unread > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-asap-red rounded-full ring-2 ring-asap-navy" />
+                )}
+              </span>
               {sidebarOpen && (
                 <span className="flex-1">{item.label}</span>
+              )}
+              {/* expanded sidebar: message icon + dot when there are new messages */}
+              {sidebarOpen && item.unread > 0 && (
+                <span className="relative inline-flex items-center" title={`${item.unread} new message${item.unread === 1 ? '' : 's'}`}>
+                  <MessageSquare size={18} className="text-asap-gold" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-asap-red rounded-full ring-2 ring-asap-navy" />
+                </span>
               )}
               {sidebarOpen && item.badge > 0 && (
                 <span className="bg-asap-red text-white text-xs px-2 py-0.5 rounded-full">
@@ -432,8 +446,22 @@ function Layout() {
                   `}
                   title={!sidebarOpen ? item.label : undefined}
                 >
-                  <item.icon size={20} />
-                  {sidebarOpen && <span>{item.label}</span>}
+                  <span className="relative">
+                    <item.icon size={20} />
+                    {!sidebarOpen && item.unread > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-asap-red rounded-full ring-2 ring-asap-navy" />
+                    )}
+                  </span>
+                  {sidebarOpen && <span className="flex-1">{item.label}</span>}
+                  {sidebarOpen && item.unread > 0 && (
+                    <span className="relative inline-flex items-center" title={`${item.unread} new message${item.unread === 1 ? '' : 's'}`}>
+                      <MessageSquare size={18} className="text-asap-gold" />
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-asap-red rounded-full ring-2 ring-asap-navy" />
+                    </span>
+                  )}
+                  {sidebarOpen && item.badge > 0 && (
+                    <span className="bg-asap-red text-white text-xs px-2 py-0.5 rounded-full">{item.badge}</span>
+                  )}
                 </NavLink>
               ))}
             </>
