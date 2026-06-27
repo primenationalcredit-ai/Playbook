@@ -40,6 +40,46 @@ const chargeLabel = (idx, total) => {
   return `Payment #${idx + 1}`;
 };
 
+// ===== Authorize.net Accept.js (client-side card tokenization) =====
+// These are PUBLIC client credentials (safe to ship to the browser). They must
+// match the payment processor's Authorize.net account that update_card_on_file
+// saves the card to. TEST values below mirror pay.html; swap to production
+// (js.authorize.net + production API Login ID / Client Key) before launch.
+const ACCEPT_JS_URL = 'https://jstest.authorize.net/v1/Accept.js';
+const AUTH_NET_API_LOGIN_ID = '9fxe738GPVX';
+const AUTH_NET_CLIENT_KEY = '727jMf46uPcCgbL32yjCDm54Ax928zd6kKh3yaQE29QyX4emHV2vgP6mXS9C47PU';
+
+let _acceptJsPromise = null;
+function loadAcceptJs() {
+  if (window.Accept) return Promise.resolve();
+  if (_acceptJsPromise) return _acceptJsPromise;
+  _acceptJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = ACCEPT_JS_URL;
+    s.onload = () => resolve();
+    s.onerror = () => { _acceptJsPromise = null; reject(new Error('Could not load the secure card library. Check your connection and try again.')); };
+    document.head.appendChild(s);
+  });
+  return _acceptJsPromise;
+}
+
+// Tokenize a card via Accept.js -> resolves opaqueData {dataDescriptor, dataValue}.
+function tokenizeCard({ cardNumber, expMonth, expYear, cardCode, zip, fullName }) {
+  return new Promise((resolve, reject) => {
+    const secureData = {
+      authData: { clientKey: AUTH_NET_CLIENT_KEY, apiLoginID: AUTH_NET_API_LOGIN_ID },
+      cardData: { cardNumber, month: expMonth, year: expYear, cardCode, zip, fullName }
+    };
+    window.Accept.dispatchData(secureData, (response) => {
+      if (response.messages.resultCode === 'Error') {
+        reject(new Error(response.messages.message.map(m => m.text).join(', ')));
+      } else {
+        resolve(response.opaqueData);
+      }
+    });
+  });
+}
+
 async function callApi(action, payload = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   const authHeader = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
@@ -376,7 +416,17 @@ function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} })
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
           <h3 className="text-base font-semibold text-asap-blue">Client Information</h3>
-          <a href={DEAL_URL(deal_id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-asap-blue hover:underline">Open in Pipedrive <ExternalLink size={12} /></a>
+          <div className="flex items-center gap-3">
+            {!has_card_on_file && (isAdmin || canRequest) && (
+              <button
+                onClick={() => onAction({ type: 'add_card', deal_id, client_name, client_email })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-asap-blue text-white text-xs font-semibold rounded hover:bg-blue-800"
+              >
+                <DollarSign size={13} /> Add Card on File
+              </button>
+            )}
+            <a href={DEAL_URL(deal_id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-asap-blue hover:underline">Open in Pipedrive <ExternalLink size={12} /></a>
+          </div>
         </div>
         <dl className="text-sm">
           {[['Deal ID', deal_id], ['Name', client_name || 'N/A'], ['Email', client_email || 'N/A'], ['Phone', client_phone || 'N/A'], ['Card on file', cardOnFile]].map(([k, v]) => (
@@ -595,6 +645,123 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Add Card modal (self-contained: loads Accept.js, tokenizes, saves card)
+// ---------------------------------------------------------------------------
+function AddCardModal({ info, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    cardholderName: info.client_name || '',
+    cardNumber: '', expiry: '', cvv: '', zip: ''
+  });
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    loadAcceptJs().then(() => { if (alive) setReady(true); })
+      .catch((e) => { if (alive) setNotice({ type: 'error', text: e.message }); });
+    return () => { alive = false; };
+  }, []);
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async () => {
+    setNotice(null);
+    const num = form.cardNumber.replace(/\s/g, '');
+    const exp = form.expiry.replace(/\s/g, '');
+    if (!form.cardholderName.trim()) return setNotice({ type: 'error', text: 'Cardholder name is required.' });
+    if (num.length < 13) return setNotice({ type: 'error', text: 'Enter a valid card number.' });
+    if (exp.length !== 4) return setNotice({ type: 'error', text: 'Enter expiry as MMYY (e.g. 0828).' });
+    if (form.cvv.length < 3) return setNotice({ type: 'error', text: 'Enter the card security code.' });
+    if (!form.zip.trim()) return setNotice({ type: 'error', text: 'Billing ZIP is required.' });
+
+    setBusy(true);
+    try {
+      const opaqueData = await tokenizeCard({
+        cardNumber: num,
+        expMonth: exp.substring(0, 2),
+        expYear: exp.substring(2, 4),
+        cardCode: form.cvv,
+        zip: form.zip,
+        fullName: form.cardholderName
+      });
+      await callApi('update_card_on_file', {
+        deal_id: info.deal_id,
+        opaqueData,
+        cardholderName: form.cardholderName,
+        billingAddress: { zip: form.zip, country: 'USA' }
+      });
+      setNotice({ type: 'success', text: 'Card saved to file. Scheduled payments can now be charged to it.' });
+      setTimeout(() => { onSaved && onSaved(); }, 1300);
+    } catch (e) {
+      setNotice({ type: 'error', text: e.message || 'Could not save the card.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => !busy && onClose()}>
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-asap-blue mb-1">Add Card on File</h3>
+        <p className="text-sm text-slate-600 mb-4">
+          {info.client_name || 'Client'}{info.client_email ? ` · ${info.client_email}` : ''}
+          <span className="block text-xs text-slate-500 mt-1">The card is saved securely for future scheduled payments. No charge is made now.</span>
+        </p>
+
+        <div className="mb-3">
+          <label className="block text-xs font-semibold text-slate-500 mb-1">Cardholder name</label>
+          <input type="text" value={form.cardholderName} onChange={e => set('cardholderName', e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+        </div>
+
+        <div className="mb-3">
+          <label className="block text-xs font-semibold text-slate-500 mb-1">Card number</label>
+          <input type="text" inputMode="numeric" autoComplete="cc-number" placeholder="1234 5678 9012 3456"
+            value={form.cardNumber} onChange={e => set('cardNumber', e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Expiry (MMYY)</label>
+            <input type="text" inputMode="numeric" autoComplete="cc-exp" placeholder="0828" maxLength={4}
+              value={form.expiry} onChange={e => set('expiry', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">CVV</label>
+            <input type="text" inputMode="numeric" autoComplete="cc-csc" placeholder="123" maxLength={4}
+              value={form.cvv} onChange={e => set('cvv', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Billing ZIP</label>
+            <input type="text" inputMode="numeric" autoComplete="postal-code" placeholder="77094"
+              value={form.zip} onChange={e => set('zip', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+          </div>
+        </div>
+
+        {notice && (
+          <div className={`p-2 rounded text-sm mb-3 ${notice.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+            {notice.text}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800 disabled:opacity-50">Cancel</button>
+          <button onClick={submit} disabled={busy || !ready}
+            className="px-4 py-2 text-sm font-semibold text-white rounded bg-asap-blue hover:bg-blue-800 disabled:opacity-60">
+            {busy ? 'Saving...' : (ready ? 'Save Card' : 'Loading...')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -828,7 +995,15 @@ export default function Invoices() {
         </div>
       )}
 
-      {modal && (
+      {modal && modal.type === 'add_card' && (
+        <AddCardModal
+          info={modal}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); if (mode === 'browse') browse(); else lookup(dealInput); }}
+        />
+      )}
+
+      {modal && modal.type !== 'add_card' && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => !busy && setModal(null)}>
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-asap-blue mb-1">{modalTitles[modal.type] || modal.type}</h3>
