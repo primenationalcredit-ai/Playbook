@@ -97,10 +97,13 @@ function Layout() {
   const SUPABASE_KEY_LAYOUT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
   useEffect(() => {
     let cancelled = false;
+    const isAMForCount = currentUser?.department === 'account_managers' || currentUser?.role === 'account_manager';
+    const showsApprovals = hasFullNavAccess || isAMForCount;
     const loadApprovalCounts = async () => {
-      if (!hasFullNavAccess) { if (!cancelled) setApprovalCounts({ payments: 0, timeOff: 0 }); return; }
+      if (!showsApprovals) { if (!cancelled) setApprovalCounts({ payments: 0, timeOff: 0 }); return; }
       let payments = 0, timeOff = 0;
-      // payment approvals (skip for restricted leaders)
+      // payment approvals: all pending (AMs see all account managers' requests; leadership too).
+      // Restricted leaders don't see payment financials.
       if (!isRestrictedLeader) {
         try {
           const res = await fetch('/.netlify/functions/invoices-api', {
@@ -115,20 +118,22 @@ function Layout() {
           }
         } catch (e) {}
       }
-      // time-off approvals
-      try {
-        const res = await fetch(`${SUPABASE_URL_LAYOUT}/rest/v1/time_off_requests?status=eq.pending&select=id`, {
-          headers: { apikey: SUPABASE_KEY_LAYOUT, Authorization: `Bearer ${SUPABASE_KEY_LAYOUT}` },
-        });
-        if (res.ok) { const d = await res.json(); timeOff = Array.isArray(d) ? d.length : 0; }
-      } catch (e) {}
+      // time-off approvals: leadership only (AMs don't approve time off).
+      if (hasFullNavAccess) {
+        try {
+          const res = await fetch(`${SUPABASE_URL_LAYOUT}/rest/v1/time_off_requests?status=eq.pending&select=id`, {
+            headers: { apikey: SUPABASE_KEY_LAYOUT, Authorization: `Bearer ${SUPABASE_KEY_LAYOUT}` },
+          });
+          if (res.ok) { const d = await res.json(); timeOff = Array.isArray(d) ? d.length : 0; }
+        } catch (e) {}
+      }
       if (!cancelled) setApprovalCounts({ payments, timeOff });
     };
     loadApprovalCounts();
     const t = setInterval(loadApprovalCounts, 60000);
     return () => { cancelled = true; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasFullNavAccess, isRestrictedLeader, currentUser?.id]);
+  }, [hasFullNavAccess, isRestrictedLeader, currentUser?.id, currentUser?.department, currentUser?.role]);
 
   // Credit consultants get a lean nav: claiming lives in their Bonus tracker, so the standalone
   // Playbook, Team View, Training, Ask AI, and Claim Reviews items are hidden for them.
@@ -192,6 +197,7 @@ function Layout() {
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...(isAM ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
+    ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];

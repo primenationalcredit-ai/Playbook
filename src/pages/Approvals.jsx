@@ -154,6 +154,9 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
   }, [load]);
 
   const decided = approval && approval.status !== 'pending';
+  // AMs can read any request's thread, but can only post on their own.
+  const isRequester = approval && (approval.requested_by_email || '').toLowerCase() === (myEmail || '').toLowerCase();
+  const canPost = !decided && (isAdmin || isRequester);
 
   const postMessage = async () => {
     if (!reply.trim()) return;
@@ -218,7 +221,7 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
               <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-600 text-center">
                 This request was <span className="font-semibold">{approval.status}</span>{approval.approved_at ? ` on ${fmtDate(approval.approved_at)}` : ''}. The conversation is closed.
               </div>
-            ) : (
+            ) : canPost ? (
               <div className="mt-4">
                 <div className="flex gap-2">
                   <textarea
@@ -233,6 +236,10 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
                     <Send size={15} /> Send
                   </button>
                 </div>
+              </div>
+            ) : (
+              <div className="mt-4 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-500 text-center">
+                You can view this request, but only the account manager who submitted it can message on the thread.
               </div>
             )}
 
@@ -292,7 +299,9 @@ function ListView({ isAdmin, onOpen }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const d = await callApi('list_pending_approvals');
+      // Leadership can browse all statuses; AMs only ever see currently-pending.
+      const payload = isAdmin ? { statuses: ['pending', 'approved', 'rejected'], limit: 300 } : {};
+      const d = await callApi('list_pending_approvals', payload);
       const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
       setItems(arr);
     } catch (e) {
@@ -300,7 +309,7 @@ function ListView({ isAdmin, onOpen }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     load();
@@ -308,7 +317,9 @@ function ListView({ isAdmin, onOpen }) {
     return () => clearInterval(t);
   }, [load]);
 
-  const shown = items.filter(a => filter === 'all' ? true : (a.status || 'pending') === filter);
+  // AMs are always pending-only. Leadership can filter.
+  const effFilter = isAdmin ? filter : 'pending';
+  const shown = items.filter(a => effFilter === 'all' ? true : (a.status || 'pending') === effFilter);
   const counts = {
     pending: items.filter(a => (a.status || 'pending') === 'pending').length,
     approved: items.filter(a => a.status === 'approved').length,
@@ -318,12 +329,17 @@ function ListView({ isAdmin, onOpen }) {
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        {['pending', 'approved', 'rejected', 'all'].map(f => (
+        {isAdmin && ['pending', 'approved', 'rejected', 'all'].map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize ${filter === f ? 'bg-asap-blue text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
             {f}{f !== 'all' && counts[f] != null ? ` (${counts[f]})` : ''}
           </button>
         ))}
+        {!isAdmin && (
+          <span className="px-3 py-1.5 rounded-lg text-sm font-medium bg-asap-blue text-white">
+            Pending ({counts.pending})
+          </span>
+        )}
         <button onClick={load} className="ml-auto px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1">
           <RefreshCw size={14} /> Refresh
         </button>
@@ -335,7 +351,7 @@ function ListView({ isAdmin, onOpen }) {
         <div className="p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700">{err}</div>
       ) : shown.length === 0 ? (
         <div className="text-center py-12 text-slate-400 text-sm italic">
-          {isAdmin ? 'No ' : 'You have no '}{filter === 'all' ? '' : filter + ' '}approval requests{isAdmin ? '' : ' right now'}.
+          {isAdmin ? `No ${effFilter === 'all' ? '' : effFilter + ' '}approval requests.` : 'No pending approval requests right now.'}
         </div>
       ) : (
         <div className="space-y-2">
@@ -388,7 +404,7 @@ export default function Approvals() {
         <p className="text-slate-500 text-sm">
           {isAdmin
             ? 'Payment date-change and pause requests. Discuss with the requester, then approve or reject.'
-            : 'Your payment change requests. Message leadership here while they review your request.'}
+            : 'All pending payment change requests across account managers. You can message on your own requests; others are view-only.'}
         </p>
       </div>
 
