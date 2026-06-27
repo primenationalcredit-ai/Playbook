@@ -369,7 +369,7 @@ function NotesSection({ notes }) {
 }
 
 function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} }) {
-  const { deal_id, client_name, client_email, client_phone, initial_payment, scheduled_charges = [], doc_fee, has_card_on_file, activities = [], notes = [] } = data;
+  const { deal_id, client_name, client_email, client_phone, initial_payment, scheduled_charges = [], doc_fee, has_card_on_file, activities = [], notes = [], other_invoices = [] } = data;
   const token = initial_payment;
 
   let collected = 0, pending = 0, refunded = 0;
@@ -452,6 +452,43 @@ function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} })
         <h3 className="text-base font-semibold text-asap-blue mb-4 pb-3 border-b border-slate-100">Initial Payment (Doc Fee)</h3>
         <DocFeeCard token={token} isAdmin={isAdmin} onAction={onAction} />
       </div>
+
+      {other_invoices.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+          <h3 className="text-base font-semibold text-asap-blue mb-1 pb-3 border-b border-slate-100">Other Invoices ({other_invoices.length})</h3>
+          <p className="text-xs text-slate-400 mt-2 mb-3">Partial / final invoices in Zoho for this client. Shown here even before a card is on file or a payment is scheduled.</p>
+          <div className="space-y-3">
+            {other_invoices.map((inv) => {
+              const paid = inv.paid;
+              const days = !paid ? daysUntil(inv.due_date) : null;
+              return (
+                <div key={inv.invoice_id}
+                  className={`border border-slate-200 border-l-[4px] rounded-lg p-4 ${paid ? 'border-l-green-500' : 'border-l-amber-500 bg-amber-50/40'}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <p className="font-semibold text-slate-800">{inv.invoice_number ? `Invoice ${inv.invoice_number}` : 'Invoice'}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {inv.due_date ? `Due ${fmtDate(inv.due_date)}` : (inv.date ? `Dated ${fmtDate(inv.date)}` : '')}
+                        {!paid && days != null && days < 0 && <span className="text-red-600 font-semibold"> · {Math.abs(days)} days overdue</span>}
+                        {!paid && days != null && days >= 0 && <span className="text-amber-700 font-semibold"> · due in {days} day{days === 1 ? '' : 's'}</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}`}>
+                        {paid ? 'Paid' : (inv.status || 'Unpaid')}
+                      </span>
+                      <span className="text-xl font-bold text-asap-blue">{fmtMoney(inv.total)}</span>
+                    </div>
+                  </div>
+                  {!paid && inv.balance != null && inv.balance !== inv.total && (
+                    <p className="text-xs text-slate-500 mt-2">Balance due {fmtMoney(inv.balance)}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
         <h3 className="text-base font-semibold text-asap-blue mb-4 pb-3 border-b border-slate-100">Scheduled Payments ({sortedCharges.length})</h3>
