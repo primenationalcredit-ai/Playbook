@@ -159,7 +159,7 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
     if (!reply.trim()) return;
     setBusy(true); setNotice(null);
     try {
-      await callApi('post_approval_message', { approval_id: approvalId, text: reply.trim() });
+      await callApi('post_approval_message', { approval_id: approvalId, body: reply.trim() });
       setReply('');
       await load();
     } catch (e) {
