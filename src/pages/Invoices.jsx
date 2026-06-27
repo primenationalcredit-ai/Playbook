@@ -124,7 +124,7 @@ function DocFeeCard({ token, isAdmin, onAction }) {
   );
 }
 
-function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction }) {
+function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pendingApproval }) {
   const c = charge;
   const refunded = !!c.refunded_at;
   const isPaid = c.status === 'paid';
@@ -134,6 +134,7 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction }) {
 
   const leftBorder =
     refunded   ? 'border-l-slate-400 bg-slate-50 opacity-90' :
+    pendingApproval ? 'border-l-amber-500 bg-amber-50' :
     isPaid     ? 'border-l-green-500' :
     isScheduled? 'border-l-blue-500' :
     isFailed   ? 'border-l-red-500 bg-red-50' :
@@ -154,6 +155,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction }) {
         <div className="flex items-center gap-2">
           <p className="font-semibold text-slate-800">{label}</p>
           <StatusPill status={c.status} refunded={refunded} />
+          {pendingApproval && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800" title={`${pendingApproval.request_type === 'pause' ? 'Pause' : 'Date change'} requested by ${pendingApproval.requested_by_name || pendingApproval.requested_by_email}`}>
+              <Clock size={11} /> Pending request
+            </span>
+          )}
           {urgency}
         </div>
         <p className="text-2xl font-bold text-asap-blue">{fmtMoney(c.amount)}</p>
@@ -218,17 +224,25 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction }) {
 
       {/* Non-admin (AM / Consultant) request buttons - only on charges that aren't paid/refunded */}
       {!isAdmin && canRequest && !refunded && !isPaid && (
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 items-center">
-          <button onClick={() => onAction({ type: 'request_date_change', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
-            <CalendarClock size={12} /> Request date change
-          </button>
-          <button onClick={() => onAction({ type: 'request_pause', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-white border border-amber-500 rounded hover:bg-amber-50">
-            <PauseCircle size={12} /> Request pause
-          </button>
-          <span className="text-[11px] text-slate-400 self-center">Requires leadership approval</span>
-        </div>
+        pendingApproval ? (
+          <div className="pt-3 border-t border-slate-100">
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 inline-flex items-center gap-1">
+              <Clock size={12} /> A {pendingApproval.request_type === 'pause' ? 'pause' : 'date change'} request is already pending leadership approval. No new request can be made until it's decided.
+            </p>
+          </div>
+        ) : (
+          <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+            <button onClick={() => onAction({ type: 'request_date_change', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+              <CalendarClock size={12} /> Request date change
+            </button>
+            <button onClick={() => onAction({ type: 'request_pause', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-white border border-amber-500 rounded hover:bg-amber-50">
+              <PauseCircle size={12} /> Request pause
+            </button>
+            <span className="text-[11px] text-slate-400 self-center">Requires leadership approval</span>
+          </div>
+        )
       )}
     </div>
   );
@@ -314,7 +328,7 @@ function NotesSection({ notes }) {
   );
 }
 
-function DealView({ data, isAdmin, canRequest, onAction }) {
+function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} }) {
   const { deal_id, client_name, client_email, client_phone, initial_payment, scheduled_charges = [], doc_fee, has_card_on_file, activities = [], notes = [] } = data;
   const token = initial_payment;
 
@@ -403,6 +417,7 @@ function DealView({ data, isAdmin, canRequest, onAction }) {
                 isAdmin={isAdmin}
                 canRequest={canRequest}
                 onAction={onAction}
+                pendingApproval={pendingByCharge[c.id]}
               />
             ))}
           </div>
@@ -415,7 +430,7 @@ function DealView({ data, isAdmin, canRequest, onAction }) {
   );
 }
 
-function BrowseView({ data, filter, onFilterChange }) {
+function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onAction, pendingByCharge = {} }) {
   const term = (filter || '').toLowerCase().trim();
   const matches = (obj) => !term ||
     (obj.client_name || '').toLowerCase().includes(term) ||
@@ -479,6 +494,7 @@ function BrowseView({ data, filter, onFilterChange }) {
                 <th className="text-right px-3 py-2">Amount</th>
                 <th className="text-left px-3 py-2">Due / Date</th>
                 <th className="text-left px-3 py-2">Status</th>
+                <th className="text-right px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -488,8 +504,13 @@ function BrowseView({ data, filter, onFilterChange }) {
                 const isPaid = isToken ? (i.status === 'used' && i.transaction_id) : i.status === 'paid';
                 const days = !isPaid && !i.refunded_at ? daysUntil(i.due_date) : null;
                 const dueWarn = days != null && days < 0 ? 'text-red-600' : days != null && days <= 3 ? 'text-amber-600' : 'text-slate-600';
+                const pending = !isToken ? pendingByCharge[i.id] : null;
+                const rowTint = pending ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50';
+                // Inline action availability mirrors the per-deal card rules.
+                const canAdminAct = isAdmin && !i.refunded_at && !isToken;
+                const canAmRequest = canRequest && !isAdmin && !isToken && !i.refunded_at && i.status !== 'paid';
                 return (
-                  <tr key={`${entry.type}-${i.id || idx}`} className="border-b border-slate-50 hover:bg-slate-50">
+                  <tr key={`${entry.type}-${i.id || idx}`} className={`border-b border-slate-50 ${rowTint}`}>
                     <td className="px-3 py-2">
                       <p className="font-semibold text-slate-800">{i.client_name || 'Unknown'}</p>
                       {i.client_email && <p className="text-[11px] text-slate-500">{i.client_email}</p>}
@@ -510,7 +531,57 @@ function BrowseView({ data, filter, onFilterChange }) {
                       {days != null && days < 0 && <span className="block text-[10px] font-semibold">{Math.abs(days)}d overdue</span>}
                       {days != null && days >= 0 && days <= 3 && <span className="block text-[10px] font-semibold">in {days}d</span>}
                     </td>
-                    <td className="px-3 py-2"><StatusPill status={i.status} refunded={!!i.refunded_at} /></td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-1 items-start">
+                        <StatusPill status={i.status} refunded={!!i.refunded_at} />
+                        {pending && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800" title={`${pending.request_type === 'pause' ? 'Pause' : 'Date change'} requested by ${pending.requested_by_name || pending.requested_by_email}`}>
+                            <Clock size={10} /> Pending request
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {canAdminAct ? (
+                        <div className="inline-flex gap-1">
+                          {(i.status === 'scheduled' || i.status === 'failed' || i.status === 'paused') && (
+                            <button onClick={() => onAction({ type: 'update_due_date', charge_id: i.id, current_due_date: i.due_date, amount: i.amount })}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50" title="Edit due date">
+                              <CalendarClock size={11} /> Date
+                            </button>
+                          )}
+                          {(i.status === 'scheduled' || i.status === 'failed') && (
+                            <button onClick={() => onAction({ type: 'pause_admin', charge_id: i.id, current_due_date: i.due_date, amount: i.amount })}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-white bg-amber-600 rounded hover:bg-amber-700" title="Pause">
+                              <PauseCircle size={11} /> Pause
+                            </button>
+                          )}
+                          {i.status === 'paused' && (
+                            <button onClick={() => onAction({ type: 'resume', charge_id: i.id, amount: i.amount })}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-white bg-green-600 rounded hover:bg-green-700" title="Resume">
+                              <PlayCircle size={11} /> Resume
+                            </button>
+                          )}
+                        </div>
+                      ) : canAmRequest ? (
+                        pending ? (
+                          <span className="text-[10px] text-amber-700 italic">Awaiting approval</span>
+                        ) : (
+                          <div className="inline-flex gap-1">
+                            <button onClick={() => onAction({ type: 'request_date_change', charge_id: i.id, current_due_date: i.due_date, amount: i.amount, label: `Pmt #${i.sequence_number || ''}` })}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50" title="Request date change">
+                              <CalendarClock size={11} /> Date
+                            </button>
+                            <button onClick={() => onAction({ type: 'request_pause', charge_id: i.id, current_due_date: i.due_date, amount: i.amount, label: `Pmt #${i.sequence_number || ''}` })}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-700 bg-white border border-amber-500 rounded hover:bg-amber-50" title="Request pause">
+                              <PauseCircle size={11} /> Pause
+                            </button>
+                          </div>
+                        )
+                      ) : (
+                        <span className="text-[10px] text-slate-300">—</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -549,7 +620,29 @@ export default function Invoices() {
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
-  const [mode, setMode] = useState('lookup');
+  const [mode, setMode] = useState(initialDeal ? 'lookup' : 'browse');
+
+  // Map of charge_id -> pending approval (so a charge that already has an open
+  // request shows a badge and blocks a duplicate). Loaded alongside invoices.
+  const [pendingByCharge, setPendingByCharge] = useState({});
+
+  const loadPendingApprovals = async () => {
+    try {
+      const d = await callApi('list_pending_approvals');
+      const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
+      const map = {};
+      arr.forEach(a => {
+        if ((a.status || 'pending') === 'pending' && a.charge_id != null) {
+          // keep the first/most relevant pending request per charge
+          if (!map[a.charge_id]) map[a.charge_id] = a;
+        }
+      });
+      setPendingByCharge(map);
+    } catch (e) {
+      // non-fatal: if approvals can't load, charges just won't show the badge
+      setPendingByCharge({});
+    }
+  };
 
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
@@ -603,11 +696,13 @@ export default function Invoices() {
         await callApi('refund_scheduled', { charge_id: modal.charge_id, reason: form.reason, passcode: form.passcode });
         setNotice({ type: 'success', text: 'Refund submitted.' });
       } else if (modal.type === 'request_date_change') {
+        if (pendingByCharge[modal.charge_id]) throw new Error('This payment already has a pending request awaiting approval. Only one request at a time.');
         if (!form.new_due_date) throw new Error('Pick a new due date');
         if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
         const r = await callApi('request_date_change', { charge_id: modal.charge_id, new_due_date: form.new_due_date, reason: form.reason });
         setNotice({ type: 'success', text: r.message || 'Request submitted for approval.' });
       } else if (modal.type === 'request_pause') {
+        if (pendingByCharge[modal.charge_id]) throw new Error('This payment already has a pending request awaiting approval. Only one request at a time.');
         if (!form.pause_indefinite && !form.pause_until_date) throw new Error('Set a pause-until date or check Indefinite');
         if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
         const r = await callApi('request_pause', {
@@ -618,7 +713,7 @@ export default function Invoices() {
         });
         setNotice({ type: 'success', text: r.message || 'Pause request submitted for approval.' });
       }
-      setTimeout(() => { setModal(null); lookup(dealInput); }, 1400);
+      setTimeout(() => { setModal(null); loadPendingApprovals(); if (mode === 'browse') browse(); else lookup(dealInput); }, 1400);
     } catch (e) {
       setNotice({ type: 'error', text: e.message });
     } finally {
@@ -631,7 +726,7 @@ export default function Invoices() {
     if (!id) { setErr('Enter a Pipedrive Deal ID.'); return; }
     setLoading(true); setErr(null); setBrowseData(null); setMode('lookup');
     try {
-      const data = await callApi('get_deal', { deal_id: id });
+      const [data] = await Promise.all([callApi('get_deal', { deal_id: id }), loadPendingApprovals()]);
       setDealData(data);
     } catch (e) {
       setErr(e.message); setDealData(null);
@@ -641,7 +736,7 @@ export default function Invoices() {
   const browse = async () => {
     setLoading(true); setErr(null); setDealData(null); setMode('browse');
     try {
-      const data = await callApi('list_recent_invoices', { filters: { days_back: 90 } });
+      const [data] = await Promise.all([callApi('list_recent_invoices', { filters: { days_back: 90 } }), loadPendingApprovals()]);
       setBrowseData(data);
     } catch (e) {
       setErr(e.message); setBrowseData(null);
@@ -650,6 +745,7 @@ export default function Invoices() {
 
   useEffect(() => {
     if (initialDeal) lookup(initialDeal);
+    else browse(); // default to All Invoices on open, no click needed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -717,8 +813,8 @@ export default function Invoices() {
         </div>
       )}
 
-      {!loading && mode === 'lookup' && dealData && <DealView data={dealData} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} />}
-      {!loading && mode === 'browse' && browseData && <BrowseView data={browseData} filter={filter} onFilterChange={setFilter} />}
+      {!loading && mode === 'lookup' && dealData && <DealView data={dealData} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} />}
+      {!loading && mode === 'browse' && browseData && <BrowseView data={browseData} filter={filter} onFilterChange={setFilter} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} />}
 
       {!loading && !dealData && !browseData && !err && (
         <div className="text-center py-12 text-slate-400 text-sm italic">
