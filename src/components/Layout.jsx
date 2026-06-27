@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Users,
   Bell,
+  ShieldCheck,
   Settings,
   LogOut,
   ChevronDown,
@@ -52,6 +53,12 @@ function Layout() {
   const stats = getCompletionStats(currentUser?.id);
   const unreadNotifications = notifications.filter(n => !n.read).length;
 
+  // Combined "needs approval" badge for leadership: payment date-change/pause
+  // requests (from the payment processor, via the proxy) plus pending time-off
+  // requests (Playbook db). Built generic so more approval types can be added.
+  const [approvalCounts, setApprovalCounts] = useState({ payments: 0, timeOff: 0 });
+  const approvalsBadge = approvalCounts.payments + approvalCounts.timeOff;
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -82,6 +89,45 @@ function Layout() {
   
   // Full access users (Joe, Astrid, and other leadership)
   const hasFullNavAccess = isJoe || isAstrid || isLeadership;
+
+  // Poll the combined approval count for leadership. Restricted leaders (Kim,
+  // Mariana) handle time-off but not payment financials, so they only get the
+  // time-off count.
+  const SUPABASE_URL_LAYOUT = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
+  const SUPABASE_KEY_LAYOUT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
+  useEffect(() => {
+    let cancelled = false;
+    const loadApprovalCounts = async () => {
+      if (!hasFullNavAccess) { if (!cancelled) setApprovalCounts({ payments: 0, timeOff: 0 }); return; }
+      let payments = 0, timeOff = 0;
+      // payment approvals (skip for restricted leaders)
+      if (!isRestrictedLeader) {
+        try {
+          const res = await fetch('/.netlify/functions/invoices-api', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'list_pending_approvals' }),
+          });
+          if (res.ok) {
+            const d = await res.json().catch(() => ({}));
+            const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
+            payments = arr.filter(a => (a.status || 'pending') === 'pending').length;
+          }
+        } catch (e) {}
+      }
+      // time-off approvals
+      try {
+        const res = await fetch(`${SUPABASE_URL_LAYOUT}/rest/v1/time_off_requests?status=eq.pending&select=id`, {
+          headers: { apikey: SUPABASE_KEY_LAYOUT, Authorization: `Bearer ${SUPABASE_KEY_LAYOUT}` },
+        });
+        if (res.ok) { const d = await res.json(); timeOff = Array.isArray(d) ? d.length : 0; }
+      } catch (e) {}
+      if (!cancelled) setApprovalCounts({ payments, timeOff });
+    };
+    loadApprovalCounts();
+    const t = setInterval(loadApprovalCounts, 60000);
+    return () => { cancelled = true; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasFullNavAccess, isRestrictedLeader, currentUser?.id]);
 
   // Credit consultants get a lean nav: claiming lives in their Bonus tracker, so the standalone
   // Playbook, Team View, Training, Ask AI, and Claim Reviews items are hidden for them.
@@ -128,6 +174,7 @@ function Layout() {
     { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
     { path: '/reviews', icon: Star, label: 'Reviews' },
     { path: '/review-link', icon: Shuffle, label: 'Get Review Link' },
+    { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge },
     { path: '/updates', icon: Bell, label: 'Updates', badge: unreadNotifications },
   ] : coreNavItems;
 

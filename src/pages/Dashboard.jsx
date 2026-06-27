@@ -36,10 +36,19 @@ function Dashboard() {
 
   const [timeOffNotifications, setTimeOffNotifications] = useState([]);
   const [pendingTimeOffCount, setPendingTimeOffCount] = useState(0);
+  const [pendingPaymentApprovals, setPendingPaymentApprovals] = useState(0);
   const [ptoBalance, setPtoBalance] = useState(null);
   const [upcomingPTO, setUpcomingPTO] = useState([]);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.department === 'leadership';
+  // Kim and Mariana are leadership for time-off but restricted from payment financials,
+  // so they should not see payment-approval alerts.
+  const RESTRICTED_LEADER_IDS = [
+    'f7b8bc3a-74e6-46c2-a378-d19d204d7133', // Mariana Navarro
+    '3ae5ad73-46eb-404f-8dc9-6d5cf53e9df0', // Kim Sanchez
+  ];
+  const isRestrictedLeader = RESTRICTED_LEADER_IDS.includes(currentUser?.id);
+  const canSeePaymentApprovals = isAdmin && !isRestrictedLeader;
 
   // Load time-off notifications and PTO balance
   useEffect(() => {
@@ -47,8 +56,33 @@ function Dashboard() {
       loadTimeOffNotifications();
       loadPtoBalance();
       loadUpcomingPTO();
+      loadPaymentApprovals();
     }
+    // refresh the approval count every 60s so the tile stays live
+    const t = setInterval(() => { if (currentUser?.id) loadPaymentApprovals(); }, 60000);
+    return () => clearInterval(t);
   }, [currentUser?.id]);
+
+  // Pending payment date-change / pause approvals. These rows live in the payment
+  // processor's database, so we read them through the invoices-api proxy (which
+  // already knows how to reach it) rather than the Playbook Supabase.
+  const loadPaymentApprovals = async () => {
+    if (!canSeePaymentApprovals) { setPendingPaymentApprovals(0); return; }
+    try {
+      const res = await fetch('/.netlify/functions/invoices-api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list_pending_approvals' }),
+      });
+      if (res.ok) {
+        const d = await res.json().catch(() => ({}));
+        const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
+        setPendingPaymentApprovals(arr.filter(a => (a.status || 'pending') === 'pending').length);
+      }
+    } catch (e) {
+      console.error('Error loading payment approvals:', e);
+    }
+  };
 
   const loadPtoBalance = async () => {
     try {
@@ -370,6 +404,25 @@ function Dashboard() {
                 className="inline-flex items-center gap-2 text-sm text-orange-600 hover:text-orange-700 mt-3"
               >
                 View all requests <ArrowRight size={16} />
+              </Link>
+            </div>
+          )}
+
+          {/* Pending Payment Approvals (Admin Only, excludes restricted leaders) */}
+          {canSeePaymentApprovals && pendingPaymentApprovals > 0 && (
+            <div className="bg-gradient-to-br from-rose-600 to-red-600 rounded-2xl p-6 text-white">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle size={20} />
+                <h2 className="font-semibold">Payment Approvals</h2>
+              </div>
+              <p className="text-rose-100 text-sm mb-4">
+                {pendingPaymentApprovals} payment change{pendingPaymentApprovals !== 1 ? 's' : ''} (date move or pause) waiting for your approval
+              </p>
+              <Link
+                to="/approvals"
+                className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Review Now <ArrowRight size={16} />
               </Link>
             </div>
           )}
