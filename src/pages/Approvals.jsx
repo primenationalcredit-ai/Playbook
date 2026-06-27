@@ -61,6 +61,12 @@ function StatusPill({ status }) {
 
 function RequestSummary({ a }) {
   const isPause = a.request_type === 'pause';
+  const Row = ({ label, children, valueClass = '' }) => (
+    <div className="flex py-1.5 border-b border-slate-100 last:border-b-0">
+      <dt className="w-32 flex-shrink-0 text-slate-400">{label}</dt>
+      <dd className={`flex-1 text-slate-700 font-medium ${valueClass}`}>{children}</dd>
+    </div>
+  );
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -68,35 +74,22 @@ function RequestSummary({ a }) {
         <span className="font-semibold text-slate-800">{isPause ? 'Pause request' : 'Date change request'}</span>
         <StatusPill status={a.status} />
       </div>
-      <div className="text-xs text-slate-600 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2">
-        <span className="text-slate-400">Client</span>
-        <span className="font-semibold col-span-1 md:col-span-2">{a.client_name || 'N/A'}{a.pipedrive_deal_id ? <> · <a href={DEAL_URL(a.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="text-asap-blue hover:underline">#{a.pipedrive_deal_id}</a></> : null}</span>
-        <span className="text-slate-400">Payment</span>
-        <span className="font-semibold col-span-1 md:col-span-2">{fmtMoney(a.amount)}{a.payment_label ? ` · ${a.payment_label}` : a.sequence_number ? ` · payment #${a.sequence_number}` : ''}</span>
-        <span className="text-slate-400">Current due</span>
-        <span className="font-semibold">{fmtDate(a.current_due_date)}</span>
-        {isPause ? (
-          <>
-            <span className="text-slate-400">Pause</span>
-            <span className="font-semibold">{a.pause_indefinite ? 'Indefinitely' : `until ${fmtDate(a.pause_until_date)}`}</span>
-          </>
-        ) : (
-          <>
-            <span className="text-slate-400">New due</span>
-            <span className="font-semibold">{fmtDate(a.new_due_date)}</span>
-          </>
-        )}
-        <span className="text-slate-400">Requested by</span>
-        <span className="font-semibold col-span-1 md:col-span-2">{a.requested_by_name || a.requested_by_email}</span>
-        <span className="text-slate-400">Reason</span>
-        <span className="italic col-span-1 md:col-span-2">{a.reason || '—'}</span>
+      <dl className="text-sm">
+        <Row label="Client">
+          {a.client_name || 'N/A'}
+          {a.pipedrive_deal_id && <> · <a href={DEAL_URL(a.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="text-asap-blue hover:underline font-semibold">#{a.pipedrive_deal_id}</a></>}
+        </Row>
+        <Row label="Payment">{fmtMoney(a.amount)}{a.payment_label ? ` · ${a.payment_label}` : a.sequence_number ? ` · payment #${a.sequence_number}` : ''}</Row>
+        <Row label="Current due">{fmtDate(a.current_due_date)}</Row>
+        {isPause
+          ? <Row label="Pause">{a.pause_indefinite ? 'Indefinitely' : `Until ${fmtDate(a.pause_until_date)}`}</Row>
+          : <Row label="New due date">{fmtDate(a.new_due_date)}</Row>}
+        <Row label="Requested by">{a.requested_by_name || a.requested_by_email}</Row>
+        <Row label="Reason" valueClass="italic font-normal">{a.reason || '—'}</Row>
         {a.status === 'rejected' && a.rejection_reason && (
-          <>
-            <span className="text-slate-400">Rejected because</span>
-            <span className="italic text-red-700 col-span-1 md:col-span-2">{a.rejection_reason}</span>
-          </>
+          <Row label="Rejected because" valueClass="italic font-normal text-red-700">{a.rejection_reason}</Row>
         )}
-      </div>
+      </dl>
       {a.pipedrive_deal_id && (
         <div className="mt-4 pt-3 border-t border-slate-200">
           <a href={`/invoices?deal=${a.pipedrive_deal_id}`}
