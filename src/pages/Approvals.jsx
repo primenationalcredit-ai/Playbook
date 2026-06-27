@@ -323,13 +323,10 @@ function ListView({ isAdmin, myEmail, onOpen }) {
         ]);
         const pend = Array.isArray(pendRes) ? pendRes : (pendRes.approvals || []);
         const mine = Array.isArray(mineRes) ? mineRes : (mineRes.approvals || []);
-        const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
         const recentDecided = mine.filter(a => {
-          const when = a.approved_at || a.updated_at || a.requested_at;
-          const recent = when && new Date(when).getTime() >= cutoff;
-          // hide decisions the user has already seen/dismissed (unread_count === 0)
-          const notDismissed = (a.unread_count || 0) > 0;
-          return recent && notDismissed;
+          // Show any UNREAD decision so the badge never gets stuck on something the
+          // user can't see to dismiss. Read decisions are hidden (already handled).
+          return (a.unread_count || 0) > 0;
         });
         // merge, de-dupe by id
         const byId = {};
