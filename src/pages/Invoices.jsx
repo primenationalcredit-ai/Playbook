@@ -504,8 +504,8 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                 const isPaid = isToken ? (i.status === 'used' && i.transaction_id) : i.status === 'paid';
                 const days = !isPaid && !i.refunded_at ? daysUntil(i.due_date) : null;
                 const dueWarn = days != null && days < 0 ? 'text-red-600' : days != null && days <= 3 ? 'text-amber-600' : 'text-slate-600';
-                const pending = !isToken ? pendingByCharge[i.id] : null;
-                const rowTint = pending ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50';
+                const pendingReq = !isToken ? pendingByCharge[i.id] : null;
+                const rowTint = pendingReq ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50';
                 // Inline action availability mirrors the per-deal card rules.
                 const canAdminAct = isAdmin && !i.refunded_at && !isToken;
                 const canAmRequest = canRequest && !isAdmin && !isToken && !i.refunded_at && i.status !== 'paid';
@@ -534,8 +534,8 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                     <td className="px-3 py-2">
                       <div className="flex flex-col gap-1 items-start">
                         <StatusPill status={i.status} refunded={!!i.refunded_at} />
-                        {pending && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800" title={`${pending.request_type === 'pause' ? 'Pause' : 'Date change'} requested by ${pending.requested_by_name || pending.requested_by_email}`}>
+                        {pendingReq && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800" title={`${pendingReq.request_type === 'pause' ? 'Pause' : 'Date change'} requested by ${pendingReq.requested_by_name || pendingReq.requested_by_email}`}>
                             <Clock size={10} /> Pending request
                           </span>
                         )}
@@ -564,7 +564,7 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                           )}
                         </div>
                       ) : canAmRequest ? (
-                        pending ? (
+                        pendingReq ? (
                           <span className="text-[10px] text-amber-700 italic">Awaiting approval</span>
                         ) : (
                           <div className="inline-flex gap-1">
