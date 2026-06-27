@@ -321,7 +321,9 @@ function ListView({ isAdmin, myEmail, onOpen }) {
         const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
         setItems(arr);
       } else {
-        // AMs: all pending (everyone's, for cover) + their OWN decided requests (last 14 days).
+        // AMs: all pending (everyone's, for cover) + their OWN decided requests (last 14 days)
+        // that haven't been dismissed. Dismissal = mark_approval_read on the server, which
+        // sets unread_count to 0, so dismissed decisions drop off and stay off across reloads.
         const [pendRes, mineRes] = await Promise.all([
           callApi('list_pending_approvals', {}),
           callApi('list_pending_approvals', { statuses: ['approved', 'rejected'], mine: true, limit: 100 }),
@@ -331,7 +333,10 @@ function ListView({ isAdmin, myEmail, onOpen }) {
         const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
         const recentDecided = mine.filter(a => {
           const when = a.approved_at || a.updated_at || a.requested_at;
-          return when && new Date(when).getTime() >= cutoff;
+          const recent = when && new Date(when).getTime() >= cutoff;
+          // hide decisions the user has already seen/dismissed (unread_count === 0)
+          const notDismissed = (a.unread_count || 0) > 0;
+          return recent && notDismissed;
         });
         // merge, de-dupe by id
         const byId = {};
@@ -353,9 +358,11 @@ function ListView({ isAdmin, myEmail, onOpen }) {
 
   const dismiss = async (e, approvalId) => {
     e.stopPropagation();
+    // optimistic hide
     setDismissed(prev => ({ ...prev, [approvalId]: true }));
-    // mark read so it also clears the alert count
-    callApi('mark_approval_read', { approval_id: approvalId }).catch(() => {});
+    // persist: mark read on the server so it stays dismissed across reloads and clears the alert
+    try { await callApi('mark_approval_read', { approval_id: approvalId }); } catch (err) {}
+    load(); // refresh from server (decided+read items now drop off)
   };
 
   // Tabs: AMs get Pending + Decisions; leadership keeps full status filter.
