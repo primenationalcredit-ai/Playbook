@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 import {
   ShieldCheck, ArrowLeft, Clock, CheckCircle2, XCircle, CalendarClock,
-  PauseCircle, Send, AlertTriangle, RefreshCw, MessageSquare, DollarSign,
+  PauseCircle, Send, AlertTriangle, RefreshCw, MessageSquare, DollarSign, FileText,
 } from 'lucide-react';
 
 const PIPEDRIVE_DOMAIN = 'asapcredit';
@@ -451,9 +451,16 @@ function ListView({ isAdmin, myEmail, onOpen }) {
                   )}
                 </button>
 
-                {/* Dismiss for decided requests */}
+                {/* Decided: check-invoice link + dismiss */}
                 {decided && (
-                  <div className="px-4 pb-3 -mt-1 flex justify-end">
+                  <div className="px-4 pb-3 -mt-1 flex justify-between items-center">
+                    {a.pipedrive_deal_id ? (
+                      <a href={`/invoices?deal=${a.pipedrive_deal_id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-asap-blue hover:underline">
+                        <FileText size={13} /> Check the invoice
+                      </a>
+                    ) : <span />}
                     <button onClick={(e) => dismiss(e, a.id)}
                       className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700">
                       <XCircle size={13} /> Dismiss

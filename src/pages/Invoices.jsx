@@ -517,6 +517,12 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                     </td>
                     <td className="px-3 py-2">
                       <a href={DEAL_URL(i.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="font-mono text-xs font-semibold text-asap-blue hover:underline">#{i.pipedrive_deal_id || '?'}</a>
+                      {i.pipedrive_deal_id && (
+                        <a href={`/invoices?deal=${i.pipedrive_deal_id}`}
+                          className="block text-[10px] text-slate-500 hover:text-asap-blue hover:underline mt-0.5">
+                          View invoices →
+                        </a>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       {isToken
