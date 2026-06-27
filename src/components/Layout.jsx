@@ -59,9 +59,12 @@ function Layout() {
   // requests (from the payment processor, via the proxy) plus pending time-off
   // requests (Playbook db). Built generic so more approval types can be added.
   const [approvalCounts, setApprovalCounts] = useState({ payments: 0, timeOff: 0, unread: 0 });
+  // Leadership: badge = things to act on (pending payments + pending time-off).
+  // AMs: badge = unread only (replies/decisions on their own requests) — they don't
+  // act on the pending queue, so a pending count would be noise.
   const approvalsBadge = approvalCounts.payments + approvalCounts.timeOff;
-  // When there are unread replies, surface that count (more actionable than total pending).
   const approvalsUnread = approvalCounts.unread || 0;
+  const amApprovalsBadge = approvalsUnread; // AM-specific badge value
 
   const handleLogout = () => {
     logout();
@@ -123,8 +126,10 @@ function Layout() {
             const d = await res.json().catch(() => ({}));
             const arr = Array.isArray(d) ? d : (d.approvals || d.data || d.rows || []);
             const pendingArr = arr.filter(a => (a.status || 'pending') === 'pending');
-            payments = typeof d.count === 'number' ? d.count : pendingArr.length;
-            // Server returns total_unread (messages this user hasn't read). Use it directly.
+            // pending count = actual pending requests in the array. Do NOT use d.count:
+            // with include_my_decisions it also counts the user's decided requests.
+            payments = pendingArr.length;
+            // total_unread = unread messages + unseen decisions for this user.
             unread = typeof d.total_unread === 'number'
               ? d.total_unread
               : arr.reduce((s, a) => s + (a.unread_count || 0), 0);
@@ -210,7 +215,7 @@ function Layout() {
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...(isAM ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
-    ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge, unread: approvalsUnread }] : []),
+    ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: amApprovalsBadge, unread: approvalsUnread }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];
