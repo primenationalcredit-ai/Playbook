@@ -72,7 +72,7 @@ function RequestSummary({ a }) {
         <span className="text-slate-400">Client</span>
         <span className="font-semibold col-span-1 md:col-span-2">{a.client_name || 'N/A'}{a.pipedrive_deal_id ? <> · <a href={DEAL_URL(a.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="text-asap-blue hover:underline">#{a.pipedrive_deal_id}</a></> : null}</span>
         <span className="text-slate-400">Payment</span>
-        <span className="font-semibold col-span-1 md:col-span-2">{fmtMoney(a.amount)}{a.sequence_number ? ` · payment #${a.sequence_number}` : ''}</span>
+        <span className="font-semibold col-span-1 md:col-span-2">{fmtMoney(a.amount)}{a.payment_label ? ` · ${a.payment_label}` : a.sequence_number ? ` · payment #${a.sequence_number}` : ''}</span>
         <span className="text-slate-400">Current due</span>
         <span className="font-semibold">{fmtDate(a.current_due_date)}</span>
         {isPause ? (
@@ -433,7 +433,7 @@ function ListView({ isAdmin, myEmail, onOpen }) {
                       {isPause ? <PauseCircle size={18} className="text-amber-600 flex-shrink-0" /> : <CalendarClock size={18} className="text-asap-blue flex-shrink-0" />}
                       <div className="min-w-0">
                         <p className="font-semibold text-slate-800 truncate">
-                          {isPause ? 'Pause' : 'Date change'} · {a.client_name || 'Client'} · {fmtMoney(a.amount)}
+                          {isPause ? 'Pause' : 'Date change'} · {a.client_name || 'Client'} · {fmtMoney(a.amount)}{a.payment_label ? ` · ${a.payment_label}` : ''}
                         </p>
                         <p className="text-[11px] text-slate-500 truncate">
                           {isPause
