@@ -433,6 +433,14 @@ function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} })
                 <DollarSign size={13} /> Add Card on File
               </button>
             )}
+            {has_card_on_file && (isAdmin || canRequest) && (
+              <button
+                onClick={() => onAction({ type: 'update_card', deal_id, client_name, client_email })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-asap-blue border border-asap-blue text-xs font-semibold rounded hover:bg-blue-50"
+              >
+                <DollarSign size={13} /> Update Card
+              </button>
+            )}
             <a href={DEAL_URL(deal_id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-asap-blue hover:underline">Open in Pipedrive <ExternalLink size={12} /></a>
           </div>
         </div>
@@ -697,7 +705,8 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
 // ---------------------------------------------------------------------------
 // Add Card modal (self-contained: loads Accept.js, tokenizes, saves card)
 // ---------------------------------------------------------------------------
-function AddCardModal({ info, onClose, onSaved }) {
+function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
+  const isUpdate = mode === 'update';
   const [form, setForm] = useState({
     cardholderName: info.client_name || '',
     cardNumber: '', expiry: '', cvv: '', zip: ''
@@ -735,13 +744,15 @@ function AddCardModal({ info, onClose, onSaved }) {
         zip: form.zip,
         fullName: form.cardholderName
       });
-      await callApi('collect_and_save_card', {
+      await callApi(isUpdate ? 'update_card_on_file' : 'collect_and_save_card', {
         deal_id: info.deal_id,
         opaqueData,
         cardholderName: form.cardholderName,
         billingAddress: { zip: form.zip, country: 'USA' }
       });
-      setNotice({ type: 'success', text: 'Card saved to file. Scheduled payments can now be charged to it.' });
+      setNotice({ type: 'success', text: isUpdate
+        ? 'Card updated. Upcoming scheduled payments will use the new card.'
+        : 'Card saved to file. Scheduled payments can now be charged to it.' });
       setTimeout(() => { onSaved && onSaved(); }, 1300);
     } catch (e) {
       setNotice({ type: 'error', text: e.message || 'Could not save the card.' });
@@ -753,10 +764,12 @@ function AddCardModal({ info, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => !busy && onClose()}>
       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-asap-blue mb-1">Add Card on File</h3>
+        <h3 className="text-lg font-bold text-asap-blue mb-1">{isUpdate ? 'Update Card on File' : 'Add Card on File'}</h3>
         <p className="text-sm text-slate-600 mb-4">
           {info.client_name || 'Client'}{info.client_email ? ` · ${info.client_email}` : ''}
-          <span className="block text-xs text-slate-500 mt-1">The card is saved securely for future scheduled payments. No charge is made now.</span>
+          <span className="block text-xs text-slate-500 mt-1">{isUpdate
+            ? 'The new card replaces the current one for all upcoming scheduled payments. No charge is made now.'
+            : 'The card is saved securely for future scheduled payments. No charge is made now.'}</span>
         </p>
 
         <div className="mb-3">
@@ -803,7 +816,7 @@ function AddCardModal({ info, onClose, onSaved }) {
           <button onClick={onClose} disabled={busy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800 disabled:opacity-50">Cancel</button>
           <button onClick={submit} disabled={busy || !ready}
             className="px-4 py-2 text-sm font-semibold text-white rounded bg-asap-blue hover:bg-blue-800 disabled:opacity-60">
-            {busy ? 'Saving...' : (ready ? 'Save Card' : 'Loading...')}
+            {busy ? 'Saving...' : (ready ? (isUpdate ? 'Update Card' : 'Save Card') : 'Loading...')}
           </button>
         </div>
       </div>
@@ -1040,15 +1053,16 @@ export default function Invoices() {
         </div>
       )}
 
-      {modal && modal.type === 'add_card' && (
+      {modal && (modal.type === 'add_card' || modal.type === 'update_card') && (
         <AddCardModal
           info={modal}
+          mode={modal.type === 'update_card' ? 'update' : 'add'}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); if (mode === 'browse') browse(); else lookup(dealInput); }}
         />
       )}
 
-      {modal && modal.type !== 'add_card' && (
+      {modal && modal.type !== 'add_card' && modal.type !== 'update_card' && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => !busy && setModal(null)}>
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-asap-blue mb-1">{modalTitles[modal.type] || modal.type}</h3>
