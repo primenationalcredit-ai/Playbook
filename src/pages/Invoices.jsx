@@ -727,7 +727,7 @@ function AddCardModal({ info, onClose, onSaved }) {
         zip: form.zip,
         fullName: form.cardholderName
       });
-      await callApi('update_card_on_file', {
+      await callApi('collect_and_save_card', {
         deal_id: info.deal_id,
         opaqueData,
         cardholderName: form.cardholderName,
