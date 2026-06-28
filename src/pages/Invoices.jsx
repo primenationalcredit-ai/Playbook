@@ -227,10 +227,18 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
         <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2">
           {(isScheduled || isFailed) && (
             <>
-              <button onClick={() => onAction({ type: 'charge_now', charge_id: c.id, amount: c.amount, cardLast4: c.card_last_4 })}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700">
-                <Zap size={12} /> Charge Now
-              </button>
+              {c.customer_profile_id ? (
+                <button onClick={() => onAction({ type: 'charge_now', charge_id: c.id, amount: c.amount, cardLast4: c.card_last_4 })}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700">
+                  <Zap size={12} /> Charge Now
+                </button>
+              ) : (
+                <button onClick={() => onAction({ type: 'add_card', deal_id, client_name, client_email })}
+                  title="No card on file yet. Add a card before charging."
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+                  <DollarSign size={12} /> Add card to charge
+                </button>
+              )}
               <button onClick={() => onAction({ type: 'update_due_date', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
                 <CalendarClock size={12} /> Edit Date
