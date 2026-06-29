@@ -6,6 +6,7 @@ import {
   Shield, Clock, X, Eye
 } from 'lucide-react';
 import ReviewClaimQueue from '../components/ReviewClaimQueue';
+import Reviews from './Reviews';
 
 const fmt = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt = (n) => '$' + Math.round(n || 0).toLocaleString();
@@ -356,7 +357,14 @@ export default function ConsultantBonus() {
       </div>
 
       {tab === 'reviews' && (
-        <div className="mt-2"><ReviewClaimQueue /></div>
+        <div className="mt-2 space-y-6">
+          {/* Review dashboard / stats (the former standalone Reviews page) */}
+          <Reviews />
+          {/* Claim the reviews you earned */}
+          <div className="border-t border-slate-200 pt-6">
+            <ReviewClaimQueue />
+          </div>
+        </div>
       )}
 
       {tab === 'leaderboard' && (() => {

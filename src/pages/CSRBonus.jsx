@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import Reviews from './Reviews';
+import ReviewClaimQueue from '../components/ReviewClaimQueue';
 
 const fmt = (n) => `$${(n || 0).toLocaleString()}`;
 
@@ -277,6 +279,14 @@ export default function CSRBonus() {
       )}
 
       <DrillPanel drill={drill} onClose={() => setDrill(null)} />
+
+      {/* Reviews: dashboard/stats on top, claim queue below */}
+      <div className="mt-8 space-y-6 border-t border-slate-200 pt-6">
+        <Reviews />
+        <div className="border-t border-slate-200 pt-6">
+          <ReviewClaimQueue />
+        </div>
+      </div>
     </div>
   );
 }

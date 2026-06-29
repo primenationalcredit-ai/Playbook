@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import ReviewClaimQueue from '../components/ReviewClaimQueue';
+import Reviews from './Reviews';
 import { supabase } from '../lib/supabase';
 import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle, Mail, DollarSign } from 'lucide-react';
 
@@ -125,21 +126,6 @@ export default function AMBonus() {
   };
 
   useEffect(() => { loadData(); }, [selectedMonth]);
-
-  // Access guard: a non-leadership Account Manager may only ever view their own
-  // bonus sheet or the All-Managers comparison. If selectedAM lands on anyone
-  // else (stale state, manual nav), snap it back to their own sheet. Leadership
-  // and admins are unrestricted. The All comparison view stays open to everyone.
-  useEffect(() => {
-    if (!isAdmin && selectedAM && selectedAM !== 'ALL' && selectedAM !== currentUser?.id) {
-      setSelectedAM(currentUser?.id || 'ALL');
-    }
-  }, [selectedAM, isAdmin, currentUser]);
-
-  // True when the signed-in user is allowed to open a given AM's individual sheet
-  // or drill into their client-level breakdowns. Leadership/admin: anyone.
-  // Regular AM: only themselves.
-  const canDrillInto = (amId) => isAdmin || amId === currentUser?.id;
 
   const submitCreditBuilding = async () => {
     if (!formData.client_name || !formData.product_name) return;
@@ -447,7 +433,7 @@ export default function AMBonus() {
             <select value={selectedAM || ''} onChange={e => setSelectedAM(e.target.value)}
               className="px-3 py-1.5 border rounded-lg text-sm font-medium">
               <option value="ALL">All Account Managers</option>
-              {(isAdmin ? amList : amList.filter(am => am.id === currentUser?.id)).map(am => (
+              {amList.map(am => (
                 <option key={am.id} value={am.id}>{am.name}</option>
               ))}
             </select>
@@ -515,7 +501,7 @@ export default function AMBonus() {
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100">
                 <h3 className="font-bold text-slate-800">All Account Managers — {selectedMonth === new Date().toISOString().slice(0, 7) ? 'this month' : selectedMonth}</h3>
-                <p className="text-xs text-slate-500">Every AM's numbers at a glance.{isAdmin ? ' Click a name to open their full dashboard.' : ''}</p>
+                <p className="text-xs text-slate-500">Every AM's numbers at a glance. Click a name to open their full dashboard.</p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -537,25 +523,17 @@ export default function AMBonus() {
                     {rows.map(({ am, m }) => (
                       <tr key={am.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3">
-                          {canDrillInto(am.id)
-                            ? <button onClick={() => setSelectedAM(am.id)} className="font-medium text-asap-blue hover:underline">{am.name}</button>
-                            : <span className="font-medium text-slate-700">{am.name}</span>}
+                          <button onClick={() => setSelectedAM(am.id)} className="font-medium text-asap-blue hover:underline">{am.name}</button>
                         </td>
                         <td className="px-4 py-3 text-center">{m?.approvedCount ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.stallRate == null ? '—' : (
-                          canDrillInto(am.id)
-                            ? <button onClick={() => setBreakdown({ amName: am.name, metric: 'stall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.stallRate)}</button>
-                            : <span className="font-medium text-slate-700">{fmtPct(m.stallRate)}</span>
+                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'stall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.stallRate)}</button>
                         )}</td>
                         <td className="px-4 py-3 text-center">{m?.pastDueRate == null ? '—' : (
-                          canDrillInto(am.id)
-                            ? <button onClick={() => setBreakdown({ amName: am.name, metric: 'pastdue', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.pastDueRate)}</button>
-                            : <span className="font-medium text-slate-700">{fmtPct(m.pastDueRate)}</span>
+                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'pastdue', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.pastDueRate)}</button>
                         )}</td>
                         <td className="px-4 py-3 text-center">{m?.overallRate == null ? '—' : (
-                          canDrillInto(am.id)
-                            ? <button onClick={() => setBreakdown({ amName: am.name, metric: 'overall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.overallRate)}</button>
-                            : <span className="font-medium text-slate-700">{fmtPct(m.overallRate)}</span>
+                          <button onClick={() => setBreakdown({ amName: am.name, metric: 'overall', m })} className="text-asap-blue hover:underline font-medium">{fmtPct(m.overallRate)}</button>
                         )}</td>
                         <td className="px-4 py-3 text-center">{m?.additionalRounds ?? 0}</td>
                         <td className="px-4 py-3 text-center">{m?.referrals ?? 0}{m?.referralPaid != null ? ` (${m.referralPaid} paid)` : ''}</td>
@@ -675,6 +653,7 @@ export default function AMBonus() {
                     <Clock size={20} className={currentAMMetrics.stallRate !== null ? (currentAMMetrics.stallRate <= 40 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
                       <p className="font-medium text-slate-800"><Tip text="Among clients whose LATEST round (1, 2, or 3) started 45 to 90 days ago, this is the share still sitting in Logins Not Ready 14 or more days after their latest round ended. The 45 day floor cuts out clients whose current round is still running and can't be stalled yet; the 90 day ceiling keeps the metric focused on recent activity. Check Logins and payment statuses do not count. Lower is better. Bonus tiers: 40% or below earns $75, 30% or below earns $150, 20% or below earns $250. Needs at least 15 in-window clients to qualify.">Report Stall Rate (Bonus)</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Clients still in Logins Not Ready 14+ days past their round end, among clients whose latest round started 45 to 90 days ago. Lower wins. Earns $75 at 40% or below, $150 at 30%, $250 at 20%.</p>
                       <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.stallRate !== null ? <>{currentAMMetrics.stallRate}% — <span className="text-red-600 font-medium">{currentAMMetrics.stallCount} stalled</span> of {currentAMMetrics.stallTotal} in-window clients</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
@@ -755,6 +734,7 @@ export default function AMBonus() {
                     <DollarSign size={20} className={currentAMMetrics.pastDueRate !== null ? (currentAMMetrics.pastDueRate <= 20 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
                       <p className="font-medium text-slate-800"><Tip text="Out of CRS clients with an invoice whose original due date is in the last 30 days (whether paid or not), the share that is 5 or more days past due and still owing. The 5 day grace ignores payments in transit. Anything past 30 days drops off the denominator naturally, so clear non-payers stop counting. The original due date is locked, so moving an invoice's due date does not hide a late payment. Tracked for health, not tied to a bonus.">Payment Past Due</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Out of CRS clients with an invoice due in the last 30 days, the share that is 5 or more days past due and still owing. Locks on the original due date, so it can't be hidden by rescheduling. Tracked for health, no bonus.</p>
                       <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.pastDueRate !== null ? <>{currentAMMetrics.pastDueRate}% · <span className="text-red-600 font-medium">{currentAMMetrics.pastDueCount} past due</span> of {currentAMMetrics.paymentDue} clients with a payment due in the last 30 days</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
@@ -801,6 +781,7 @@ export default function AMBonus() {
                     <TrendingUp size={20} className={currentAMMetrics.overallRate !== null ? (currentAMMetrics.overallRate <= 30 ? 'text-green-500' : 'text-red-500') : 'text-slate-300'} />
                     <div>
                       <p className="font-medium text-slate-800"><Tip text="The simple average of the Report Stall Rate and the Payment Past Due rate. Each rate is measured over its own group of clients, so the average blends both without bending either number. Lower is better. Tracked for health, not tied to a bonus.">Overall (stall + past due)</Tip></p>
+                      <p className="text-xs text-slate-500 mt-0.5">Simple average of your Report Stall Rate and Payment Past Due rate. Lower wins. Tracked for health, no bonus.</p>
                       <p className="text-sm text-slate-500 mt-1">{currentAMMetrics.overallRate !== null ? <>Report stall {currentAMMetrics.stallRate ?? 0}% + past due {currentAMMetrics.pastDueRate ?? 0}%</> : 'Loading from Pipedrive...'}</p>
                     </div>
                   </div>
@@ -1201,7 +1182,14 @@ export default function AMBonus() {
 
       {/* Credit Building Tab */}
       {tab === 'reviews' && (
-        <div className="mt-2"><ReviewClaimQueue /></div>
+        <div className="mt-2 space-y-6">
+          {/* Review dashboard / stats (the former standalone Reviews page) */}
+          <Reviews />
+          {/* Claim the reviews you earned */}
+          <div className="border-t border-slate-200 pt-6">
+            <ReviewClaimQueue />
+          </div>
+        </div>
       )}
 
       {tab === 'credit-building' && (
