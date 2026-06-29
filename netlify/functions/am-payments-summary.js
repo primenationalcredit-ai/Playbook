@@ -54,6 +54,34 @@ exports.handler = async (event) => {
     const pRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${month}&select=payment_type,amount,consultant_name,pipedrive_deal_id,client_name&limit=10000`, { headers: supa });
     const payments = pRes.ok ? await pRes.json() : [];
 
+    // Real consultants only: the "By Consultant" breakdown must show people in the
+    // credit_consultants department, NOT everyone who happens to have a payment row
+    // (which would wrongly include AMs, CSRs, and system names like "Zapier").
+    let consultantUsers = [];
+    try {
+      const cuRes = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.credit_consultants&select=name`, { headers: supa });
+      if (cuRes.ok) consultantUsers = await cuRes.json();
+    } catch (e) {}
+    // Forgiving match: a payment counts for the consultant breakdown if its
+    // consultant_name matches a real consultant by first name + last-name-contains
+    // (handles extra middle names, e.g. "Zairen Stephanie Verzales" vs "Zairen Verzales").
+    const consultantNameSet = consultantUsers.map(u => {
+      const parts = (u.name || '').toLowerCase().trim().split(/\s+/);
+      return { full: (u.name || '').toLowerCase().trim(), first: parts[0] || '', last: parts[parts.length - 1] || '' };
+    });
+    const isRealConsultant = (rawName) => {
+      const n = (rawName || '').toLowerCase().trim();
+      if (!n) return false;
+      const nParts = n.split(/\s+/);
+      const nFirst = nParts[0] || '';
+      return consultantNameSet.some(c => {
+        if (c.full === n) return true;
+        // first name matches AND (last name appears in the payment name OR vice versa)
+        if (c.first && c.first === nFirst && c.last && (n.includes(c.last) || c.full.includes(nParts[nParts.length - 1] || ''))) return true;
+        return false;
+      });
+    };
+
     // Totals + by consultant
     const blank = () => ({ docs: 0, partials: 0, finals: 0, rounds: 0, other: 0, amount: 0 });
     const totals = blank();
@@ -62,7 +90,10 @@ exports.handler = async (event) => {
       const k = typeKey(p.payment_type);
       const amt = parseFloat(p.amount) || 0;
       totals[k] += 1; totals.amount += amt;
-      const name = (p.consultant_name && p.consultant_name !== 'pending_enrichment') ? p.consultant_name : 'Unassigned';
+      // By Consultant breakdown: only real consultants (credit_consultants dept).
+      // Skip AMs, CSRs, and system names like "Zapier" so they don't appear here.
+      if (!isRealConsultant(p.consultant_name)) continue;
+      const name = p.consultant_name;
       if (!byConsultant[name]) byConsultant[name] = blank();
       byConsultant[name][k] += 1; byConsultant[name].amount += amt;
     }
