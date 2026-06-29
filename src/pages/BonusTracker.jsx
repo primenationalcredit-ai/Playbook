@@ -4,6 +4,7 @@ import ConsultantBonus from './ConsultantBonus';
 import AMBonus from './AMBonus';
 import CSRBonus from './CSRBonus';
 import CreditTeamBonus from './CreditTeamBonus';
+import Reviews from './Reviews';
 
 // One tracker for every role. Admins/leadership see all tabs; everyone else sees only their own
 // department's view, which each child component already locks to the current user.
@@ -18,20 +19,26 @@ export default function BonusTracker() {
   const { currentUser } = useApp();
   const isAdmin = currentUser?.role === 'admin' || currentUser?.department === 'leadership';
 
-  const visible = isAdmin
+  const bonusTabs = isAdmin
     ? ROLE_TABS
     : ROLE_TABS.filter((t) =>
         t.dept === currentUser?.department ||
         // Account managers are identified by department OR by role.
         (t.key === 'account_managers' && currentUser?.role === 'account_manager')
       );
+
+  // Reviews tab: visible to everyone EXCEPT the credit team.
+  const showReviews = isAdmin || currentUser?.department !== 'credit_team';
+  const reviewsTab = { key: 'reviews', label: 'Reviews', Comp: Reviews };
+
+  const visible = showReviews ? [...bonusTabs, reviewsTab] : bonusTabs;
   const [active, setActive] = useState(visible[0]?.key);
 
   if (visible.length === 0) {
-    return <div className="p-6 text-center text-slate-500">No bonus data is available for your role.</div>;
+    return <div className="p-6 text-center text-slate-500">No data is available for your role.</div>;
   }
 
-  // Non-admins with a single view: render it directly, no tab bar.
+  // Single view with no tabs to choose between: render it directly.
   if (visible.length === 1) {
     const Only = visible[0].Comp;
     return <Only />;

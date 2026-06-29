@@ -167,7 +167,6 @@ function Layout() {
     ...(!isCreditConsultant ? [{ path: '/training', icon: GraduationCap, label: 'Training' }] : []),
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     ...(!isCreditConsultant ? [{ path: '/ask-ai', icon: Sparkles, label: 'Ask AI' }] : []),
-    { path: '/reviews', icon: Star, label: 'Reviews' },
     // Get Review Link - shown to all employees EXCEPT Credit Team
     ...(!isCreditTeam && !isLeadership ? [{ path: '/review-link', icon: Shuffle, label: 'Get Review Link' }] : []),
   ];
@@ -196,7 +195,6 @@ function Layout() {
     { path: '/training', icon: GraduationCap, label: 'Training' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
-    { path: '/reviews', icon: Star, label: 'Reviews' },
     { path: '/review-link', icon: Shuffle, label: 'Get Review Link' },
     { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge, unread: approvalsUnread },
     { path: '/updates', icon: Bell, label: 'Updates', badge: unreadNotifications },
