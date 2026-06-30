@@ -210,12 +210,30 @@ export default function ConsultantBonus() {
             else if (cat === 'partial') byConsultant[name].partials++;
             else if (cat === 'final') byConsultant[name].finals++;
           }
-          // Overlay onto each consultant. Match by name; paysheet names are already normalized
-          // to the same display names used here.
+          // Overlay onto each consultant. Paysheet names are normalized (e.g. "Cindy Broadstreet"
+          // on the sheet collapses to "Cindy"), while the metrics name consultants from users.name
+          // (which can be the longer form). Match leniently: exact, then by first name, then by a
+          // contained-word check, so name variants still line up.
+          const psNames = Object.keys(byConsultant);
+          const firstWord = (s) => String(s || '').toLowerCase().trim().split(/\s+/)[0];
+          const matchPaysheet = (cName) => {
+            if (byConsultant[cName]) return byConsultant[cName];
+            const cf = firstWord(cName);
+            // first-name match (handles "Cindy Broadstreet" -> "Cindy", "Cindy" -> "Cindy Broadstreet")
+            const byFirst = psNames.find(pn => firstWord(pn) === cf && cf.length > 1);
+            if (byFirst) return byConsultant[byFirst];
+            // contained-word match (one name's words are a subset of the other)
+            const cWords = String(cName || '').toLowerCase().split(/\s+/).filter(Boolean);
+            const contained = psNames.find(pn => {
+              const pw = pn.toLowerCase().split(/\s+/).filter(Boolean);
+              return cWords.every(w => pw.includes(w)) || pw.every(w => cWords.includes(w));
+            });
+            return contained ? byConsultant[contained] : null;
+          };
           if (json.consultants) {
             for (const key of Object.keys(json.consultants)) {
               const c = json.consultants[key];
-              const ps = byConsultant[c.name] || byConsultant[key];
+              const ps = matchPaysheet(c.name) || matchPaysheet(key);
               if (ps) {
                 c.totalSales = Math.round(ps.sales);
                 c.mtdSales = Math.round(ps.sales);
