@@ -84,22 +84,28 @@ async function supaGet(table, query) {
 }
 
 function monthOf(row) {
-  // Date a report strictly by when the monitoring site was set (when it was pulled).
-  // Backfilled deals have no set-date and intentionally do not count — tracking starts fresh.
-  const d = row.monitoring_site_set_at || null;
+  // Date a report by when the monitoring site was set (when it was pulled).
+  // Fallback: if that date is missing (older/backfilled deals where Pipedrive did not
+  // record a set-date), use the deal creation date so the report still counts toward
+  // its month instead of being silently dropped.
+  const d = row.monitoring_site_set_at || row.deal_created_at || null;
   return d ? String(d).slice(0, 7) : null;
 }
 function gatePass(row) {
-  // Prefer the pipeline recorded when the monitoring site was set; fall back to current pipeline.
-  const pipeline = (row.monitoring_site_set_pipeline || row.pipeline_name || '').trim().toLowerCase();
-  return REPORT_PIPELINE_GATE.includes(pipeline);
+  // Prefer the pipeline recorded when the monitoring site was set.
+  // If that is missing (older/backfilled deals), the report was pulled before set-pipeline
+  // tracking existed; since it has a monitoring site, treat it as a valid report rather than
+  // gating it out by its CURRENT (later) pipeline.
+  const setPipeline = (row.monitoring_site_set_pipeline || '').trim().toLowerCase();
+  if (!setPipeline) return true;  // backfilled: no set-pipeline recorded -> count it
+  return REPORT_PIPELINE_GATE.includes(setPipeline);
 }
 function classify(ms) {
   const s = (ms || '').toLowerCase();
   if (!s) return null;
   if (s.includes('smart')) return 'smart';                          // Smart Credit, incl. "Smart Credit (Client Sent Reports)"
   if (s.includes('identity') || s.includes('client sent')) return 'idiq'; // Identity IQ, "Identity Iq (Client Sent Reports)", and "Client sent credit reports to us"
-  return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 50 only
+  return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 45 only
 }
 
 exports.handler = async (event) => {

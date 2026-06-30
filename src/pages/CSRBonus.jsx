@@ -189,8 +189,8 @@ export default function CSRBonus() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="IDIQ Reports" value={c.reports.idiq} sub="pays per report past #35" accent="text-indigo-600" onClick={() => openReports('IDIQ reports', (d) => d.type === 'idiq')} />
-            <StatCard label="SmartCredit" value={c.reports.smartcredit} sub="counts toward 50" onClick={() => openReports('SmartCredit reports', (d) => d.type === 'smart')} />
-            <StatCard label="Other" value={c.reports.other} sub="counts toward 50" onClick={() => openReports('Other reports', (d) => d.type === 'other')} />
+            <StatCard label="SmartCredit" value={c.reports.smartcredit} sub="counts toward 45" onClick={() => openReports('SmartCredit reports', (d) => d.type === 'smart')} />
+            <StatCard label="Other" value={c.reports.other} sub="counts toward 45" onClick={() => openReports('Other reports', (d) => d.type === 'other')} />
             <StatCard label="Total Reports" value={c.reports.total} sub={c.reportBonus.qualified ? 'qualified (≥45)' : 'need 45 to qualify'} accent={c.reportBonus.qualified ? 'text-emerald-600' : 'text-amber-600'} onClick={() => openReports('All reports', () => true)} />
           </div>
 
