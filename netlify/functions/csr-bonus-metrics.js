@@ -25,7 +25,7 @@ async function fetchFilterDealIds(filterId) {
   return ids;
 }
 
-const CSR_STAFF = ['Kenneth Larios', 'Vic Baltodano', 'Reni', 'Araceli Carrion Garcia', 'Jenifer Venegas', 'CJ'];
+const CSR_STAFF = ['Kenneth Larios', 'Vic Baltodano', 'Reni Reyes', 'Araceli Carrion', 'Jenifer Venegas', 'Cesar Cardona', 'Ethel Gatdula', 'CJ'];
 
 // ---- CONFIG: pipelines that count a report (early pipelines, before later CRS rounds) ----
 // Matched (case-insensitive, exact) against the PIPELINE the deal was in WHEN the monitoring site was set.
