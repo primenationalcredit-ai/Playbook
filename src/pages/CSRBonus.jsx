@@ -102,6 +102,15 @@ export default function CSRBonus() {
     }));
     setDrill({ label, rows });
   };
+  const openTodayDocFees = () => {
+    const rows = (c?.details?.todayDocFees || []).map((d) => ({
+      title: d.title,
+      sub: d.site || '',
+      href: DEAL_URL(d.dealId),
+      tag: 'Doc Fee'
+    }));
+    setDrill({ label: "Today's doc fees", rows });
+  };
   const openMonthDeals = (label, filterFn) => {
     const rows = (c?.details?.monthDeals || []).filter(filterFn).map((d) => ({
       title: d.title,
@@ -211,13 +220,25 @@ export default function CSRBonus() {
                   <div className="text-2xl font-bold text-slate-800">{c.today.idiq}</div>
                   <div className="text-xs text-slate-500">IDIQ today</div>
                 </button>
-                <button onClick={() => openToday("Today's SmartCredit", (d) => d.type === 'smart')} className="text-left bg-white rounded-lg border border-indigo-100 p-3 hover:border-indigo-300 transition">
-                  <div className="text-2xl font-bold text-slate-800">{c.today.smartcredit}</div>
-                  <div className="text-xs text-slate-500">SmartCredit today</div>
+                <button onClick={() => openTodayDocFees()} className="text-left bg-white rounded-lg border border-indigo-100 p-3 hover:border-indigo-300 transition">
+                  <div className="text-2xl font-bold text-emerald-600">{c.today.docFees ?? 0}</div>
+                  <div className="text-xs text-slate-500">Doc fees today</div>
                 </button>
                 <div className="bg-white rounded-lg border border-indigo-100 p-3">
                   <div className="text-2xl font-bold text-emerald-600">{c.reviewBonus?.today ?? 0}</div>
                   <div className="text-xs text-slate-500">Reviews today</div>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-indigo-100 grid grid-cols-2 gap-3">
+                <div className="bg-white rounded-lg border border-slate-100 p-3">
+                  <div className="text-xs text-slate-400 mb-1">Reports → Quote (MTD)</div>
+                  <div className="text-lg font-bold text-slate-800">{c.conversionBonus?.rptsToQuoteRate ?? 0}%</div>
+                  <div className="text-xs text-slate-400">{c.conversionBonus?.reachedQuote ?? 0} of {c.reports?.total ?? 0} quoted</div>
+                </div>
+                <div className="bg-white rounded-lg border border-slate-100 p-3">
+                  <div className="text-xs text-slate-400 mb-1">Quote → Docs (MTD)</div>
+                  <div className="text-lg font-bold text-slate-800">{c.conversionBonus?.quoteToDocsRate ?? 0}%</div>
+                  <div className="text-xs text-slate-400">{c.conversionBonus?.reachedDocs ?? 0} paid doc fee</div>
                 </div>
               </div>
             </div>

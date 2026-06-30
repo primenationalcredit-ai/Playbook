@@ -173,11 +173,18 @@ exports.handler = async (event) => {
     // Doc fee conversions: which of these CS deals have a paid doc fee (from consultant_payments)
     const dealIds = rows.map(r => r.deal_id).filter(Boolean);
     const docFeeDealIds = new Set();
+    const docFeeDateByDeal = {}; // deal_id -> earliest doc fee payment_date (yyyy-MM-dd)
     for (let i = 0; i < dealIds.length; i += 100) {
       const chunk = dealIds.slice(i, i + 100);
       try {
-        const pays = await supaGet('consultant_payments', `payment_type=eq.doc_fee&pipedrive_deal_id=in.(${chunk.join(',')})&select=pipedrive_deal_id`);
-        for (const p of pays) if (p.pipedrive_deal_id != null) docFeeDealIds.add(String(p.pipedrive_deal_id));
+        const pays = await supaGet('consultant_payments', `payment_type=eq.doc_fee&pipedrive_deal_id=in.(${chunk.join(',')})&select=pipedrive_deal_id,payment_date`);
+        for (const p of pays) {
+          if (p.pipedrive_deal_id == null) continue;
+          const id = String(p.pipedrive_deal_id);
+          docFeeDealIds.add(id);
+          const d = p.payment_date ? String(p.payment_date).slice(0, 10) : null;
+          if (d && (!docFeeDateByDeal[id] || d < docFeeDateByDeal[id])) docFeeDateByDeal[id] = d;
+        }
       } catch (e) {}
     }
 
@@ -191,7 +198,7 @@ exports.handler = async (event) => {
     const ops = {};
     const dist = {};
     for (const name of staff) {
-      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [] };
+      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [] };
       ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
@@ -260,6 +267,11 @@ exports.handler = async (event) => {
       const paidDocFee = docFeeDealIds.has(String(r.deal_id));
       if (reachedQuote) tally[rep].reachedQuote++;
       if (paidDocFee) tally[rep].reachedDocs++;
+      // Today's conversions: doc fee whose payment_date is today (accurate, dated event).
+      if (viewingCurrentMonth && docFeeDateByDeal[String(r.deal_id)] === todayStr) {
+        tally[rep].todayDocFees++;
+        tally[rep].todayDocFeeList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site });
+      }
       tally[rep].reportList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls, reachedQuote, paidDocFee });
     }
 
@@ -308,7 +320,7 @@ exports.handler = async (event) => {
       csrs[name] = {
         month,
         reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total },
-        today: { total: t.todayTotal, idiq: t.todayIdiq, smartcredit: t.todaySmart, other: t.todayOther, date: todayStr },
+        today: { total: t.todayTotal, idiq: t.todayIdiq, smartcredit: t.todaySmart, other: t.todayOther, docFees: t.todayDocFees, date: todayStr },
         reportBonus: report,
         conversionBonus: conversion,
         reviewBonus: review,
@@ -330,6 +342,7 @@ exports.handler = async (event) => {
         details: {
           reports: t.reportList,
           todayReports: t.todayList,
+          todayDocFees: t.todayDocFeeList,
           monthDeals: ops[name].monthDealList,
           allDeals: dist[name].allDeals,
           reviews: reviewDetails
