@@ -731,48 +731,6 @@ function ConsultantPayments() {
             </div>
           </div>
 
-          {/* New bonus-structure metrics (tracking only, not commission) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
-                  <Award className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Paid in Full (MTD)</p>
-                  <p className="text-xl font-bold text-slate-800">{mtdStats.paidInFull}</p>
-                </div>
-              </div>
-              <p className="text-xs text-slate-400">Clients whose payment covered the full program price</p>
-            </div>
-
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Refunds (MTD)</p>
-                  <p className="text-xl font-bold text-slate-800">{mtdStats.refunds}</p>
-                </div>
-              </div>
-              <p className="text-lg font-semibold text-red-600">{mtdStats.refundsAmount > 0 ? formatCurrency(mtdStats.refundsAmount) : 'Protection Standard'}</p>
-            </div>
-
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">Negative Items (MTD)</p>
-                  <p className="text-xl font-bold text-slate-800">{mtdStats.negativeItems}</p>
-                </div>
-              </div>
-              <p className="text-xs text-slate-400">{mtdStats.negativeItemsClients} clients with items worked</p>
-            </div>
-          </div>
-
           {/* Consultant Table */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-4 border-b border-slate-200 bg-slate-50">

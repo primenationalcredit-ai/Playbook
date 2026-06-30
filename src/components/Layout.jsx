@@ -156,11 +156,11 @@ function Layout() {
   // Credit consultants get a lean nav: claiming lives in their Bonus tracker, so the standalone
   // Playbook, Team View, Training, Ask AI, and Claim Reviews items are hidden for them.
   const isCreditConsultant = currentUser?.department === 'credit_consultants';
-  const isCustomerSupport = currentUser?.department === 'customer_support';
+
+  // Credit Team AND Account Managers get the lean nav: hide My Playbook, Team View, Training,
+  // Ask AI, and My Paysheet for both departments.
   const isAccountManagerDept = currentUser?.department === 'account_managers' || currentUser?.role === 'account_manager';
-  // My Playbook, Team View, Training, and Ask AI are hidden for credit consultants,
-  // customer support, and account managers.
-  const hideExtras = isCreditConsultant || isCustomerSupport || isAccountManagerDept;
+  const hideExtras = isCreditConsultant || isAccountManagerDept;
 
   // Core nav items (shown to regular employees only)
   const coreNavItems = [
@@ -221,7 +221,7 @@ function Layout() {
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...(isAM ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
     ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: amApprovalsBadge, unread: approvalsUnread }] : []),
-    ...((isConsultant && !isAccountManagerDept) ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
+    ...(isConsultant && !hideExtras ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];
 
