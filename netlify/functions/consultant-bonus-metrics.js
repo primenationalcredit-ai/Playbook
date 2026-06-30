@@ -1015,6 +1015,12 @@ exports.handler = async (event) => {
       }
       const pastDueList = Object.values(pastDueClientMap)
         .sort((a, b) => String(b.newestDue || '').localeCompare(String(a.newestDue || ''))); // newest-due client first
+      // 60-day window: only clients whose most recent past-due invoice came due within the last 60 days.
+      const sixtyDaysAgoStr = new Date(now.getTime() - 60 * 86400000).toISOString().slice(0, 10);
+      const pastDue60List = pastDueList.filter(c => {
+        const d = String(c.newestDue || '').slice(0, 10);
+        return d && d >= sixtyDaysAgoStr && d < todayStr;
+      });
       const pastDueOwed = pastDueList.reduce((s, c) => s + c.totalOwed, 0);
       const overdueAmount = overdueInvoices.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);
       const totalInvoiced = myInvoices.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
@@ -1078,6 +1084,8 @@ exports.handler = async (event) => {
         // Invoice / Collection
         overdueCount: overdueInvoices.length, overdueAmount: Math.round(overdueAmount),
         pastDueInvoiceCount: pastDueList.length, pastDueOwed: Math.round(pastDueOwed),
+        // Accurate invoice-based past due, last 60 days (drives the clickable "Past Due" number).
+        pastDue60Count: pastDue60List.length, pastDue60List,
         partiallyPaidCount: partiallyPaidInvoices.length,
         collectionRate, totalInvoiced: Math.round(totalInvoiced), totalCollected: Math.round(totalCollected),
         dueThisWeekCount: dueThisWeek.length, dueThisWeekAmount: Math.round(dueThisWeekAmount),

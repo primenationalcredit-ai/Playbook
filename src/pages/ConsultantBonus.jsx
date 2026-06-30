@@ -438,7 +438,7 @@ export default function ConsultantBonus() {
                 <th className="text-center px-3 py-2"><Tip text="Year to date total">YTD</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Doc fees / consults">Close %</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="New clients onboarded this month">Onboarded</Tip></th>
-                <th className="text-center px-3 py-2"><Tip text="Clients without final payment 30+ days">Pending 30d</Tip></th>
+                <th className="text-center px-3 py-2"><Tip text="Clients with unpaid invoices, past due in the last 60 days">Past Due</Tip></th>
               </tr></thead>
               <tbody className="divide-y">
                 {cons.map((c, i) => (
@@ -451,15 +451,15 @@ export default function ConsultantBonus() {
                     <Cell v={(c.closingPct||0)+'%'} good={c.meetsClosingStandard} bad={!c.meetsClosingStandard} />
                     <Cell v={c.onboardedClients||0} />
                     <td className="text-center px-3 py-2.5">
-                      {(c.pendingCount30||0) > 0 ? (
+                      {(c.pastDue60Count||0) > 0 ? (
                         <button
-                          onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pendingClients30 || [] }); }}
-                          className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pendingCount30||0)>3 ? 'text-red-500' : ''}`}
-                          title="Click to see who is past due"
+                          onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pastDue60List || [] }); }}
+                          className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pastDue60Count||0)>3 ? 'text-red-500' : ''}`}
+                          title="Click to see who is past due (unpaid invoices, last 60 days)"
                         >
-                          {c.pendingCount30}
+                          {c.pastDue60Count}
                         </button>
-                      ) : (c.pendingCount30||0)}
+                      ) : (c.pastDue60Count||0)}
                     </td>
                   </tr>
                 ))}
@@ -619,7 +619,7 @@ export default function ConsultantBonus() {
                 <th className="text-center px-3 py-2"><Tip text="Revenue from new clients">New Revenue</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Prior month clients making payments">Prior Clients</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Revenue from prior month clients">Prior Revenue</Tip></th>
-                <th className="text-center px-3 py-2"><Tip text="Clients 30+ days without final payment">Pending 30d</Tip></th>
+                <th className="text-center px-3 py-2"><Tip text="Clients with unpaid invoices, past due in the last 60 days">Past Due</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Clients 90+ days without final payment">Pending 90d</Tip></th>
               </tr></thead>
               <tbody className="divide-y">{cons.map(c => (
@@ -628,13 +628,13 @@ export default function ConsultantBonus() {
                   <Cell v={c.thisMonthClientCount||0} /><Cell v={fmtInt(c.thisMonthRevenue||0)} />
                   <Cell v={c.priorMonthClientCount||0} /><Cell v={fmtInt(c.priorMonthRevenue||0)} />
                   <td className="text-center px-3 py-2.5">
-                    {(c.pendingCount30||0) > 0 ? (
+                    {(c.pastDue60Count||0) > 0 ? (
                       <button
-                        onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pendingClients30 || [] }); }}
-                        className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pendingCount30||0)>3 ? 'text-red-500' : ''}`}
-                        title="Click to see who is past due"
-                      >{c.pendingCount30}</button>
-                    ) : (c.pendingCount30||0)}
+                        onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pastDue60List || [] }); }}
+                        className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pastDue60Count||0)>3 ? 'text-red-500' : ''}`}
+                        title="Click to see who is past due (unpaid invoices, last 60 days)"
+                      >{c.pastDue60Count}</button>
+                    ) : (c.pastDue60Count||0)}
                   </td>
                   <td className="text-center px-3 py-2.5">
                     {(c.pendingCount90||0) > 0 ? (
@@ -1261,40 +1261,50 @@ export default function ConsultantBonus() {
 
       {pendingDrill && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setPendingDrill(null)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-slate-800">Past due clients — {pendingDrill.consultant}</h3>
-                <p className="text-xs text-slate-500">{pendingDrill.clients.length} client{pendingDrill.clients.length === 1 ? '' : 's'} without a final payment</p>
+                <h3 className="font-bold text-slate-800">Past due — {pendingDrill.consultant}</h3>
+                <p className="text-xs text-slate-500">{pendingDrill.clients.length} client{pendingDrill.clients.length === 1 ? '' : 's'} with unpaid invoices (last 60 days)</p>
               </div>
               <button onClick={() => setPendingDrill(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
             </div>
-            <div className="overflow-y-auto p-2">
+            <div className="overflow-y-auto p-3 space-y-3">
               {pendingDrill.clients.length === 0 ? (
-                <p className="p-4 text-center text-slate-500 text-sm">No clients to show.</p>
+                <p className="p-4 text-center text-slate-500 text-sm">No past due clients.</p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
-                      <th className="px-3 py-2">Client</th>
-                      <th className="px-3 py-2 text-center">Days since doc fee</th>
-                      <th className="px-3 py-2 text-center">Paid a partial?</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {pendingDrill.clients.slice().sort((a,b)=>(b.daysSinceDoc||0)-(a.daysSinceDoc||0)).map((cl, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="px-3 py-2 font-medium text-slate-800">
-                          {cl.dealId
-                            ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name || 'Unknown'} ↗</a>
-                            : (cl.name || 'Unknown')}
-                        </td>
-                        <td className="px-3 py-2 text-center">{cl.daysSinceDoc != null ? `${cl.daysSinceDoc}d` : '-'}</td>
-                        <td className="px-3 py-2 text-center">{cl.hasPaidPartial ? <span className="text-green-600">Yes</span> : <span className="text-red-500">No</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                pendingDrill.clients.slice().sort((a,b)=>(b.totalOwed||0)-(a.totalOwed||0)).map((cl, idx) => (
+                  <div key={idx} className="border border-slate-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium text-slate-800">
+                        {cl.dealId
+                          ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name || 'Unknown'} ↗</a>
+                          : (cl.name || 'Unknown')}
+                      </div>
+                      <div className="text-sm font-semibold text-red-600">${(cl.totalOwed||0).toLocaleString()} owed</div>
+                    </div>
+                    {Array.isArray(cl.invoices) && cl.invoices.length > 0 && (
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-slate-400">
+                            <th className="py-1">Unpaid invoice due</th>
+                            <th className="py-1 text-center">Days overdue</th>
+                            <th className="py-1 text-right">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cl.invoices.map((inv, i2) => (
+                            <tr key={i2} className="border-t border-slate-100">
+                              <td className="py-1">{inv.dueDate ? String(inv.dueDate).slice(0,10) : '-'}</td>
+                              <td className="py-1 text-center">{inv.daysOverdue != null ? `${inv.daysOverdue}d` : '-'}</td>
+                              <td className="py-1 text-right font-medium">${(inv.balance||0).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                ))
               )}
             </div>
             <div className="p-3 border-t border-slate-200 text-right">
