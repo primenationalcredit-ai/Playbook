@@ -198,7 +198,7 @@ exports.handler = async (event) => {
     const ops = {};
     const dist = {};
     for (const name of staff) {
-      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, convTotal: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [] };
+      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, convTotal: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], quoteList: [], docsList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [] };
       ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
@@ -257,8 +257,14 @@ exports.handler = async (event) => {
         const reachedQuoteC = useQuotedFilter ? movedToQuoted.has(String(r.deal_id)) : (rankC >= QUOTE_RANK);
         const paidDocFeeC = docFeeDealIds.has(String(r.deal_id));
         tally[rep].convTotal++;                       // all of the rep's month report-deals (ungated) = conversion denominator
-        if (reachedQuoteC) tally[rep].reachedQuote++;
-        if (paidDocFeeC) tally[rep].reachedDocs++;
+        if (reachedQuoteC) {
+          tally[rep].reachedQuote++;
+          tally[rep].quoteList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls });
+        }
+        if (paidDocFeeC) {
+          tally[rep].reachedDocs++;
+          tally[rep].docsList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls });
+        }
         if (viewingCurrentMonth && docFeeDateByDeal[String(r.deal_id)] === todayStr) {
           tally[rep].todayDocFees++;
           tally[rep].todayDocFeeList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site });
@@ -302,6 +308,7 @@ exports.handler = async (event) => {
         bonus: conversionQualified ? CONVERSION_BONUS : 0,
         reachedQuote: t.reachedQuote,
         reachedDocs: t.reachedDocs,
+        convTotal: t.convTotal,
         rptsToQuoteRate: Math.round(rptsToQuoteRate * 100),
         quoteToDocsRate: Math.round(quoteToDocsRate * 100)
       };
@@ -353,6 +360,8 @@ exports.handler = async (event) => {
         },
         details: {
           reports: t.reportList,
+          quoteDeals: t.quoteList,
+          docsDeals: t.docsList,
           todayReports: t.todayList,
           todayDocFees: t.todayDocFeeList,
           monthDeals: ops[name].monthDealList,

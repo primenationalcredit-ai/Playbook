@@ -111,6 +111,24 @@ export default function CSRBonus() {
     }));
     setDrill({ label: "Today's doc fees", rows });
   };
+  const openQuoteDeals = () => {
+    const rows = (c?.details?.quoteDeals || []).map((d) => ({
+      title: d.title,
+      sub: d.site || '',
+      href: DEAL_URL(d.dealId),
+      tag: TYPE_TAG[d.type] || 'Other'
+    }));
+    setDrill({ label: 'Reports that reached Quote', rows });
+  };
+  const openDocsDeals = () => {
+    const rows = (c?.details?.docsDeals || []).map((d) => ({
+      title: d.title,
+      sub: d.site || '',
+      href: DEAL_URL(d.dealId),
+      tag: 'Doc Fee'
+    }));
+    setDrill({ label: 'Reports that paid a Doc Fee', rows });
+  };
   const openMonthDeals = (label, filterFn) => {
     const rows = (c?.details?.monthDeals || []).filter(filterFn).map((d) => ({
       title: d.title,
@@ -230,16 +248,16 @@ export default function CSRBonus() {
                 </div>
               </div>
               <div className="mt-3 pt-3 border-t border-indigo-100 grid grid-cols-2 gap-3">
-                <div className="bg-white rounded-lg border border-slate-100 p-3">
+                <button onClick={openQuoteDeals} className="text-left bg-white rounded-lg border border-slate-100 p-3 hover:border-indigo-300 transition">
                   <div className="text-xs text-slate-400 mb-1">Reports → Quote (MTD)</div>
                   <div className="text-lg font-bold text-slate-800">{c.conversionBonus?.rptsToQuoteRate ?? 0}%</div>
-                  <div className="text-xs text-slate-400">{c.conversionBonus?.reachedQuote ?? 0} of {c.reports?.total ?? 0} quoted</div>
-                </div>
-                <div className="bg-white rounded-lg border border-slate-100 p-3">
+                  <div className="text-xs text-indigo-500 underline decoration-dotted">{c.conversionBonus?.reachedQuote ?? 0} of {c.conversionBonus?.convTotal ?? c.reports?.total ?? 0} quoted</div>
+                </button>
+                <button onClick={openDocsDeals} className="text-left bg-white rounded-lg border border-slate-100 p-3 hover:border-indigo-300 transition">
                   <div className="text-xs text-slate-400 mb-1">Quote → Docs (MTD)</div>
                   <div className="text-lg font-bold text-slate-800">{c.conversionBonus?.quoteToDocsRate ?? 0}%</div>
-                  <div className="text-xs text-slate-400">{c.conversionBonus?.reachedDocs ?? 0} paid doc fee</div>
-                </div>
+                  <div className="text-xs text-indigo-500 underline decoration-dotted">{c.conversionBonus?.reachedDocs ?? 0} paid doc fee</div>
+                </button>
               </div>
             </div>
           )}
