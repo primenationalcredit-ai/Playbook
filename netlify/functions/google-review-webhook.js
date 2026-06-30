@@ -48,7 +48,7 @@ exports.handler = async (event, context) => {
     console.log('Parsed data:', JSON.stringify(data));
 
     const {
-      location_name,
+      location_name: location_name_raw,
       reviewer_name,
       rating,
       review_text,
@@ -56,6 +56,9 @@ exports.handler = async (event, context) => {
       review_id,
       profile_photo_url,
     } = data;
+    // Trim trailing/leading spaces so the same location never splits into "New York" vs "New York "
+    // (a trailing space silently breaks the location filter on the reviews page).
+    const location_name = (location_name_raw || '').trim();
 
     // Validate required fields
     if (!location_name) {
