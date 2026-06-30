@@ -156,17 +156,22 @@ function Layout() {
   // Credit consultants get a lean nav: claiming lives in their Bonus tracker, so the standalone
   // Playbook, Team View, Training, Ask AI, and Claim Reviews items are hidden for them.
   const isCreditConsultant = currentUser?.department === 'credit_consultants';
+  const isCustomerSupport = currentUser?.department === 'customer_support';
+  // My Playbook, Team View, Training, and Ask AI are hidden for both credit consultants
+  // and customer support.
+  const hideExtras = isCreditConsultant || isCustomerSupport;
 
   // Core nav items (shown to regular employees only)
   const coreNavItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     ...(isInOnboarding ? [{ path: '/onboarding', icon: ClipboardList, label: 'Onboarding', highlight: true }] : []),
-    ...(!isCreditConsultant ? [{ path: '/playbook', icon: ClipboardList, label: 'My Playbook' }] : []),
-    ...(!isCreditConsultant ? [{ path: '/team', icon: Users, label: 'Team View' }] : []),
+    ...(!hideExtras ? [{ path: '/playbook', icon: ClipboardList, label: 'My Playbook' }] : []),
+    ...(!hideExtras ? [{ path: '/team', icon: Users, label: 'Team View' }] : []),
     { path: '/bonus-tracker', icon: Trophy, label: 'Bonus & Payment Tracker' },
-    ...(!isCreditConsultant ? [{ path: '/training', icon: GraduationCap, label: 'Training' }] : []),
+    ...(!hideExtras ? [{ path: '/training', icon: GraduationCap, label: 'Training' }] : []),
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
-    ...(!isCreditConsultant ? [{ path: '/ask-ai', icon: Sparkles, label: 'Ask AI' }] : []),
+    ...(!hideExtras ? [{ path: '/ask-ai', icon: Sparkles, label: 'Ask AI' }] : []),
+    { path: '/reviews', icon: Star, label: 'Reviews' },
     // Get Review Link - shown to all employees EXCEPT Credit Team
     ...(!isCreditTeam && !isLeadership ? [{ path: '/review-link', icon: Shuffle, label: 'Get Review Link' }] : []),
   ];
@@ -195,6 +200,7 @@ function Layout() {
     { path: '/training', icon: GraduationCap, label: 'Training' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
+    { path: '/reviews', icon: Star, label: 'Reviews' },
     { path: '/review-link', icon: Shuffle, label: 'Get Review Link' },
     { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge, unread: approvalsUnread },
     { path: '/updates', icon: Bell, label: 'Updates', badge: unreadNotifications },
