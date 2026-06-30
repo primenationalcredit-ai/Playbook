@@ -1015,11 +1015,11 @@ exports.handler = async (event) => {
       }
       const pastDueList = Object.values(pastDueClientMap)
         .sort((a, b) => String(b.newestDue || '').localeCompare(String(a.newestDue || ''))); // newest-due client first
-      // 60-day window: only clients whose most recent past-due invoice came due within the last 60 days.
-      const sixtyDaysAgoStr = new Date(now.getTime() - 60 * 86400000).toISOString().slice(0, 10);
+      // 120-day window: only clients whose most recent past-due invoice came due within the last 120 days.
+      const windowAgoStr = new Date(now.getTime() - 120 * 86400000).toISOString().slice(0, 10);
       const pastDue60List = pastDueList.filter(c => {
         const d = String(c.newestDue || '').slice(0, 10);
-        return d && d >= sixtyDaysAgoStr && d < todayStr;
+        return d && d >= windowAgoStr && d < todayStr;
       });
       const pastDueOwed = pastDueList.reduce((s, c) => s + c.totalOwed, 0);
       const overdueAmount = overdueInvoices.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);

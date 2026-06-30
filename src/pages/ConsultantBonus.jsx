@@ -438,7 +438,7 @@ export default function ConsultantBonus() {
                 <th className="text-center px-3 py-2"><Tip text="Year to date total">YTD</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Doc fees / consults">Close %</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="New clients onboarded this month">Onboarded</Tip></th>
-                <th className="text-center px-3 py-2"><Tip text="Clients with unpaid invoices, past due in the last 60 days">Past Due</Tip></th>
+                <th className="text-center px-3 py-2"><Tip text="Clients with unpaid invoices, past due in the last 120 days">Past Due</Tip></th>
               </tr></thead>
               <tbody className="divide-y">
                 {cons.map((c, i) => (
@@ -455,7 +455,7 @@ export default function ConsultantBonus() {
                         <button
                           onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pastDue60List || [] }); }}
                           className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pastDue60Count||0)>3 ? 'text-red-500' : ''}`}
-                          title="Click to see who is past due (unpaid invoices, last 60 days)"
+                          title="Click to see who is past due (unpaid invoices, last 120 days)"
                         >
                           {c.pastDue60Count}
                         </button>
@@ -619,7 +619,7 @@ export default function ConsultantBonus() {
                 <th className="text-center px-3 py-2"><Tip text="Revenue from new clients">New Revenue</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Prior month clients making payments">Prior Clients</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Revenue from prior month clients">Prior Revenue</Tip></th>
-                <th className="text-center px-3 py-2"><Tip text="Clients with unpaid invoices, past due in the last 60 days">Past Due</Tip></th>
+                <th className="text-center px-3 py-2"><Tip text="Clients with unpaid invoices, past due in the last 120 days">Past Due</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Clients 90+ days without final payment">Pending 90d</Tip></th>
               </tr></thead>
               <tbody className="divide-y">{cons.map(c => (
@@ -632,7 +632,7 @@ export default function ConsultantBonus() {
                       <button
                         onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pastDue60List || [] }); }}
                         className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pastDue60Count||0)>3 ? 'text-red-500' : ''}`}
-                        title="Click to see who is past due (unpaid invoices, last 60 days)"
+                        title="Click to see who is past due (unpaid invoices, last 120 days)"
                       >{c.pastDue60Count}</button>
                     ) : (c.pastDue60Count||0)}
                   </td>
@@ -1265,7 +1265,7 @@ export default function ConsultantBonus() {
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-slate-800">Past due — {pendingDrill.consultant}</h3>
-                <p className="text-xs text-slate-500">{pendingDrill.clients.length} client{pendingDrill.clients.length === 1 ? '' : 's'} with unpaid invoices (last 60 days)</p>
+                <p className="text-xs text-slate-500">{pendingDrill.clients.length} client{pendingDrill.clients.length === 1 ? '' : 's'} with unpaid invoices (last 120 days)</p>
               </div>
               <button onClick={() => setPendingDrill(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
             </div>
