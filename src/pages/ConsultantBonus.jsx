@@ -210,25 +210,38 @@ export default function ConsultantBonus() {
             else if (cat === 'partial') byConsultant[name].partials++;
             else if (cat === 'final') byConsultant[name].finals++;
           }
-          // Overlay onto each consultant. Paysheet names are normalized (e.g. "Cindy Broadstreet"
-          // on the sheet collapses to "Cindy"), while the metrics name consultants from users.name
-          // (which can be the longer form). Match leniently: exact, then by first name, then by a
-          // contained-word check, so name variants still line up.
+          // Overlay onto each consultant. The paysheet normalizes some people to a first name only
+          // ("Cindy Broadstreet" -> "Cindy", "Rose Benitez" -> "Rose") while the leaderboard uses the
+          // full users.name. Map explicitly first (most reliable), then fall back to exact / first-name
+          // / contained-word matching for anyone not in the map.
           const psNames = Object.keys(byConsultant);
           const firstWord = (s) => String(s || '').toLowerCase().trim().split(/\s+/)[0];
+          // Explicit leaderboard-name -> paysheet-name aliases (extend as needed).
+          const NAME_ALIASES = {
+            'cindy broadstreet': 'Cindy',
+            'rose benitez': 'Rose',
+          };
           const matchPaysheet = (cName) => {
+            if (!cName) return null;
+            const lower = cName.toLowerCase().trim();
+            // 1) explicit alias
+            if (NAME_ALIASES[lower] && byConsultant[NAME_ALIASES[lower]]) return byConsultant[NAME_ALIASES[lower]];
+            // 2) exact
             if (byConsultant[cName]) return byConsultant[cName];
+            // 3) first-name (only when unambiguous: exactly one paysheet name shares that first name)
             const cf = firstWord(cName);
-            // first-name match (handles "Cindy Broadstreet" -> "Cindy", "Cindy" -> "Cindy Broadstreet")
-            const byFirst = psNames.find(pn => firstWord(pn) === cf && cf.length > 1);
-            if (byFirst) return byConsultant[byFirst];
-            // contained-word match (one name's words are a subset of the other)
-            const cWords = String(cName || '').toLowerCase().split(/\s+/).filter(Boolean);
-            const contained = psNames.find(pn => {
+            if (cf.length > 1) {
+              const firstMatches = psNames.filter(pn => firstWord(pn) === cf);
+              if (firstMatches.length === 1) return byConsultant[firstMatches[0]];
+            }
+            // 4) contained-word (one name's words are a subset of the other)
+            const cWords = lower.split(/\s+/).filter(Boolean);
+            const containedMatches = psNames.filter(pn => {
               const pw = pn.toLowerCase().split(/\s+/).filter(Boolean);
               return cWords.every(w => pw.includes(w)) || pw.every(w => cWords.includes(w));
             });
-            return contained ? byConsultant[contained] : null;
+            if (containedMatches.length === 1) return byConsultant[containedMatches[0]];
+            return null;
           };
           if (json.consultants) {
             for (const key of Object.keys(json.consultants)) {
