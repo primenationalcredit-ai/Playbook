@@ -130,16 +130,23 @@ exports.handler = async (event) => {
   try {
     const maps = await loadMaps();
 
-    // Resolve monitoring site from the webhook payload's custom field (option id -> label).
-    const msRaw = current[MONITORING_SITE_FIELD];
+    // IMPORTANT: Pipedrive webhook payloads do not reliably include custom-field values (and when
+    // they do, they can be keyed/typed differently than the API). So we fetch the deal fresh from the
+    // API to get authoritative current values for the monitoring site, pipeline, and stage. We still
+    // use the webhook's `previous` snapshot below only to detect that a change occurred.
+    const freshDeal = await pipedriveGet(`/deals/${dealId}`);
+    const dealData = freshDeal || current; // fall back to payload if the fetch fails
+
+    // Resolve monitoring site from the freshly fetched deal (option id -> label).
+    const msRaw = dealData[MONITORING_SITE_FIELD];
     const msId = msRaw && typeof msRaw === 'object' ? (msRaw.id || msRaw.value) : msRaw;
     const monitoringSite = (msId !== null && msId !== undefined && msId !== '')
       ? (maps.ms[String(msId)] || String(msId)) : null;
 
     // Resolve the rep + AM from the person record (custom fields live on the person).
     let callCenterRepId = null, callCenterRepName = null, accountManagerId = null, accountManagerName = null;
-    const personId = current.person_id && typeof current.person_id === 'object'
-      ? current.person_id.value : current.person_id;
+    const personId = dealData.person_id && typeof dealData.person_id === 'object'
+      ? dealData.person_id.value : dealData.person_id;
     if (personId) {
       const person = await pipedriveGet(`/persons/${personId}`);
       if (person) {
@@ -156,8 +163,8 @@ exports.handler = async (event) => {
       }
     }
 
-    const pipelineName = maps.pipeline[String(current.pipeline_id)] || null;
-    const stageName = maps.stage[String(current.stage_id)] || null;
+    const pipelineName = maps.pipeline[String(dealData.pipeline_id)] || null;
+    const stageName = maps.stage[String(dealData.stage_id)] || null;
 
     // ===== CREDIT RULE (per Joe) =====
     // A report is credited (monitoring_site_set_at stamped to NOW) ONLY when BOTH are true:
@@ -197,13 +204,13 @@ exports.handler = async (event) => {
     const row = {
       deal_id: dealId,
       person_id: personId || null,
-      deal_title: current.title || null,
-      pipeline_id: current.pipeline_id || null,
+      deal_title: dealData.title || current.title || null,
+      pipeline_id: dealData.pipeline_id || null,
       pipeline_name: pipelineName,
-      stage_id: current.stage_id || null,
+      stage_id: dealData.stage_id || null,
       stage_name: stageName,
-      deal_status: current.status || 'open',
-      deal_value: current.value || 0,
+      deal_status: dealData.status || 'open',
+      deal_value: dealData.value || 0,
       call_center_rep_id: callCenterRepId,
       call_center_rep_name: callCenterRepName,
       account_manager_id: accountManagerId,
@@ -212,8 +219,8 @@ exports.handler = async (event) => {
       monitoring_site_set_at: monitoringSiteSetAt,
       monitoring_site_set_pipeline: monitoringSiteSetPipeline,
       monitoring_site_set_stage: monitoringSiteSetStage,
-      deal_created_at: current.add_time || (existing ? undefined : null),
-      deal_updated_at: current.update_time || new Date().toISOString(),
+      deal_created_at: dealData.add_time || current.add_time || (existing ? undefined : null),
+      deal_updated_at: dealData.update_time || current.update_time || new Date().toISOString(),
       synced_at: new Date().toISOString()
     };
     // Don't overwrite deal_created_at with undefined.
