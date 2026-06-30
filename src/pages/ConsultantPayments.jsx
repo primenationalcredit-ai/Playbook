@@ -20,7 +20,7 @@ function ConsultantPayments() {
   // Stats
   const [todayStats, setTodayStats] = useState({ sales: 0, docs: 0, partials: 0, finals: 0, count: 0 });
   const [todayConsultants, setTodayConsultants] = useState([]); // Today's earnings by consultant
-  const [mtdStats, setMtdStats] = useState({ sales: 0, docs: 0, docsAmount: 0, partials: 0, partialsAmount: 0, finals: 0, finalsAmount: 0, count: 0, projection: 0 });
+  const [mtdStats, setMtdStats] = useState({ sales: 0, docs: 0, docsAmount: 0, partials: 0, partialsAmount: 0, finals: 0, finalsAmount: 0, paidInFull: 0, refunds: 0, refundsAmount: 0, negativeItems: 0, negativeItemsClients: 0, count: 0, projection: 0 });
   const [ytdStats, setYtdStats] = useState({ sales: 0, docs: 0, partials: 0, finals: 0, count: 0 });
   const [lastYearStats, setLastYearStats] = useState({ sales: 0, count: 0 });
   const [lastYearTodayStats, setLastYearTodayStats] = useState({ sales: 0, count: 0 }); // Same day last year
@@ -72,13 +72,14 @@ function ConsultantPayments() {
   // Process data into stats
   const processStats = (data) => {
     let sales = 0, docs = 0, docsAmount = 0, partials = 0, partialsAmount = 0, finals = 0, finalsAmount = 0;
-    
+    let paidInFull = 0, refunds = 0, refundsAmount = 0, negativeItems = 0, negativeItemsClients = 0;
+
     (data || []).forEach(row => {
       const amount = parseFloat(row.fee_paid) || 0;
       const category = getFeeCategory(row);
-      
+
       sales += amount;
-      
+
       if (category === 'doc') {
         docs++;
         docsAmount += amount;
@@ -89,9 +90,33 @@ function ConsultantPayments() {
         finals++;
         finalsAmount += amount;
       }
+
+      // Paid in Full: this payment covers the client's full program price (fee >= total_price),
+      // or the code/fee_type flags a paid-in-full. total_price is per-row from the paysheet.
+      const tp = parseFloat(row.total_price) || 0;
+      const code = (row.code || '').toString().toLowerCase();
+      const feeType = (row.fee_type || '').toString().toLowerCase();
+      const flaggedPIF = code.includes('pif') || code.includes('paid in full') || feeType.includes('paid in full');
+      if (flaggedPIF || (tp > 0 && amount >= tp)) paidInFull++;
+
+      // Refunds: paysheet has a free-text refund field; treat any non-empty, non-"no" value as a refund.
+      const refundVal = (row.refund || '').toString().trim().toLowerCase();
+      if (refundVal && refundVal !== 'no' && refundVal !== 'n' && refundVal !== '0' && refundVal !== 'none') {
+        refunds++;
+        const refAmt = parseFloat(refundVal.replace(/[^0-9.]/g, ''));
+        if (!isNaN(refAmt)) refundsAmount += refAmt;
+      }
+
+      // Negative items worked on the client's report (sum + how many clients had any).
+      const neg = parseInt(row.negative_items) || 0;
+      if (neg > 0) { negativeItems += neg; negativeItemsClients++; }
     });
-    
-    return { sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount, count: (data || []).length };
+
+    return {
+      sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount,
+      paidInFull, refunds, refundsAmount, negativeItems, negativeItemsClients,
+      count: (data || []).length
+    };
   };
 
   // Process today's data by consultant
@@ -651,15 +676,6 @@ function ConsultantPayments() {
             </div>
           </div>
 
-          {/* Doc Fee Race Charts */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {/* Doc Fee Race Chart */}
-            <DocFeeRaceChart data={consultantData} title="Doc Fee Race" usesameDayData={false} />
-
-            {/* Same Day Doc Race Chart */}
-            <DocFeeRaceChart data={consultantData} title="Same Day Doc Race" usesameDayData={true} />
-          </div>
-
           {/* Fee Breakdown Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
@@ -712,6 +728,48 @@ function ConsultantPayments() {
                 </div>
               </div>
               <p className="text-lg font-semibold text-purple-600">MTD Total</p>
+            </div>
+          </div>
+
+          {/* New bonus-structure metrics (tracking only, not commission) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+                  <Award className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Paid in Full (MTD)</p>
+                  <p className="text-xl font-bold text-slate-800">{mtdStats.paidInFull}</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-400">Clients whose payment covered the full program price</p>
+            </div>
+
+            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Refunds (MTD)</p>
+                  <p className="text-xl font-bold text-slate-800">{mtdStats.refunds}</p>
+                </div>
+              </div>
+              <p className="text-lg font-semibold text-red-600">{mtdStats.refundsAmount > 0 ? formatCurrency(mtdStats.refundsAmount) : 'Protection Standard'}</p>
+            </div>
+
+            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Zap className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Negative Items (MTD)</p>
+                  <p className="text-xl font-bold text-slate-800">{mtdStats.negativeItems}</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-400">{mtdStats.negativeItemsClients} clients with items worked</p>
             </div>
           </div>
 
