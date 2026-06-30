@@ -91,6 +91,11 @@ function monthOf(row) {
   const d = row.monitoring_site_set_at || row.deal_created_at || null;
   return d ? String(d).slice(0, 7) : null;
 }
+function dayOf(row) {
+  // Full date (yyyy-MM-dd) a report was pulled, same source as monthOf.
+  const d = row.monitoring_site_set_at || row.deal_created_at || null;
+  return d ? String(d).slice(0, 10) : null;
+}
 function gatePass(row) {
   // Prefer the pipeline recorded when the monitoring site was set.
   // If that is missing (older/backfilled deals), the report was pulled before set-pipeline
@@ -120,6 +125,13 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
     const now = new Date();
     const month = params.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    // "Today" in US Central time (business timezone), so the daily count matches the team's day.
+    // Allow override via ?today=YYYY-MM-DD for testing.
+    const todayStr = params.today || new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(now);
+    // Only show a "today" count when viewing the current month (today is meaningless for past months).
+    const viewingCurrentMonth = month === todayStr.slice(0, 7);
 
     const rows = await supaGet('cs_deals', 'select=deal_id,deal_title,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,monitoring_site_set_pipeline,deal_created_at,pipeline_name,stage_name');
 
@@ -179,7 +191,7 @@ exports.handler = async (event) => {
     const ops = {};
     const dist = {};
     for (const name of staff) {
-      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [] };
+      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [] };
       ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
@@ -233,6 +245,15 @@ exports.handler = async (event) => {
       tally[rep][cls]++;
       tally[rep].total++;
 
+      // Today's pulls (same gate/month rules already passed): track separately for daily tracking.
+      if (viewingCurrentMonth && dayOf(r) === todayStr) {
+        tally[rep].todayTotal++;
+        if (cls === 'idiq') tally[rep].todayIdiq++;
+        else if (cls === 'smart') tally[rep].todaySmart++;
+        else tally[rep].todayOther++;
+        tally[rep].todayList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls });
+      }
+
       // Conversion: reached quote = moved to Quoted 2.0 this month (filter), else current pipeline; reached docs = doc fee paid
       const rank = pipelineRank(r.pipeline_name);
       const reachedQuote = useQuotedFilter ? movedToQuoted.has(String(r.deal_id)) : (rank >= QUOTE_RANK);
@@ -273,7 +294,8 @@ exports.handler = async (event) => {
         count: reviewCount,
         bbb: bbbReviews,
         bonus: Math.max(0, reviewCount - 10) * 5 + bbbReviews * 50,
-        meetsStandard: reviewCount >= 10
+        meetsStandard: reviewCount >= 10,
+        today: (viewingCurrentMonth ? myReviews.filter(r => String(r.review_date || '').slice(0, 10) === todayStr).length : 0)
       };
       const reviewDetails = myReviews.map(r => ({
         reviewer: r.reviewer_name || 'Anonymous',
@@ -286,6 +308,7 @@ exports.handler = async (event) => {
       csrs[name] = {
         month,
         reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total },
+        today: { total: t.todayTotal, idiq: t.todayIdiq, smartcredit: t.todaySmart, other: t.todayOther, date: todayStr },
         reportBonus: report,
         conversionBonus: conversion,
         reviewBonus: review,
@@ -306,6 +329,7 @@ exports.handler = async (event) => {
         },
         details: {
           reports: t.reportList,
+          todayReports: t.todayList,
           monthDeals: ops[name].monthDealList,
           allDeals: dist[name].allDeals,
           reviews: reviewDetails

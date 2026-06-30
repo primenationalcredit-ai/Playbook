@@ -93,6 +93,15 @@ export default function CSRBonus() {
     }));
     setDrill({ label, rows });
   };
+  const openToday = (label, filterFn) => {
+    const rows = (c?.details?.todayReports || []).filter(filterFn).map((d) => ({
+      title: d.title,
+      sub: d.site || '',
+      href: DEAL_URL(d.dealId),
+      tag: TYPE_TAG[d.type] || 'Other'
+    }));
+    setDrill({ label, rows });
+  };
   const openMonthDeals = (label, filterFn) => {
     const rows = (c?.details?.monthDeals || []).filter(filterFn).map((d) => ({
       title: d.title,
@@ -186,6 +195,33 @@ export default function CSRBonus() {
               <div className="text-2xl font-bold text-emerald-600">{fmt(c.totalBonus)}</div>
             </div>
           </div>
+
+          {c.today && (
+            <div className="bg-gradient-to-r from-indigo-50 to-white rounded-xl border border-indigo-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="font-semibold text-indigo-900">Today's Activity</div>
+                <div className="text-xs text-indigo-500">{c.today.date}</div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button onClick={() => openToday("Today's reports", () => true)} className="text-left bg-white rounded-lg border border-indigo-100 p-3 hover:border-indigo-300 transition">
+                  <div className="text-2xl font-bold text-indigo-700">{c.today.total}</div>
+                  <div className="text-xs text-slate-500">Reports pulled today</div>
+                </button>
+                <button onClick={() => openToday("Today's IDIQ", (d) => d.type === 'idiq')} className="text-left bg-white rounded-lg border border-indigo-100 p-3 hover:border-indigo-300 transition">
+                  <div className="text-2xl font-bold text-slate-800">{c.today.idiq}</div>
+                  <div className="text-xs text-slate-500">IDIQ today</div>
+                </button>
+                <button onClick={() => openToday("Today's SmartCredit", (d) => d.type === 'smart')} className="text-left bg-white rounded-lg border border-indigo-100 p-3 hover:border-indigo-300 transition">
+                  <div className="text-2xl font-bold text-slate-800">{c.today.smartcredit}</div>
+                  <div className="text-xs text-slate-500">SmartCredit today</div>
+                </button>
+                <div className="bg-white rounded-lg border border-indigo-100 p-3">
+                  <div className="text-2xl font-bold text-emerald-600">{c.reviewBonus?.today ?? 0}</div>
+                  <div className="text-xs text-slate-500">Reviews today</div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard label="IDIQ Reports" value={c.reports.idiq} sub="pays per report past #35" accent="text-indigo-600" onClick={() => openReports('IDIQ reports', (d) => d.type === 'idiq')} />
