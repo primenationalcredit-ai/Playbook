@@ -221,7 +221,9 @@ exports.handler = async (event) => {
       const stageKey = `${r.pipeline_name || '(none)'} | ${r.stage_name || '(none)'}`;
       stageSeen[stageKey] = (stageSeen[stageKey] || 0) + 1;
 
-      const cls = classify(ms);
+      // Every deal in the CS filter counts as a report for its rep. A deal with a recognized
+      // monitoring site is split into idiq/smart; a deal with no/blank site still counts, as "other".
+      const cls = classify(ms) || 'other';
       const rep = resolveRep(r.call_center_rep_name);
 
       // Current stage distribution: where ALL of a known CSR's deals sit right now
@@ -243,7 +245,6 @@ exports.handler = async (event) => {
         ops[rep].monthDealList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, rank: dealRank, docFee: hasDocFee, created: r.deal_created_at || null });
       }
 
-      if (!cls) continue;                       // no report value -> not a report
       if (!rep || !tally[rep]) continue;        // must have a Call Center Rep who is a known CSR
 
       if (monthOf(r) !== month) { tally[rep].outOfMonth++; continue; }
@@ -271,7 +272,8 @@ exports.handler = async (event) => {
         }
       }
 
-      if (!gatePass(r)) { tally[rep].gatedOut++; continue; }          // must be in an early pipeline at pull-time
+      // No pipeline gate: every report with a monitoring site counts, even if the deal has since
+      // advanced to SOLD / C.R.S. A report converting must never make it stop counting. (Joe's rule.)
 
       tally[rep][cls]++;
       tally[rep].total++;
