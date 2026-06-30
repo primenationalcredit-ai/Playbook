@@ -169,6 +169,19 @@ export default function ConsultantBonus() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.department === 'leadership';
 
+  // Mirror the Payment Dashboard's exact fee categorization (Code column first, Fee Type fallback).
+  const paysheetFeeCategory = (row) => {
+    const code = (row.code || '').toString().toLowerCase().trim();
+    const feeType = (row.fee_type || '').toString().toLowerCase().trim();
+    if (code.includes('doc')) return 'doc';
+    if (code.includes('par')) return 'partial';
+    if (code.includes('fin')) return 'final';
+    if (feeType === 'doc fee' || feeType.includes('doc')) return 'doc';
+    if (feeType.includes('partial')) return 'partial';
+    if (feeType.includes('final')) return 'final';
+    return 'other';
+  };
+
   const loadData = async (month, forceRefresh = false) => {
     setLoading(true);
     try {
@@ -176,6 +189,48 @@ export default function ConsultantBonus() {
       const res = await fetch(`/.netlify/functions/consultant-bonus-metrics?month=${m}${forceRefresh ? '&refresh=1' : ''}`);
       if (!res.ok) throw new Error('Failed to load bonus data');
       const json = await res.json();
+
+      // Mirror MTD from the Payment Dashboard's source of truth (the Google Sheet via paysheet-live)
+      // so the leaderboard MTD sales/docs/partials/finals match the Payment Dashboard exactly.
+      try {
+        const psRes = await fetch(`/.netlify/functions/paysheet-live?months=${m}`);
+        if (psRes.ok) {
+          const ps = await psRes.json();
+          const rows = ps?.months?.[m]?.rows || [];
+          const byConsultant = {};
+          for (const row of rows) {
+            const name = row.consultant;
+            if (!name) continue;
+            if (!byConsultant[name]) byConsultant[name] = { sales: 0, docs: 0, partials: 0, finals: 0, count: 0 };
+            const amt = row.fee_paid || 0;
+            byConsultant[name].sales += amt;
+            byConsultant[name].count++;
+            const cat = paysheetFeeCategory(row);
+            if (cat === 'doc') byConsultant[name].docs++;
+            else if (cat === 'partial') byConsultant[name].partials++;
+            else if (cat === 'final') byConsultant[name].finals++;
+          }
+          // Overlay onto each consultant. Match by name; paysheet names are already normalized
+          // to the same display names used here.
+          if (json.consultants) {
+            for (const key of Object.keys(json.consultants)) {
+              const c = json.consultants[key];
+              const ps = byConsultant[c.name] || byConsultant[key];
+              if (ps) {
+                c.totalSales = Math.round(ps.sales);
+                c.mtdSales = Math.round(ps.sales);
+                c.mtdDocs = ps.docs;
+                c.mtdPartials = ps.partials;
+                c.mtdFinals = ps.finals;
+                c.thisMonthRevenue = Math.round(ps.sales);
+                c.thisMonthClientCount = ps.count;
+                c.paysheetMirrored = true;
+              }
+            }
+          }
+        }
+      } catch (e) { /* if paysheet fetch fails, fall back to the metrics numbers */ }
+
       setData(json);
       if (!selectedConsultant) {
         if (isAdmin) {
