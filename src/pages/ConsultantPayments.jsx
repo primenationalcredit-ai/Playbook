@@ -210,18 +210,9 @@ function ConsultantPayments() {
       // Single API call for ALL data
       const monthsData = await fetchLiveData(allMonths);
 
-      // Visibility: consultants, account managers, leadership, and admin all see the WHOLE team's
-      // payments (full team visibility). Each row's `consultant` is already normalized upstream.
-      const seesAllPayments =
-        currentUser?.role === 'admin' ||
-        currentUser?.role === 'account_manager' ||
-        currentUser?.department === 'leadership' ||
-        currentUser?.department === 'credit_consultants' ||
-        currentUser?.department === 'account_managers';
-      const myConsultName = (currentUser?.name || '').toLowerCase().trim();
-      const scopeRows = (rows) => seesAllPayments
-        ? (rows || [])
-        : (rows || []).filter(r => (r.consultant || '').toLowerCase().trim() === myConsultName);
+      // Everyone with access to this page sees the WHOLE team's payments (admin and consultant
+      // views are identical). No per-user scoping.
+      const scopeRows = (rows) => rows || [];
 
       // Extract current month data
       const mtdData = scopeRows(monthsData[currentMonth]?.rows || []);
