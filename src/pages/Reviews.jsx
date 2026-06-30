@@ -88,23 +88,27 @@ function Reviews() {
       // We normalize each row to the shape the rest of this component already expects
       // (user_id, review_date, rating, users.name) so the display/stats logic is unchanged.
       // Credit follows the month the review was LEFT (review_date), falling back to created_at.
+      // Fetch broadly and filter for assigned rows in JS (avoids fragile PostgREST null-operator syntax).
       const yearStart = format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd');
-      const query = `select=*&assigned_to=not.is.null&order=review_date.desc`;
+      const query = `select=*&order=created_at.desc&limit=5000`;
       const data = await supabaseFetch('incoming_reviews', query);
 
       const rowsArray = Array.isArray(data) ? data : [];
 
-      const reviewsWithUsers = rowsArray.map(r => {
-        const user = users.find(u => u.id === r.assigned_to);
-        const effectiveDate = r.review_date || (r.created_at ? r.created_at.split('T')[0] : null);
-        return {
-          ...r,
-          user_id: r.assigned_to,                 // map assigned_to -> user_id for existing logic
-          review_date: effectiveDate,             // normalized date (review left, else created)
-          client_name: r.reviewer_name || r.client_name || '',
-          users: user ? { name: user.name, avatar: user.avatar } : null
-        };
-      }).filter(r => r.review_date && r.review_date >= yearStart);
+      const reviewsWithUsers = rowsArray
+        .filter(r => r.assigned_to)   // only reviews assigned/credited to someone
+        .map(r => {
+          const user = users.find(u => u.id === r.assigned_to);
+          const effectiveDate = r.review_date || (r.created_at ? r.created_at.split('T')[0] : null);
+          return {
+            ...r,
+            user_id: r.assigned_to,                 // map assigned_to -> user_id for existing logic
+            review_date: effectiveDate,             // normalized date (review left, else created)
+            client_name: r.reviewer_name || r.client_name || '',
+            users: user ? { name: user.name, avatar: user.avatar } : null
+          };
+        })
+        .filter(r => r.review_date && r.review_date >= yearStart);
 
       setAllReviews(reviewsWithUsers);
     } catch (error) {
@@ -116,27 +120,26 @@ function Reviews() {
   };
 
   const filterReviewsForDisplay = () => {
-    const monthStart = startOfMonth(selectedMonth);
-    const monthEnd = endOfMonth(selectedMonth);
-    
+    // Compare on yyyy-MM-dd strings to avoid timezone shifts from new Date('yyyy-MM-dd').
+    const monthStartStr = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+    const monthEndStr = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
+    const inMonth = (r) => {
+      const d = (r.review_date || '').slice(0, 10);
+      return d >= monthStartStr && d <= monthEndStr;
+    };
+
     // Filter for selected month
-    let filtered = allReviews.filter(r => {
-      const reviewDate = new Date(r.review_date);
-      return reviewDate >= monthStart && reviewDate <= monthEnd;
-    });
-    
+    let filtered = allReviews.filter(inMonth);
+
     // Filter for view mode
     if (viewMode === 'my') {
       filtered = filtered.filter(r => r.user_id === currentUser.id);
     }
-    
+
     setReviews(filtered);
-    
+
     // Calculate team stats from month data
-    calculateTeamStats(allReviews.filter(r => {
-      const reviewDate = new Date(r.review_date);
-      return reviewDate >= monthStart && reviewDate <= monthEnd;
-    }));
+    calculateTeamStats(allReviews.filter(inMonth));
   };
 
   const loadReviews = async () => {
