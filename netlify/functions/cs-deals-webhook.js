@@ -1,21 +1,64 @@
-// CS Deals Webhook Handler
-// Receives webhooks from Pipedrive when deals or persons change
-// Updates cs_deals table and recalculates metrics
+// netlify/functions/cs-deals-webhook.js
+//
+// ASAP Credit Repair - CS Deals Real-Time Webhook
+// ------------------------------------------------
+// Receives webhooks from Pipedrive when a deal is added or updated and keeps the
+// cs_deals table current in real time, so the CSR report dashboard reflects pulls
+// the moment they happen instead of waiting on a manual/initial sync.
+//
+// What it does on each deal add/update:
+//   1. Resolves the deal's Call Center Rep, Account Manager, Monitoring Site,
+//      pipeline name, and stage name (same field mapping as cs-deals-initial-sync.js).
+//   2. Upserts the row into cs_deals (merge on deal_id).
+//   3. Stamps monitoring_site_set_at = NOW the first time a monitoring site appears
+//      on the deal (i.e. the moment a report is pulled). This is the date the CSR
+//      report bonus uses to credit a report to a month, which nothing set before.
+//   4. Also records monitoring_site_set_pipeline / monitoring_site_set_stage at that
+//      moment, so the report is gated by where it was when pulled, not where it ends up.
+//
+// This is SEPARATE from pipedrive-webhook.js (which creates payment links). Register
+// it as its own Pipedrive webhook so the two never interfere.
+//
+// Required env vars (reuses the same ones the other functions use):
+//   PIPEDRIVE_API_KEY            - Pipedrive API token
+//   PIPEDRIVE_DOMAIN             - api subdomain (default asapcreditrepairusa)
+//   VITE_SUPABASE_URL / SUPABASE_URL
+//   SUPABASE_SERVICE_ROLE_KEY
+//   CS_WEBHOOK_SECRET            - optional shared secret for Basic-auth on the webhook
 
-const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY;
-const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepair';
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const PIPEDRIVE_API_KEY = process.env.PIPEDRIVE_API_KEY || '328f4866f7d86c2bfbee1ed8b5c1895a1f6444d0';
+const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepairusa';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CS_WEBHOOK_SECRET = process.env.CS_WEBHOOK_SECRET;
 
-// Call Center Rep field on Person
+// Same custom-field IDs the initial sync uses.
 const CALL_CENTER_REP_FIELD = 'fee42f0cb3d515239d602de62533887bfd58d384';
 const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const MONITORING_SITE_FIELD = 'b8676d1cd8672d9a4214867037af2c94d8367c5e';
 
-// Cached id->name maps (monitoring-site options, stages, pipelines). Refreshed hourly on warm invocations.
-let _maps = null, _mapsAt = 0;
-async function loadMaps(baseUrl) {
-  if (_maps && Date.now() - _mapsAt < 3600000) return _maps;
+const baseUrl = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1`;
+
+const SUPABASE_HEADERS = {
+  apikey: SUPABASE_KEY,
+  Authorization: `Bearer ${SUPABASE_KEY}`,
+  'Content-Type': 'application/json'
+};
+
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
+}
+function respond(statusCode, body) {
+  return { statusCode, headers: corsHeaders(), body: JSON.stringify(body) };
+}
+
+// Resolve option-id / stage-id / pipeline-id to readable names.
+async function loadMaps() {
   const maps = { ms: {}, stage: {}, pipeline: {} };
   try {
     const r = await fetch(`${baseUrl}/dealFields?api_token=${PIPEDRIVE_API_KEY}&limit=500`);
@@ -33,272 +76,163 @@ async function loadMaps(baseUrl) {
     const r = await fetch(`${baseUrl}/pipelines?api_token=${PIPEDRIVE_API_KEY}`);
     if (r.ok) { const p = await r.json(); for (const pl of (p.data || [])) maps.pipeline[String(pl.id)] = pl.name; }
   } catch (e) {}
-  _maps = maps; _mapsAt = Date.now();
   return maps;
 }
 
-// CS-relevant pipelines
-const CS_PIPELINES = [21, 37, 42, 45, 7];
+async function pipedriveGet(path) {
+  const url = `${baseUrl}${path}?api_token=${PIPEDRIVE_API_KEY}`;
+  const r = await fetch(url);
+  if (!r.ok) { console.error(`Pipedrive GET ${path} failed:`, r.status); return null; }
+  const j = await r.json();
+  return j.success ? j.data : null;
+}
 
-exports.handler = async (event, context) => {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json'
-  };
+// Read the existing cs_deals row (if any) so we know whether the monitoring site
+// was already set previously (and keep the original set-date rather than overwriting it).
+async function getExistingRow(dealId) {
+  try {
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/cs_deals?deal_id=eq.${dealId}&select=deal_id,monitoring_site,monitoring_site_set_at,monitoring_site_set_pipeline,monitoring_site_set_stage&limit=1`,
+      { headers: SUPABASE_HEADERS }
+    );
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return Array.isArray(rows) && rows.length ? rows[0] : null;
+  } catch (e) { return null; }
+}
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
+exports.handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: corsHeaders(), body: '' };
+  if (event.httpMethod !== 'POST') return respond(405, { error: 'Method not allowed' });
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) return respond(500, { error: 'Supabase not configured' });
+
+  // Optional Basic-auth check (username anything, password = CS_WEBHOOK_SECRET).
+  if (CS_WEBHOOK_SECRET) {
+    const authHeader = event.headers.authorization || event.headers.Authorization || '';
+    if (!authHeader.startsWith('Basic ')) return respond(401, { error: 'Missing webhook authentication' });
+    const decoded = Buffer.from(authHeader.substring(6), 'base64').toString('utf-8');
+    const [, password] = decoded.split(':');
+    if (password !== CS_WEBHOOK_SECRET) return respond(401, { error: 'Invalid webhook credentials' });
   }
 
-  // Only accept POST
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: 'Method not allowed' };
-  }
+  let payload;
+  try { payload = JSON.parse(event.body || '{}'); }
+  catch (err) { return respond(400, { error: 'Invalid JSON' }); }
+
+  // Pipedrive sends: { event: "updated.deal" | "added.deal", current: {...}, previous: {...} }
+  const current = payload.current || payload.data;
+  const previous = payload.previous || null;
+  if (!current || !current.id) return respond(200, { skipped: true, reason: 'No deal in payload' });
+
+  const dealId = current.id;
 
   try {
-    const payload = JSON.parse(event.body);
-    const { event: eventType, current, previous, meta } = payload;
+    const maps = await loadMaps();
 
-    console.log(`CS Webhook: Received ${eventType}`);
+    // Resolve monitoring site from the webhook payload's custom field (option id -> label).
+    const msRaw = current[MONITORING_SITE_FIELD];
+    const msId = msRaw && typeof msRaw === 'object' ? (msRaw.id || msRaw.value) : msRaw;
+    const monitoringSite = (msId !== null && msId !== undefined && msId !== '')
+      ? (maps.ms[String(msId)] || String(msId)) : null;
 
-    const baseUrl = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1`;
-
-    // ============================================
-    // HANDLE DEAL EVENTS
-    // ============================================
-    if (eventType === 'added.deal' || eventType === 'updated.deal') {
-      const deal = current;
-      
-      // Capture any deal that has a Call Center Rep, regardless of pipeline.
-      // (The report bonus gates by pull-time pipeline later; we don't want to miss New Leads/Reports here.)
-
-      // Get person's Call Center Rep
-      const personId = deal.person_id && typeof deal.person_id === 'object'
-        ? deal.person_id.value
-        : deal.person_id;
-
-      let callCenterRepId = null;
-      let callCenterRepName = null;
-      let accountManagerId = null;
-      let accountManagerName = null;
-
-      if (personId) {
-        try {
-          const personUrl = `${baseUrl}/persons/${personId}?api_token=${PIPEDRIVE_API_KEY}`;
-          const personResponse = await fetch(personUrl);
-          
-          if (personResponse.ok) {
-            const personData = await personResponse.json();
-            if (personData.data) {
-              const repField = personData.data[CALL_CENTER_REP_FIELD];
-              if (repField) {
-                callCenterRepId = typeof repField === 'object' ? repField.id || repField.value : repField;
-                callCenterRepName = typeof repField === 'object' ? repField.name : repField;
-              }
-              const amField = personData.data[ACCOUNT_MANAGER_FIELD];
-              if (amField) {
-                accountManagerId = typeof amField === 'object' ? amField.id || amField.value : amField;
-                accountManagerName = typeof amField === 'object' ? amField.name : amField;
-              }
-            }
-          }
-        } catch (err) {
-          console.log(`CS Webhook: Error fetching person: ${err.message}`);
+    // Resolve the rep + AM from the person record (custom fields live on the person).
+    let callCenterRepId = null, callCenterRepName = null, accountManagerId = null, accountManagerName = null;
+    const personId = current.person_id && typeof current.person_id === 'object'
+      ? current.person_id.value : current.person_id;
+    if (personId) {
+      const person = await pipedriveGet(`/persons/${personId}`);
+      if (person) {
+        const repField = person[CALL_CENTER_REP_FIELD];
+        if (repField) {
+          callCenterRepId = typeof repField === 'object' ? (repField.id || repField.value) : repField;
+          callCenterRepName = typeof repField === 'object' ? repField.name : repField;
+        }
+        const amField = person[ACCOUNT_MANAGER_FIELD];
+        if (amField) {
+          accountManagerId = typeof amField === 'object' ? (amField.id || amField.value) : amField;
+          accountManagerName = typeof amField === 'object' ? amField.name : amField;
         }
       }
-
-      // Only track deals with Call Center Rep assigned
-      if (!callCenterRepName) {
-        console.log(`CS Webhook: Deal ${deal.id} has no Call Center Rep, skipping`);
-        return { statusCode: 200, headers, body: JSON.stringify({ skipped: true, reason: 'no rep' }) };
-      }
-
-      // Upsert deal into Supabase
-      const maps = await loadMaps(baseUrl);
-      const msRaw = deal[MONITORING_SITE_FIELD];
-      const msId = msRaw && typeof msRaw === 'object' ? (msRaw.id || msRaw.value) : msRaw;
-      const monitoringSite = (msId !== null && msId !== undefined && msId !== '')
-        ? (maps.ms[String(msId)] || String(msId)) : null;
-      // Detect a real change by comparing the underlying option id (this is when the report was pulled).
-      const prevMsRaw = previous ? previous[MONITORING_SITE_FIELD] : null;
-      const prevMsId = prevMsRaw && typeof prevMsRaw === 'object' ? (prevMsRaw.id || prevMsRaw.value) : prevMsRaw;
-      const monitoringSiteChanged = (msId !== null && msId !== undefined && msId !== '') && String(msId) !== String(prevMsId ?? '');
-      const dealRecord = {
-        deal_id: deal.id,
-        person_id: personId || null,
-        deal_title: deal.title || null,
-        pipeline_id: deal.pipeline_id || null,
-        pipeline_name: maps.pipeline[String(deal.pipeline_id)] || null,
-        stage_id: deal.stage_id || null,
-        stage_name: maps.stage[String(deal.stage_id)] || null,
-        deal_status: deal.status || 'open',
-        deal_value: deal.value || 0,
-        call_center_rep_id: callCenterRepId,
-        call_center_rep_name: callCenterRepName,
-        account_manager_id: accountManagerId,
-        account_manager_name: accountManagerName,
-        monitoring_site: monitoringSite,
-        deal_created_at: deal.add_time || null,
-        deal_updated_at: deal.update_time || null,
-        synced_at: new Date().toISOString()
-      };
-      // Only set the timestamp when the value actually changed, so we don't overwrite the original set-date on later updates.
-      if (monitoringSiteChanged) {
-        dealRecord.monitoring_site_set_at = new Date().toISOString();
-        dealRecord.monitoring_site_set_stage = maps.stage[String(deal.stage_id)] || null;        // stage at the moment of the pull
-        dealRecord.monitoring_site_set_pipeline = maps.pipeline[String(deal.pipeline_id)] || null; // pipeline at the moment of the pull (the gate)
-      }
-
-      // Track stage movement: stamp when the deal entered its current stage (time-in-stage / stuck tracking).
-      const prevStageId = previous ? previous.stage_id : null;
-      if (deal.stage_id && String(deal.stage_id) !== String(prevStageId ?? '')) {
-        dealRecord.stage_entered_at = new Date().toISOString();
-      }
-
-      const upsertResponse = await fetch(
-        `${SUPABASE_URL}/rest/v1/cs_deals?on_conflict=deal_id`,
-        {
-          method: 'POST',
-          headers: {
-            'apikey': SUPABASE_KEY,
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'resolution=merge-duplicates'
-          },
-          body: JSON.stringify(dealRecord)
-        }
-      );
-
-      if (upsertResponse.ok) {
-        console.log(`CS Webhook: Upserted deal ${deal.id} for ${callCenterRepName}`);
-      } else {
-        console.error(`CS Webhook: Upsert failed: ${await upsertResponse.text()}`);
-      }
-
-      // Recalculate metrics
-      await recalculateMetrics();
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: true, action: 'deal_upserted', dealId: deal.id })
-      };
     }
 
-    // ============================================
-    // HANDLE DEAL DELETED
-    // ============================================
-    if (eventType === 'deleted.deal') {
-      const dealId = previous?.id || meta?.id;
-      
-      if (dealId) {
-        const deleteResponse = await fetch(
-          `${SUPABASE_URL}/rest/v1/cs_deals?deal_id=eq.${dealId}`,
-          {
-            method: 'DELETE',
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`
-            }
-          }
-        );
-        
-        console.log(`CS Webhook: Deleted deal ${dealId}`);
-        await recalculateMetrics();
-      }
+    const pipelineName = maps.pipeline[String(current.pipeline_id)] || null;
+    const stageName = maps.stage[String(current.stage_id)] || null;
 
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: true, action: 'deal_deleted' })
-      };
+    // Decide the monitoring_site_set_at value.
+    // - If the site is now present and was NOT present before (new pull) -> stamp now.
+    // - If it was already set on the existing row -> keep the original date (do not move it).
+    // - If there is no site -> leave the set fields null.
+    const existing = await getExistingRow(dealId);
+    const hadSiteBefore = !!(existing && existing.monitoring_site);
+    const previousMsRaw = previous ? previous[MONITORING_SITE_FIELD] : undefined;
+    const hadSiteInPrevPayload = previousMsRaw !== undefined && previousMsRaw !== null && previousMsRaw !== '';
+
+    let monitoringSiteSetAt = existing && existing.monitoring_site_set_at ? existing.monitoring_site_set_at : null;
+    let monitoringSiteSetPipeline = existing && existing.monitoring_site_set_pipeline ? existing.monitoring_site_set_pipeline : null;
+    let monitoringSiteSetStage = existing && existing.monitoring_site_set_stage ? existing.monitoring_site_set_stage : null;
+
+    const siteJustSet = monitoringSite && !hadSiteBefore && !hadSiteInPrevPayload;
+    if (siteJustSet) {
+      // The report was pulled now: capture the moment and the pipeline/stage it was in.
+      monitoringSiteSetAt = new Date().toISOString();
+      monitoringSiteSetPipeline = pipelineName;
+      monitoringSiteSetStage = stageName;
+    } else if (monitoringSite && !monitoringSiteSetAt) {
+      // Site is present but we have no prior set-date on file (e.g. first time this deal is
+      // seen by the webhook and it already had a site). Use the deal's update time if available,
+      // else now, so the report still gets dated instead of being dropped.
+      monitoringSiteSetAt = current.update_time || new Date().toISOString();
+      monitoringSiteSetPipeline = monitoringSiteSetPipeline || pipelineName;
+      monitoringSiteSetStage = monitoringSiteSetStage || stageName;
     }
 
-    // ============================================
-    // HANDLE PERSON UPDATED (Call Center Rep changed)
-    // ============================================
-    if (eventType === 'updated.person') {
-      const person = current;
-      const personId = person.id;
-
-      // Check if Call Center Rep field changed
-      const newRepField = person[CALL_CENTER_REP_FIELD];
-      const oldRepField = previous?.[CALL_CENTER_REP_FIELD];
-
-      const newRepName = newRepField && typeof newRepField === 'object' ? newRepField.name : newRepField;
-      const oldRepName = oldRepField && typeof oldRepField === 'object' ? oldRepField.name : oldRepField;
-
-      if (newRepName !== oldRepName) {
-        console.log(`CS Webhook: Person ${personId} rep changed from "${oldRepName}" to "${newRepName}"`);
-
-        // Update all deals for this person
-        const updateResponse = await fetch(
-          `${SUPABASE_URL}/rest/v1/cs_deals?person_id=eq.${personId}`,
-          {
-            method: 'PATCH',
-            headers: {
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              call_center_rep_id: newRepField?.id || newRepField?.value || null,
-              call_center_rep_name: newRepName || null,
-              synced_at: new Date().toISOString()
-            })
-          }
-        );
-
-        console.log(`CS Webhook: Updated deals for person ${personId}`);
-        await recalculateMetrics();
-      }
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: true, action: 'person_updated' })
-      };
-    }
-
-    // Unknown event type
-    console.log(`CS Webhook: Unknown event type: ${eventType}`);
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ skipped: true, reason: 'unknown event' })
+    const row = {
+      deal_id: dealId,
+      person_id: personId || null,
+      deal_title: current.title || null,
+      pipeline_id: current.pipeline_id || null,
+      pipeline_name: pipelineName,
+      stage_id: current.stage_id || null,
+      stage_name: stageName,
+      deal_status: current.status || 'open',
+      deal_value: current.value || 0,
+      call_center_rep_id: callCenterRepId,
+      call_center_rep_name: callCenterRepName,
+      account_manager_id: accountManagerId,
+      account_manager_name: accountManagerName,
+      monitoring_site: monitoringSite,
+      monitoring_site_set_at: monitoringSiteSetAt,
+      monitoring_site_set_pipeline: monitoringSiteSetPipeline,
+      monitoring_site_set_stage: monitoringSiteSetStage,
+      deal_created_at: current.add_time || (existing ? undefined : null),
+      deal_updated_at: current.update_time || new Date().toISOString(),
+      synced_at: new Date().toISOString()
     };
+    // Don't overwrite deal_created_at with undefined.
+    if (row.deal_created_at === undefined) delete row.deal_created_at;
 
-  } catch (error) {
-    console.error('CS Webhook Error:', error);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: error.message })
-    };
+    const upsert = await fetch(`${SUPABASE_URL}/rest/v1/cs_deals?on_conflict=deal_id`, {
+      method: 'POST',
+      headers: { ...SUPABASE_HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify([row])
+    });
+    if (!upsert.ok) {
+      const errText = await upsert.text();
+      console.error('cs-deals-webhook upsert error:', errText);
+      return respond(500, { error: 'Upsert failed', detail: errText });
+    }
+
+    return respond(200, {
+      success: true,
+      deal_id: dealId,
+      monitoring_site: monitoringSite,
+      site_just_set: !!siteJustSet,
+      monitoring_site_set_at: monitoringSiteSetAt,
+      rep: callCenterRepName
+    });
+  } catch (err) {
+    console.error('cs-deals-webhook error:', err);
+    return respond(500, { error: 'Webhook processing failed', message: err.message });
   }
 };
-
-// Helper function to recalculate metrics
-async function recalculateMetrics() {
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/rpc/recalculate_cs_metrics`,
-      {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_KEY,
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: '{}'
-      }
-    );
-    
-    if (response.ok) {
-      console.log('CS Webhook: Metrics recalculated');
-    }
-  } catch (err) {
-    console.error('CS Webhook: Metrics recalc error:', err.message);
-  }
-}
