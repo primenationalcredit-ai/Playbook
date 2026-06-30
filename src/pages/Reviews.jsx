@@ -41,6 +41,9 @@ function Reviews() {
   const [assignToUser, setAssignToUser] = useState(''); // For leadership assignment
   const [tableTimeframe, setTableTimeframe] = useState('month'); // month, quarter, year
   const [employeeStats, setEmployeeStats] = useState([]);
+  // Whose personal stats/reviews the cards + My Reviews show. Regular users: themselves.
+  // Admins/leadership: a person they pick from a selector (they have no reviews of their own).
+  const [viewedUserId, setViewedUserId] = useState(currentUser?.id || '');
 
   // Check if user is leadership/admin
   const isLeadership = currentUser?.department === 'leadership' || currentUser?.role === 'admin';
@@ -79,7 +82,7 @@ function Reviews() {
       filterReviewsForDisplay();
       calculateEmployeeStats();
     }
-  }, [allReviews, selectedMonth, viewMode, tableTimeframe]);
+  }, [allReviews, selectedMonth, viewMode, tableTimeframe, viewedUserId]);
 
   const loadAllReviewData = async () => {
     setLoading(true);
@@ -133,7 +136,8 @@ function Reviews() {
 
     // Filter for view mode
     if (viewMode === 'my') {
-      filtered = filtered.filter(r => r.user_id === currentUser.id);
+      const targetId = viewedUserId || currentUser?.id;
+      filtered = filtered.filter(r => r.user_id === targetId);
     }
 
     setReviews(filtered);
@@ -340,9 +344,10 @@ function Reviews() {
   };
 
   // Only count 5-star reviews toward goals
-  const myReviewCount = Array.isArray(reviews) ? reviews.filter(r => r.user_id === currentUser?.id && (r.rating === 5 || r.rating === null)).length : 0;
-  const myTotalReviews = Array.isArray(reviews) ? reviews.filter(r => r.user_id === currentUser?.id).length : 0;
-  const myRank = Array.isArray(teamStats) ? teamStats.findIndex(s => s.user?.id === currentUser?.id) + 1 : 0;
+  const viewedId = viewedUserId || currentUser?.id;
+  const myReviewCount = Array.isArray(reviews) ? reviews.filter(r => r.user_id === viewedId && (r.rating === 5 || r.rating === null)).length : 0;
+  const myTotalReviews = Array.isArray(reviews) ? reviews.filter(r => r.user_id === viewedId).length : 0;
+  const myRank = Array.isArray(teamStats) ? teamStats.findIndex(s => s.user?.id === viewedId) + 1 : 0;
 
   const filteredReviews = Array.isArray(reviews) ? reviews.filter(r => {
     if (!searchTerm) return true;
@@ -471,6 +476,27 @@ function Reviews() {
           </table>
         </div>
       </div>
+
+      {/* Admin: pick whose personal stats + reviews to view (admins have none of their own) */}
+      {isLeadership && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4">
+          <label className="block text-sm font-medium text-slate-600 mb-1">Viewing stats for</label>
+          <select
+            value={viewedUserId || ''}
+            onChange={(e) => setViewedUserId(e.target.value)}
+            className="w-full md:w-80 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-asap-blue"
+          >
+            <option value="">Select an employee...</option>
+            {Array.isArray(users) && users
+              .filter(u => !(u.role === 'admin' || u.department === 'leadership'))
+              .slice()
+              .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+              .map(u => (
+                <option key={u.id} value={u.id}>{u.name}{u.department ? ` (${u.department.replace(/_/g, ' ')})` : ''}</option>
+              ))}
+          </select>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
