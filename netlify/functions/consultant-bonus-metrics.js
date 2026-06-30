@@ -64,6 +64,7 @@ exports.handler = async (event) => {
     // sales. This rewrites each consultant's totalSales (MTD) and today.sales to match the paysheet,
     // so the leaderboard equals the Payment Dashboard. Applied to BOTH fresh and cached responses.
     const mirrorTodayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    let paysheetTotals = null; // { mtdSales, todaySales, mtdDocs, mtdPartials, mtdFinals } from the paysheet
     const applyPaysheetMirror = async (consultantsObj) => {
       try {
         const siteBase = process.env.URL || process.env.DEPLOY_URL || 'https://cute-cat-d9631c.netlify.app';
@@ -71,28 +72,41 @@ exports.handler = async (event) => {
         if (!psRes.ok) return false;
         const ps = await psRes.json();
         const psRows = (ps && ps.months && ps.months[targetMonth] && ps.months[targetMonth].rows) ? ps.months[targetMonth].rows : [];
+        // Company totals straight from the paysheet (matches the Payment Dashboard's company MTD).
+        let coSales = 0, coToday = 0, coDocs = 0, coPartials = 0, coFinals = 0;
         const psAgg = {};
         for (const row of psRows) {
+          const amtAll = parseFloat(row.fee_paid) || 0;
+          coSales += amtAll;
+          if (row.date_paid === mirrorTodayStr) coToday += amtAll;
+          const codeAll = (row.code || '').toLowerCase();
+          const ftAll = (row.fee_type || '').toLowerCase();
+          let catAll = 'other';
+          if (codeAll.includes('doc')) catAll = 'doc';
+          else if (codeAll.includes('par')) catAll = 'partial';
+          else if (codeAll.includes('fin')) catAll = 'final';
+          else if (ftAll.includes('doc')) catAll = 'doc';
+          else if (ftAll.includes('partial')) catAll = 'partial';
+          else if (ftAll.includes('final')) catAll = 'final';
+          if (catAll === 'doc') coDocs++;
+          else if (catAll === 'partial') coPartials++;
+          else if (catAll === 'final') coFinals++;
+
           const nm = row.consultant;
           if (!nm) continue;
           if (!psAgg[nm]) psAgg[nm] = { sales: 0, today: 0, count: 0, docs: 0, partials: 0, finals: 0 };
-          const amt = parseFloat(row.fee_paid) || 0;
-          psAgg[nm].sales += amt;
+          psAgg[nm].sales += amtAll;
           psAgg[nm].count++;
-          if (row.date_paid === mirrorTodayStr) psAgg[nm].today += amt;
-          const code = (row.code || '').toLowerCase();
-          const ft = (row.fee_type || '').toLowerCase();
-          let cat = 'other';
-          if (code.includes('doc')) cat = 'doc';
-          else if (code.includes('par')) cat = 'partial';
-          else if (code.includes('fin')) cat = 'final';
-          else if (ft.includes('doc')) cat = 'doc';
-          else if (ft.includes('partial')) cat = 'partial';
-          else if (ft.includes('final')) cat = 'final';
-          if (cat === 'doc') psAgg[nm].docs++;
-          else if (cat === 'partial') psAgg[nm].partials++;
-          else if (cat === 'final') psAgg[nm].finals++;
+          if (row.date_paid === mirrorTodayStr) psAgg[nm].today += amtAll;
+          if (catAll === 'doc') psAgg[nm].docs++;
+          else if (catAll === 'partial') psAgg[nm].partials++;
+          else if (catAll === 'final') psAgg[nm].finals++;
         }
+        paysheetTotals = {
+          mtdSales: Math.round(coSales * 100) / 100,
+          todaySales: Math.round(coToday * 100) / 100,
+          mtdDocs: coDocs, mtdPartials: coPartials, mtdFinals: coFinals
+        };
         const psNames = Object.keys(psAgg);
         const firstWord = (s) => String(s || '').toLowerCase().trim().split(/\s+/)[0];
         const PS_ALIASES = { 'cindy broadstreet': 'Cindy', 'rose benitez': 'Rose' };
@@ -149,6 +163,13 @@ exports.handler = async (event) => {
             const cachedObj = JSON.parse(priorCacheBody);
             if (cachedObj && cachedObj.consultants) {
               await applyPaysheetMirror(cachedObj.consultants);
+              if (paysheetTotals && cachedObj.teamTotals) {
+                cachedObj.teamTotals.mtdSales = paysheetTotals.mtdSales;
+                cachedObj.teamTotals.todaySales = paysheetTotals.todaySales;
+                cachedObj.teamTotals.mtdDocs = paysheetTotals.mtdDocs;
+                cachedObj.teamTotals.mtdPartials = paysheetTotals.mtdPartials;
+                cachedObj.teamTotals.mtdFinals = paysheetTotals.mtdFinals;
+              }
               return { statusCode: 200, headers, body: JSON.stringify(cachedObj) };
             }
           } catch (_) { /* fall through to raw cache if parse/mirror fails */ }
@@ -1313,6 +1334,13 @@ exports.handler = async (event) => {
 
     // Apply the paysheet mirror to the freshly computed results before caching/returning.
     await applyPaysheetMirror(results);
+    // Override company totals from the paysheet so the leaderboard's company MTD matches the
+    // Payment Dashboard exactly (the per-consultant numbers were mirrored inside the function).
+    const teamMtdSales = paysheetTotals ? paysheetTotals.mtdSales : mtdSales;
+    const teamTodaySales = paysheetTotals ? paysheetTotals.todaySales : todaySales;
+    const teamMtdDocs = paysheetTotals ? paysheetTotals.mtdDocs : mtdDocs;
+    const teamMtdPartials = paysheetTotals ? paysheetTotals.mtdPartials : mtdPartials;
+    const teamMtdFinals = paysheetTotals ? paysheetTotals.mtdFinals : mtdFinals;
 
     // Auto-save newly detected one-time bonuses
     for (const [n, d] of Object.entries(results)) {
@@ -1340,7 +1368,7 @@ exports.handler = async (event) => {
 
     const responseBody = JSON.stringify({
         month: monthLabel, monthKey: targetMonth,
-        teamTotals: { todaySales, todayDocs, todayPartials, todayFinals, mtdSales, mtdDocs, mtdPartials, mtdFinals, mtdProjection, ytdSales, ytdDocs, totalPayments: payments.length,
+        teamTotals: { todaySales: teamTodaySales, todayDocs, todayPartials, todayFinals, mtdSales: teamMtdSales, mtdDocs: teamMtdDocs, mtdPartials: teamMtdPartials, mtdFinals: teamMtdFinals, mtdProjection, ytdSales, ytdDocs, totalPayments: payments.length,
           totalOverdue: invoiceData.filter(i => i.status === 'overdue').length,
           totalOverdueAmount: Math.round(invoiceData.filter(i => i.status === 'overdue').reduce((s, i) => s + (parseFloat(i.balance) || 0), 0)),
           totalInvoices: invoiceData.length
