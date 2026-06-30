@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import ReviewClaimQueue from '../components/ReviewClaimQueue';
-import Reviews from './Reviews';
 import { supabase } from '../lib/supabase';
 import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle, Mail, DollarSign } from 'lucide-react';
 
@@ -71,8 +70,11 @@ export default function AMBonus() {
   const accountManagers = (users || []).filter(u => 
     u.department === 'account_managers' || u.role === 'account_manager'
   );
-  // If no AMs found, let admin see all users
-  const amList = accountManagers.length > 0 ? accountManagers : (isAdmin ? (users || []) : [currentUser].filter(Boolean));
+  // Admins/leadership see every AM (and can pick "All"). A regular account manager sees ONLY
+  // themselves — they must not be able to view other AMs' bonuses through the dropdown.
+  const amList = isAdmin
+    ? (accountManagers.length > 0 ? accountManagers : (users || []))
+    : [currentUser].filter(Boolean);
 
   const [selectedAM, setSelectedAM] = useState(null);
 
@@ -120,6 +122,10 @@ export default function AMBonus() {
       if (!selectedAM) {
         if (isAdmin) setSelectedAM('ALL');
         else if (currentUser?.id) setSelectedAM(currentUser.id);
+      }
+      // Safety clamp: a non-admin AM can never view "ALL" or another AM's id.
+      if (!isAdmin && currentUser?.id && selectedAM && selectedAM !== currentUser.id) {
+        setSelectedAM(currentUser.id);
       }
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -429,7 +435,7 @@ export default function AMBonus() {
         <div className="flex items-center gap-2">
           <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
             className="px-3 py-1.5 border rounded-lg text-sm text-slate-700 bg-white" />
-          {isAM && amList.length > 0 && (
+          {isAdmin && amList.length > 0 && (
             <select value={selectedAM || ''} onChange={e => setSelectedAM(e.target.value)}
               className="px-3 py-1.5 border rounded-lg text-sm font-medium">
               <option value="ALL">All Account Managers</option>
@@ -469,7 +475,7 @@ export default function AMBonus() {
       </div>
 
       {/* All Account Managers overview (admins) */}
-      {tab === 'dashboard' && selectedAM === 'ALL' && (() => {
+      {tab === 'dashboard' && isAdmin && selectedAM === 'ALL' && (() => {
         const rows = (amList || []).map(am => ({ am, m: getAMMetrics(am.id) }));
         const sum = (f) => rows.reduce((t, r) => t + (Number(r.m?.[f]) || 0), 0);
         const fmtPct = (v) => v == null ? '—' : `${Math.round(v)}%`;
@@ -1182,14 +1188,7 @@ export default function AMBonus() {
 
       {/* Credit Building Tab */}
       {tab === 'reviews' && (
-        <div className="mt-2 space-y-6">
-          {/* Review dashboard / stats (the former standalone Reviews page) */}
-          <Reviews />
-          {/* Claim the reviews you earned */}
-          <div className="border-t border-slate-200 pt-6">
-            <ReviewClaimQueue />
-          </div>
-        </div>
+        <div className="mt-2"><ReviewClaimQueue /></div>
       )}
 
       {tab === 'credit-building' && (
