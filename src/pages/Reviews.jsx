@@ -84,22 +84,28 @@ function Reviews() {
   const loadAllReviewData = async () => {
     setLoading(true);
     try {
-      // Get all reviews for the year in ONE call
+      // Reviews now come from the claim flow: incoming_reviews assigned to a user.
+      // We normalize each row to the shape the rest of this component already expects
+      // (user_id, review_date, rating, users.name) so the display/stats logic is unchanged.
+      // Credit follows the month the review was LEFT (review_date), falling back to created_at.
       const yearStart = format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd');
-      const query = `select=*&review_date=gte.${yearStart}&order=review_date.desc`;
-      const data = await supabaseFetch('reviews', query);
-      
-      const reviewsArray = Array.isArray(data) ? data : [];
-      
-      // Add user info
-      const reviewsWithUsers = reviewsArray.map(review => {
-        const user = users.find(u => u.id === review.user_id);
+      const query = `select=*&assigned_to=not.is.null&order=review_date.desc`;
+      const data = await supabaseFetch('incoming_reviews', query);
+
+      const rowsArray = Array.isArray(data) ? data : [];
+
+      const reviewsWithUsers = rowsArray.map(r => {
+        const user = users.find(u => u.id === r.assigned_to);
+        const effectiveDate = r.review_date || (r.created_at ? r.created_at.split('T')[0] : null);
         return {
-          ...review,
+          ...r,
+          user_id: r.assigned_to,                 // map assigned_to -> user_id for existing logic
+          review_date: effectiveDate,             // normalized date (review left, else created)
+          client_name: r.reviewer_name || r.client_name || '',
           users: user ? { name: user.name, avatar: user.avatar } : null
         };
-      });
-      
+      }).filter(r => r.review_date && r.review_date >= yearStart);
+
       setAllReviews(reviewsWithUsers);
     } catch (error) {
       console.error('Error loading reviews:', error);
@@ -259,36 +265,41 @@ function Reviews() {
 
       // Use assigned user if leadership selected one, otherwise current user
       const targetUserId = isLeadership && assignToUser ? assignToUser : currentUser.id;
-      
-      // Only send necessary fields to database
+
+      // Reviews live in incoming_reviews now. A manually added review is created
+      // already assigned (and marked completed) so it shows on the dashboard and
+      // credits the right person, consistent with the claim flow.
+      const nowIso = new Date().toISOString();
+      const creditedName = (Array.isArray(users) ? users.find(u => u.id === targetUserId)?.name : null) || currentUser?.name || null;
       const reviewData = {
         platform: formData.platform,
-        client_name: formData.client_name,
+        reviewer_name: formData.client_name,
         review_date: formData.review_date,
-        proof_url: formData.proof_url,
-        notes: formData.notes,
-        user_id: targetUserId,
-        location_name: formData.location_name || null, // GMB location
-        rating: formData.rating, // Star rating
+        review_text: formData.notes || null,
+        location_name: formData.location_name || null,
+        rating: formData.rating,
         pipedrive_deal_id: dealId,
+        assigned_to: targetUserId,
+        assigned_by: currentUser.id,
+        assigned_at: nowIso,
+        claimed_by_name: creditedName,
+        status: 'completed',
       };
-      
-      const result = await supabasePost('reviews', reviewData);
-      
+
+      const result = await supabasePost('incoming_reviews', reviewData);
+
       // Check for errors
       if (result && result.error) {
         console.error('Error adding review:', result);
         alert('Error adding review: ' + (result.message || result.error || 'Unknown error'));
         return;
       }
-      
+
       console.log('Review added:', result);
 
       // Post a Pipedrive note on the deal crediting the assigned team member.
       // Best-effort: the review is already saved, so a note failure must not block the flow.
-      // No reviewId is passed, so review-post-note only posts the note and does not touch incoming_reviews.
       try {
-        const creditedName = (Array.isArray(users) ? users.find(u => u.id === targetUserId)?.name : null) || currentUser?.name || null;
         await fetch('/.netlify/functions/review-post-note', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dealId, reviewerName: formData.client_name, rating: formData.rating, reviewText: formData.notes, creditedTo: creditedName }),
@@ -309,8 +320,7 @@ function Reviews() {
         pipedrive_deal_id: '',
       });
       setAssignToUser(''); // Reset assignment
-      loadReviews();
-      loadTeamStats();
+      loadAllReviewData();
     } catch (error) {
       console.error('Error adding review:', error);
     }
@@ -319,9 +329,8 @@ function Reviews() {
   const handleDelete = async (reviewId) => {
     if (!confirm('Delete this review?')) return;
     try {
-      await supabaseDelete('reviews', `id=eq.${reviewId}`);
-      loadReviews();
-      loadTeamStats();
+      await supabaseDelete('incoming_reviews', `id=eq.${reviewId}`);
+      loadAllReviewData();
     } catch (error) {
       console.error('Error deleting review:', error);
     }
