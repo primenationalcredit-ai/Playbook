@@ -585,9 +585,9 @@ function Reviews() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Reviews List */}
-        <div className="lg:col-span-2">
+        <div>
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-4 border-b border-slate-200">
               <h3 className="font-semibold text-slate-800">
@@ -681,58 +681,6 @@ function Reviews() {
                     </div>
                   );
                 })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Team Leaderboard */}
-        <div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-4 border-b border-slate-200 bg-gradient-to-r from-amber-50 to-yellow-50">
-              <div className="flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-amber-600" />
-                <h3 className="font-semibold text-slate-800">Leaderboard</h3>
-              </div>
-              <p className="text-sm text-slate-500">{format(selectedMonth, 'MMMM yyyy')}</p>
-            </div>
-            
-            {teamStats.length === 0 ? (
-              <div className="p-8 text-center text-slate-500">
-                <Trophy className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                <p className="text-sm">No reviews yet this month</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {teamStats.map((stat, index) => (
-                  <div 
-                    key={stat.user?.id || index} 
-                    className={`p-4 flex items-center gap-3 ${
-                      stat.user?.id === currentUser?.id ? 'bg-asap-blue/5' : ''
-                    }`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                      index === 0 ? 'bg-yellow-400 text-yellow-900' :
-                      index === 1 ? 'bg-slate-300 text-slate-700' :
-                      index === 2 ? 'bg-amber-600 text-white' :
-                      'bg-slate-100 text-slate-600'
-                    }`}>
-                      {index + 1}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-800">
-                        {stat.user?.name || 'Unknown'}
-                        {stat.user?.id === currentUser?.id && (
-                          <span className="ml-2 text-xs text-asap-blue">(You)</span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-lg text-slate-800">{stat.count}</p>
-                      <p className="text-xs text-slate-500">reviews</p>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>
