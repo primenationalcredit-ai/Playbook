@@ -182,13 +182,12 @@ exports.handler = async (event) => {
     const msSeen = {};            // distinct monitoring_site -> count
     const stageSeen = {};         // "pipeline | stage" -> count
 
-    // Resolve a Pipedrive rep name to the canonical roster name, case-insensitively,
-    // so spelling/case variants (e.g. "Cj" vs "CJ") still attribute to the same person.
-    const repResolver = {};
-    for (const name of staff) repResolver[normName(name)] = name;
+    // Targeted rep-name aliases: map known Pipedrive spelling variants to the canonical
+    // roster name. Exact (case-sensitive) match, so only these specific variants are remapped.
+    const REP_ALIASES = { 'Cj': 'CJ', 'cj': 'CJ', 'Evereth': 'CJ' };
     const resolveRep = (raw) => {
       if (!raw) return null;
-      return repResolver[normName(raw)] || raw;
+      return REP_ALIASES[raw] || raw;
     };
 
     for (const r of rows) {
