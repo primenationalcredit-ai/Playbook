@@ -198,7 +198,7 @@ exports.handler = async (event) => {
     const ops = {};
     const dist = {};
     for (const name of staff) {
-      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [] };
+      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, convTotal: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [] };
       ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
@@ -247,6 +247,24 @@ exports.handler = async (event) => {
       if (!rep || !tally[rep]) continue;        // must have a Call Center Rep who is a known CSR
 
       if (monthOf(r) !== month) { tally[rep].outOfMonth++; continue; }
+
+      // Conversion tracking runs for ALL of the rep's report deals this month, BEFORE the
+      // pipeline gate. A conversion means the deal moved FORWARD (to quote / paid a doc fee),
+      // so gating it by "must still be in an early pipeline" would wrongly drop the very deals
+      // that converted. (The gate below only limits which reports COUNT toward the report bonus.)
+      {
+        const rankC = pipelineRank(r.pipeline_name);
+        const reachedQuoteC = useQuotedFilter ? movedToQuoted.has(String(r.deal_id)) : (rankC >= QUOTE_RANK);
+        const paidDocFeeC = docFeeDealIds.has(String(r.deal_id));
+        tally[rep].convTotal++;                       // all of the rep's month report-deals (ungated) = conversion denominator
+        if (reachedQuoteC) tally[rep].reachedQuote++;
+        if (paidDocFeeC) tally[rep].reachedDocs++;
+        if (viewingCurrentMonth && docFeeDateByDeal[String(r.deal_id)] === todayStr) {
+          tally[rep].todayDocFees++;
+          tally[rep].todayDocFeeList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site });
+        }
+      }
+
       if (!gatePass(r)) { tally[rep].gatedOut++; continue; }          // must be in an early pipeline at pull-time
 
       tally[rep][cls]++;
@@ -261,17 +279,10 @@ exports.handler = async (event) => {
         tally[rep].todayList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls });
       }
 
-      // Conversion: reached quote = moved to Quoted 2.0 this month (filter), else current pipeline; reached docs = doc fee paid
+      // reportList carries the per-report quote/doc flags for the drill views.
       const rank = pipelineRank(r.pipeline_name);
       const reachedQuote = useQuotedFilter ? movedToQuoted.has(String(r.deal_id)) : (rank >= QUOTE_RANK);
       const paidDocFee = docFeeDealIds.has(String(r.deal_id));
-      if (reachedQuote) tally[rep].reachedQuote++;
-      if (paidDocFee) tally[rep].reachedDocs++;
-      // Today's conversions: doc fee whose payment_date is today (accurate, dated event).
-      if (viewingCurrentMonth && docFeeDateByDeal[String(r.deal_id)] === todayStr) {
-        tally[rep].todayDocFees++;
-        tally[rep].todayDocFeeList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site });
-      }
       tally[rep].reportList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls, reachedQuote, paidDocFee });
     }
 
@@ -281,8 +292,9 @@ exports.handler = async (event) => {
       const t = tally[name];
       const report = computeReportBonus(t.idiq, t.total);
 
-      // Conversion bonus
-      const rptsToQuoteRate = t.total > 0 ? t.reachedQuote / t.total : 0;
+      // Conversion bonus (uses ungated denominator: all of the rep's month report-deals)
+      const convDenom = t.convTotal > 0 ? t.convTotal : t.total;
+      const rptsToQuoteRate = convDenom > 0 ? t.reachedQuote / convDenom : 0;
       const quoteToDocsRate = t.reachedQuote > 0 ? t.reachedDocs / t.reachedQuote : 0;
       const conversionQualified = rptsToQuoteRate >= RPTS_TO_QUOTE_TARGET && quoteToDocsRate >= QUOTE_TO_DOCS_TARGET;
       const conversion = {
