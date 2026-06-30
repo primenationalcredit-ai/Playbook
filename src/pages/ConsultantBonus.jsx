@@ -158,6 +158,8 @@ export default function ConsultantBonus() {
   const [tab, setTab] = useState('bonuses');
   const [expandedSection, setExpandedSection] = useState(null);
   const [pastDueMonth, setPastDueMonth] = useState('all');
+  // Drill: when a "Pending 30d" number is clicked, show that consultant's pending clients.
+  const [pendingDrill, setPendingDrill] = useState(null); // { consultant, clients: [...] }
   const [sprintWeek, setSprintWeek] = useState(null);
   const [lbTab, setLbTab] = useState('overview');
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -448,7 +450,17 @@ export default function ConsultantBonus() {
                     <Cell v={fmtInt(c.ytd?.sales||0)} />
                     <Cell v={(c.closingPct||0)+'%'} good={c.meetsClosingStandard} bad={!c.meetsClosingStandard} />
                     <Cell v={c.onboardedClients||0} />
-                    <Cell v={c.pendingCount30||0} bad={(c.pendingCount30||0)>3} />
+                    <td className="text-center px-3 py-2.5">
+                      {(c.pendingCount30||0) > 0 ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pendingClients30 || [] }); }}
+                          className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pendingCount30||0)>3 ? 'text-red-500' : ''}`}
+                          title="Click to see who is past due"
+                        >
+                          {c.pendingCount30}
+                        </button>
+                      ) : (c.pendingCount30||0)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -615,8 +627,24 @@ export default function ConsultantBonus() {
                   <td className="px-3 py-2.5 font-medium">{c.name.split(' ')[0]}</td>
                   <Cell v={c.thisMonthClientCount||0} /><Cell v={fmtInt(c.thisMonthRevenue||0)} />
                   <Cell v={c.priorMonthClientCount||0} /><Cell v={fmtInt(c.priorMonthRevenue||0)} />
-                  <Cell v={c.pendingCount30||0} bad={(c.pendingCount30||0)>3} />
-                  <Cell v={c.pendingCount90||0} bad={(c.pendingCount90||0)>0} />
+                  <td className="text-center px-3 py-2.5">
+                    {(c.pendingCount30||0) > 0 ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pendingClients30 || [] }); }}
+                        className={`underline decoration-dotted underline-offset-2 hover:text-asap-blue ${(c.pendingCount30||0)>3 ? 'text-red-500' : ''}`}
+                        title="Click to see who is past due"
+                      >{c.pendingCount30}</button>
+                    ) : (c.pendingCount30||0)}
+                  </td>
+                  <td className="text-center px-3 py-2.5">
+                    {(c.pendingCount90||0) > 0 ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPendingDrill({ consultant: c.name, clients: c.pendingClients90 || [] }); }}
+                        className="underline decoration-dotted underline-offset-2 hover:text-asap-blue text-red-500"
+                        title="Click to see who is past due 90+ days"
+                      >{c.pendingCount90}</button>
+                    ) : (c.pendingCount90||0)}
+                  </td>
                 </tr>
               ))}</tbody>
             </table></div>
@@ -1230,6 +1258,47 @@ export default function ConsultantBonus() {
         <p className="text-xs text-slate-400 text-right mt-2">Data source: Zoho Invoice API • {data.totalPayments || 0} payments this month</p>
       </div>
       </>)}
+
+      {pendingDrill && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setPendingDrill(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-800">Past due clients — {pendingDrill.consultant}</h3>
+                <p className="text-xs text-slate-500">{pendingDrill.clients.length} client{pendingDrill.clients.length === 1 ? '' : 's'} without a final payment</p>
+              </div>
+              <button onClick={() => setPendingDrill(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {pendingDrill.clients.length === 0 ? (
+                <p className="p-4 text-center text-slate-500 text-sm">No clients to show.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
+                      <th className="px-3 py-2">Client</th>
+                      <th className="px-3 py-2 text-center">Days since doc fee</th>
+                      <th className="px-3 py-2 text-center">Paid a partial?</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pendingDrill.clients.slice().sort((a,b)=>(b.daysSinceDoc||0)-(a.daysSinceDoc||0)).map((cl, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 font-medium text-slate-800">{cl.name || 'Unknown'}</td>
+                        <td className="px-3 py-2 text-center">{cl.daysSinceDoc != null ? `${cl.daysSinceDoc}d` : '-'}</td>
+                        <td className="px-3 py-2 text-center">{cl.hasPaidPartial ? <span className="text-green-600">Yes</span> : <span className="text-red-500">No</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="p-3 border-t border-slate-200 text-right">
+              <button onClick={() => setPendingDrill(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
