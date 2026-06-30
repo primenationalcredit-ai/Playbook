@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import Reviews from './Reviews';
-import ReviewClaimQueue from '../components/ReviewClaimQueue';
 
 const fmt = (n) => `$${(n || 0).toLocaleString()}`;
 
@@ -193,7 +191,7 @@ export default function CSRBonus() {
             <StatCard label="IDIQ Reports" value={c.reports.idiq} sub="pays per report past #35" accent="text-indigo-600" onClick={() => openReports('IDIQ reports', (d) => d.type === 'idiq')} />
             <StatCard label="SmartCredit" value={c.reports.smartcredit} sub="counts toward 50" onClick={() => openReports('SmartCredit reports', (d) => d.type === 'smart')} />
             <StatCard label="Other" value={c.reports.other} sub="counts toward 50" onClick={() => openReports('Other reports', (d) => d.type === 'other')} />
-            <StatCard label="Total Reports" value={c.reports.total} sub={c.reportBonus.qualified ? 'qualified (≥50)' : 'need 50 to qualify'} accent={c.reportBonus.qualified ? 'text-emerald-600' : 'text-amber-600'} onClick={() => openReports('All reports', () => true)} />
+            <StatCard label="Total Reports" value={c.reports.total} sub={c.reportBonus.qualified ? 'qualified (≥45)' : 'need 45 to qualify'} accent={c.reportBonus.qualified ? 'text-emerald-600' : 'text-amber-600'} onClick={() => openReports('All reports', () => true)} />
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -204,7 +202,7 @@ export default function CSRBonus() {
             <div className="text-sm text-slate-500 mt-1">
               {c.reportBonus.qualified
                 ? `${c.reportBonus.paidReports} paid IDIQ reports (past #35) × ${fmt(c.reportBonus.rate)} per report`
-                : `Not qualified yet — needs 50 total reports this month`}
+                : `Not qualified yet — needs 45 total reports this month`}
             </div>
             {(c.excluded.gatedOut + c.excluded.outOfMonth) > 0 && (
               <div className="text-xs text-slate-400 mt-3 border-t border-slate-100 pt-2">
@@ -279,14 +277,6 @@ export default function CSRBonus() {
       )}
 
       <DrillPanel drill={drill} onClose={() => setDrill(null)} />
-
-      {/* Reviews: dashboard/stats on top, claim queue below */}
-      <div className="mt-8 space-y-6 border-t border-slate-200 pt-6">
-        <Reviews />
-        <div className="border-t border-slate-200 pt-6">
-          <ReviewClaimQueue />
-        </div>
-      </div>
     </div>
   );
 }

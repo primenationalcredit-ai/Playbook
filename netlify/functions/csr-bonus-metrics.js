@@ -33,7 +33,7 @@ const REPORT_PIPELINE_GATE = ['new leads', 'reports', 'quoted 2.0'];
 
 // ---- Report Bonus rules ----
 const FIRST_PAID_REPORT = 35;        // first 35 IDIQ reports don't pay
-const TOTAL_REPORTS_QUALIFIER = 50;  // must hit 50 TOTAL reports (any site) to be eligible
+const TOTAL_REPORTS_QUALIFIER = 45;  // must hit 45 TOTAL reports (any site) to be eligible
 function reportTierRate(idiq) {
   if (idiq >= 81) return 7;
   if (idiq >= 66) return 5;
@@ -99,7 +99,7 @@ function classify(ms) {
   if (!s) return null;
   if (s.includes('smart')) return 'smart';                          // Smart Credit, incl. "Smart Credit (Client Sent Reports)"
   if (s.includes('identity') || s.includes('client sent')) return 'idiq'; // Identity IQ, "Identity Iq (Client Sent Reports)", and "Client sent credit reports to us"
-  return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 50 only
+  return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 45 only
 }
 
 exports.handler = async (event) => {
