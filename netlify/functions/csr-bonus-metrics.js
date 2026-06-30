@@ -207,12 +207,32 @@ exports.handler = async (event) => {
     const msSeen = {};            // distinct monitoring_site -> count
     const stageSeen = {};         // "pipeline | stage" -> count
 
-    // Targeted rep-name aliases: map known Pipedrive spelling variants to the canonical
-    // roster name. Exact (case-sensitive) match, so only these specific variants are remapped.
+    // Targeted rep-name aliases: explicit Pipedrive spelling variants -> canonical roster name.
     const REP_ALIASES = { 'Cj': 'CJ', 'cj': 'CJ', 'Evereth': 'CJ' };
+    // Build a lookup so a short Pipedrive rep name ("Cesar") resolves to the full roster name
+    // ("Cesar Cardona") without needing a manual alias for every person. Exact match wins; then
+    // first-name match (unique); then token-subset match (unique).
+    const staffByExact = {};
+    const staffByFirst = {};
+    for (const sname of staff) {
+      staffByExact[normName(sname)] = sname;
+      const fw = (sname.trim().split(/\s+/)[0] || '').toLowerCase();
+      if (fw) { (staffByFirst[fw] = staffByFirst[fw] || []).push(sname); }
+    }
     const resolveRep = (raw) => {
       if (!raw) return null;
-      return REP_ALIASES[raw] || raw;
+      const r = raw.trim();
+      if (REP_ALIASES[r]) return REP_ALIASES[r];
+      // exact roster match
+      if (staffByExact[normName(r)]) return staffByExact[normName(r)];
+      // unique first-name match ("Cesar" -> "Cesar Cardona")
+      const fw = (r.split(/\s+/)[0] || '').toLowerCase();
+      if (fw && staffByFirst[fw] && staffByFirst[fw].length === 1) return staffByFirst[fw][0];
+      // unique token-subset match (one name's words are a subset of the other)
+      const rt = toks(r);
+      const subsetMatches = staff.filter(sn => { const st = toks(sn); return subsetOf(rt, st) || subsetOf(st, rt); });
+      if (subsetMatches.length === 1) return subsetMatches[0];
+      return r;
     };
 
     for (const r of rows) {
