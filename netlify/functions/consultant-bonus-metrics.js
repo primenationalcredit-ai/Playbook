@@ -934,7 +934,7 @@ exports.handler = async (event) => {
         const hasFinalPmt = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && (ap.payment_type === 'final' || ap.payment_type === 'paid_in_full'));
         if (!hasFinalPmt) {
           const hasPartialPmt = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && ap.payment_type === 'partial');
-          const entry = { name: p.client_name, docDate: p.payment_date, daysSinceDoc: daysSince, hasPaidPartial: hasPartialPmt };
+          const entry = { name: p.client_name, dealId: p.pipedrive_deal_id || null, docDate: p.payment_date, daysSinceDoc: daysSince, hasPaidPartial: hasPartialPmt };
           if (daysSince >= 30) pendingClients30.push(entry);
           if (daysSince >= 90) pendingClients90.push(entry);
         }

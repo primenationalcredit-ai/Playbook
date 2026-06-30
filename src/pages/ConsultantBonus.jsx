@@ -1284,7 +1284,11 @@ export default function ConsultantBonus() {
                   <tbody className="divide-y divide-slate-100">
                     {pendingDrill.clients.slice().sort((a,b)=>(b.daysSinceDoc||0)-(a.daysSinceDoc||0)).map((cl, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
-                        <td className="px-3 py-2 font-medium text-slate-800">{cl.name || 'Unknown'}</td>
+                        <td className="px-3 py-2 font-medium text-slate-800">
+                          {cl.dealId
+                            ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name || 'Unknown'} ↗</a>
+                            : (cl.name || 'Unknown')}
+                        </td>
                         <td className="px-3 py-2 text-center">{cl.daysSinceDoc != null ? `${cl.daysSinceDoc}d` : '-'}</td>
                         <td className="px-3 py-2 text-center">{cl.hasPaidPartial ? <span className="text-green-600">Yes</span> : <span className="text-red-500">No</span>}</td>
                       </tr>
