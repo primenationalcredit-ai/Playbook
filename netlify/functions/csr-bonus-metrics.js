@@ -33,7 +33,7 @@ const REPORT_PIPELINE_GATE = ['new leads', 'reports', 'quoted 2.0'];
 
 // ---- Report Bonus rules ----
 const FIRST_PAID_REPORT = 35;        // first 35 IDIQ reports don't pay
-const TOTAL_REPORTS_QUALIFIER = 45;  // must hit 45 TOTAL reports (any site) to be eligible
+const TOTAL_REPORTS_QUALIFIER = 50;  // must hit 50 TOTAL reports (any site) to be eligible
 function reportTierRate(idiq) {
   if (idiq >= 81) return 7;
   if (idiq >= 66) return 5;
@@ -99,7 +99,7 @@ function classify(ms) {
   if (!s) return null;
   if (s.includes('smart')) return 'smart';                          // Smart Credit, incl. "Smart Credit (Client Sent Reports)"
   if (s.includes('identity') || s.includes('client sent')) return 'idiq'; // Identity IQ, "Identity Iq (Client Sent Reports)", and "Client sent credit reports to us"
-  return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 45 only
+  return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 50 only
 }
 
 exports.handler = async (event) => {
@@ -182,6 +182,15 @@ exports.handler = async (event) => {
     const msSeen = {};            // distinct monitoring_site -> count
     const stageSeen = {};         // "pipeline | stage" -> count
 
+    // Resolve a Pipedrive rep name to the canonical roster name, case-insensitively,
+    // so spelling/case variants (e.g. "Cj" vs "CJ") still attribute to the same person.
+    const repResolver = {};
+    for (const name of staff) repResolver[normName(name)] = name;
+    const resolveRep = (raw) => {
+      if (!raw) return null;
+      return repResolver[normName(raw)] || raw;
+    };
+
     for (const r of rows) {
       const ms = r.monitoring_site;
       if (ms) msSeen[ms] = (msSeen[ms] || 0) + 1;
@@ -189,7 +198,7 @@ exports.handler = async (event) => {
       stageSeen[stageKey] = (stageSeen[stageKey] || 0) + 1;
 
       const cls = classify(ms);
-      const rep = r.call_center_rep_name;
+      const rep = resolveRep(r.call_center_rep_name);
 
       // Current stage distribution: where ALL of a known CSR's deals sit right now
       if (rep && dist[rep]) {
