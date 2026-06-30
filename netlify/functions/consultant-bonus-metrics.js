@@ -59,6 +59,73 @@ exports.handler = async (event) => {
     const monthLabel = new Date(targetMonth + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
     const monthStart = `${targetMonth}-01`;
 
+    // ===== PAYSHEET MIRROR (shared) =====
+    // The Payment Dashboard reads the Google Sheet (paysheet-live) and is the source of truth for MTD
+    // sales. This rewrites each consultant's totalSales (MTD) and today.sales to match the paysheet,
+    // so the leaderboard equals the Payment Dashboard. Applied to BOTH fresh and cached responses.
+    const mirrorTodayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    const applyPaysheetMirror = async (consultantsObj) => {
+      try {
+        const siteBase = process.env.URL || process.env.DEPLOY_URL || 'https://cute-cat-d9631c.netlify.app';
+        const psRes = await fetch(`${siteBase}/.netlify/functions/paysheet-live?months=${targetMonth}`);
+        if (!psRes.ok) return false;
+        const ps = await psRes.json();
+        const psRows = (ps && ps.months && ps.months[targetMonth] && ps.months[targetMonth].rows) ? ps.months[targetMonth].rows : [];
+        const psAgg = {};
+        for (const row of psRows) {
+          const nm = row.consultant;
+          if (!nm) continue;
+          if (!psAgg[nm]) psAgg[nm] = { sales: 0, today: 0, count: 0, docs: 0, partials: 0, finals: 0 };
+          const amt = parseFloat(row.fee_paid) || 0;
+          psAgg[nm].sales += amt;
+          psAgg[nm].count++;
+          if (row.date_paid === mirrorTodayStr) psAgg[nm].today += amt;
+          const code = (row.code || '').toLowerCase();
+          const ft = (row.fee_type || '').toLowerCase();
+          let cat = 'other';
+          if (code.includes('doc')) cat = 'doc';
+          else if (code.includes('par')) cat = 'partial';
+          else if (code.includes('fin')) cat = 'final';
+          else if (ft.includes('doc')) cat = 'doc';
+          else if (ft.includes('partial')) cat = 'partial';
+          else if (ft.includes('final')) cat = 'final';
+          if (cat === 'doc') psAgg[nm].docs++;
+          else if (cat === 'partial') psAgg[nm].partials++;
+          else if (cat === 'final') psAgg[nm].finals++;
+        }
+        const psNames = Object.keys(psAgg);
+        const firstWord = (s) => String(s || '').toLowerCase().trim().split(/\s+/)[0];
+        const PS_ALIASES = { 'cindy broadstreet': 'Cindy', 'rose benitez': 'Rose' };
+        const findPs = (cName) => {
+          if (!cName) return null;
+          const lower = cName.toLowerCase().trim();
+          if (PS_ALIASES[lower] && psAgg[PS_ALIASES[lower]]) return psAgg[PS_ALIASES[lower]];
+          if (psAgg[cName]) return psAgg[cName];
+          const cf = firstWord(cName);
+          if (cf.length > 1) { const fm = psNames.filter(pn => firstWord(pn) === cf); if (fm.length === 1) return psAgg[fm[0]]; }
+          const cWords = lower.split(/\s+/).filter(Boolean);
+          const cm = psNames.filter(pn => { const pw = pn.toLowerCase().split(/\s+/).filter(Boolean); return cWords.every(w => pw.includes(w)) || pw.every(w => cWords.includes(w)); });
+          if (cm.length === 1) return psAgg[cm[0]];
+          return null;
+        };
+        for (const [n, d] of Object.entries(consultantsObj || {})) {
+          const match = findPs(d.name || n);
+          if (match) {
+            d.totalSales = Math.round(match.sales);
+            d.mtdDocs = match.docs;
+            d.mtdPartials = match.partials;
+            d.mtdFinals = match.finals;
+            d.thisMonthClientCount = match.count;
+            if (!d.today) d.today = {};
+            d.today.sales = Math.round(match.today);
+            d.paysheetMirrored = true;
+          }
+        }
+        return true;
+      } catch (e) { console.error('[paysheet-mirror] failed:', e.message); return false; }
+    };
+    // ===== END PAYSHEET MIRROR (shared) =====
+
     // Response cache: this function does a lot of live Pipedrive work, so we serve a cached result
     // (per month) and only recompute when it's older than the TTL or ?refresh=1 is passed. Keeps the
     // page loading instantly for the team and avoids the timeout.
@@ -77,6 +144,14 @@ exports.handler = async (event) => {
           // Always serve cache on the live page load, even if a little stale. The scheduled warm
           // function (and ?refresh=1) do the slow recompute, so the team never blocks on it and the
           // page never fails to load. Freshness comes from the every-10-min warm.
+          // Still apply the paysheet mirror to the cached body so MTD always matches the Payment Dashboard.
+          try {
+            const cachedObj = JSON.parse(priorCacheBody);
+            if (cachedObj && cachedObj.consultants) {
+              await applyPaysheetMirror(cachedObj.consultants);
+              return { statusCode: 200, headers, body: JSON.stringify(cachedObj) };
+            }
+          } catch (_) { /* fall through to raw cache if parse/mirror fails */ }
           return { statusCode: 200, headers, body: priorCacheBody };
         }
       }
@@ -934,7 +1009,7 @@ exports.handler = async (event) => {
         const hasFinalPmt = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && (ap.payment_type === 'final' || ap.payment_type === 'paid_in_full'));
         if (!hasFinalPmt) {
           const hasPartialPmt = allPayments.some(ap => (ap.pipedrive_deal_id || ap.client_name) === key && ap.payment_type === 'partial');
-          const entry = { name: p.client_name, dealId: p.pipedrive_deal_id || null, docDate: p.payment_date, daysSinceDoc: daysSince, hasPaidPartial: hasPartialPmt };
+          const entry = { name: p.client_name, docDate: p.payment_date, daysSinceDoc: daysSince, hasPaidPartial: hasPartialPmt };
           if (daysSince >= 30) pendingClients30.push(entry);
           if (daysSince >= 90) pendingClients90.push(entry);
         }
@@ -1015,12 +1090,6 @@ exports.handler = async (event) => {
       }
       const pastDueList = Object.values(pastDueClientMap)
         .sort((a, b) => String(b.newestDue || '').localeCompare(String(a.newestDue || ''))); // newest-due client first
-      // 120-day window: only clients whose most recent past-due invoice came due within the last 120 days.
-      const windowAgoStr = new Date(now.getTime() - 120 * 86400000).toISOString().slice(0, 10);
-      const pastDue60List = pastDueList.filter(c => {
-        const d = String(c.newestDue || '').slice(0, 10);
-        return d && d >= windowAgoStr && d < todayStr;
-      });
       const pastDueOwed = pastDueList.reduce((s, c) => s + c.totalOwed, 0);
       const overdueAmount = overdueInvoices.reduce((s, i) => s + (parseFloat(i.balance) || 0), 0);
       const totalInvoiced = myInvoices.reduce((s, i) => s + (parseFloat(i.total) || 0), 0);
@@ -1084,8 +1153,6 @@ exports.handler = async (event) => {
         // Invoice / Collection
         overdueCount: overdueInvoices.length, overdueAmount: Math.round(overdueAmount),
         pastDueInvoiceCount: pastDueList.length, pastDueOwed: Math.round(pastDueOwed),
-        // Accurate invoice-based past due, last 60 days (drives the clickable "Past Due" number).
-        pastDue60Count: pastDue60List.length, pastDue60List,
         partiallyPaidCount: partiallyPaidInvoices.length,
         collectionRate, totalInvoiced: Math.round(totalInvoiced), totalCollected: Math.round(totalCollected),
         dueThisWeekCount: dueThisWeek.length, dueThisWeekAmount: Math.round(dueThisWeekAmount),
@@ -1243,6 +1310,9 @@ exports.handler = async (event) => {
       }
       d.today = { sales: Math.round(tS), docs: tD, partials: tP, finals: tF, payments: myToday.length };
     }
+
+    // Apply the paysheet mirror to the freshly computed results before caching/returning.
+    await applyPaysheetMirror(results);
 
     // Auto-save newly detected one-time bonuses
     for (const [n, d] of Object.entries(results)) {

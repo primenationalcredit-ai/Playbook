@@ -189,79 +189,8 @@ export default function ConsultantBonus() {
       const res = await fetch(`/.netlify/functions/consultant-bonus-metrics?month=${m}${forceRefresh ? '&refresh=1' : ''}`);
       if (!res.ok) throw new Error('Failed to load bonus data');
       const json = await res.json();
-
-      // Mirror MTD from the Payment Dashboard's source of truth (the Google Sheet via paysheet-live)
-      // so the leaderboard MTD sales/docs/partials/finals match the Payment Dashboard exactly.
-      try {
-        const psRes = await fetch(`/.netlify/functions/paysheet-live?months=${m}`);
-        if (psRes.ok) {
-          const ps = await psRes.json();
-          const rows = ps?.months?.[m]?.rows || [];
-          const byConsultant = {};
-          for (const row of rows) {
-            const name = row.consultant;
-            if (!name) continue;
-            if (!byConsultant[name]) byConsultant[name] = { sales: 0, docs: 0, partials: 0, finals: 0, count: 0 };
-            const amt = row.fee_paid || 0;
-            byConsultant[name].sales += amt;
-            byConsultant[name].count++;
-            const cat = paysheetFeeCategory(row);
-            if (cat === 'doc') byConsultant[name].docs++;
-            else if (cat === 'partial') byConsultant[name].partials++;
-            else if (cat === 'final') byConsultant[name].finals++;
-          }
-          // Overlay onto each consultant. The paysheet normalizes some people to a first name only
-          // ("Cindy Broadstreet" -> "Cindy", "Rose Benitez" -> "Rose") while the leaderboard uses the
-          // full users.name. Map explicitly first (most reliable), then fall back to exact / first-name
-          // / contained-word matching for anyone not in the map.
-          const psNames = Object.keys(byConsultant);
-          const firstWord = (s) => String(s || '').toLowerCase().trim().split(/\s+/)[0];
-          // Explicit leaderboard-name -> paysheet-name aliases (extend as needed).
-          const NAME_ALIASES = {
-            'cindy broadstreet': 'Cindy',
-            'rose benitez': 'Rose',
-          };
-          const matchPaysheet = (cName) => {
-            if (!cName) return null;
-            const lower = cName.toLowerCase().trim();
-            // 1) explicit alias
-            if (NAME_ALIASES[lower] && byConsultant[NAME_ALIASES[lower]]) return byConsultant[NAME_ALIASES[lower]];
-            // 2) exact
-            if (byConsultant[cName]) return byConsultant[cName];
-            // 3) first-name (only when unambiguous: exactly one paysheet name shares that first name)
-            const cf = firstWord(cName);
-            if (cf.length > 1) {
-              const firstMatches = psNames.filter(pn => firstWord(pn) === cf);
-              if (firstMatches.length === 1) return byConsultant[firstMatches[0]];
-            }
-            // 4) contained-word (one name's words are a subset of the other)
-            const cWords = lower.split(/\s+/).filter(Boolean);
-            const containedMatches = psNames.filter(pn => {
-              const pw = pn.toLowerCase().split(/\s+/).filter(Boolean);
-              return cWords.every(w => pw.includes(w)) || pw.every(w => cWords.includes(w));
-            });
-            if (containedMatches.length === 1) return byConsultant[containedMatches[0]];
-            return null;
-          };
-          if (json.consultants) {
-            for (const key of Object.keys(json.consultants)) {
-              const c = json.consultants[key];
-              const ps = matchPaysheet(c.name) || matchPaysheet(key);
-              if (ps) {
-                c.totalSales = Math.round(ps.sales);
-                c.mtdSales = Math.round(ps.sales);
-                c.mtdDocs = ps.docs;
-                c.mtdPartials = ps.partials;
-                c.mtdFinals = ps.finals;
-                c.thisMonthRevenue = Math.round(ps.sales);
-                c.thisMonthClientCount = ps.count;
-                c.paysheetMirrored = true;
-              }
-            }
-          }
-        }
-      } catch (e) { /* if paysheet fetch fails, fall back to the metrics numbers */ }
-
+      // MTD mirroring from the paysheet now happens in the backend (consultant-bonus-metrics),
+      // so the API already returns paysheet-matched totalSales/today.sales. No frontend overlay needed.
       setData(json);
       if (!selectedConsultant) {
         if (isAdmin) {
