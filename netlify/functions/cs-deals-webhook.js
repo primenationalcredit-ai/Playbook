@@ -159,33 +159,40 @@ exports.handler = async (event) => {
     const pipelineName = maps.pipeline[String(current.pipeline_id)] || null;
     const stageName = maps.stage[String(current.stage_id)] || null;
 
-    // Decide the monitoring_site_set_at value.
-    // - If the site is now present and was NOT present before (new pull) -> stamp now.
-    // - If it was already set on the existing row -> keep the original date (do not move it).
-    // - If there is no site -> leave the set fields null.
+    // ===== CREDIT RULE (per Joe) =====
+    // A report is credited (monitoring_site_set_at stamped to NOW) ONLY when BOTH are true:
+    //   1. The monitoring site genuinely CHANGED on this event (previous payload had no site, current
+    //      does). A mere update to an already-set deal does NOT credit. This is what prevents an old
+    //      March deal (Marcel) from being re-dated to today when its stage moves.
+    //   2. The deal is currently in an early pipeline: New Leads, Reports, or Quoted (2.0). A site set
+    //      on a deal already past those stages is not a fresh pull and is not credited here.
+    // We never invent a "now" date for old/backfilled deals; if there is no real set-date, we leave it
+    // null and the metrics fall back to deal_created_at for bucketing.
+    const CREDIT_PIPELINES = ['new leads', 'reports', 'quoted 2.0', 'quoted'];
+    const pipelineLower = (pipelineName || '').trim().toLowerCase();
+    const inCreditPipeline = CREDIT_PIPELINES.some(p => pipelineLower === p || pipelineLower.includes(p));
+
     const existing = await getExistingRow(dealId);
-    const hadSiteBefore = !!(existing && existing.monitoring_site);
     const previousMsRaw = previous ? previous[MONITORING_SITE_FIELD] : undefined;
-    const hadSiteInPrevPayload = previousMsRaw !== undefined && previousMsRaw !== null && previousMsRaw !== '';
+    const prevHadSite = previousMsRaw !== undefined && previousMsRaw !== null && previousMsRaw !== '';
+    // Site genuinely changed on THIS event: previous snapshot present and showed no site, current has one.
+    const siteChanged = !!(monitoringSite && previous && !prevHadSite);
+    // Credit only when the site just changed AND we are in an early pipeline.
+    const shouldCredit = siteChanged && inCreditPipeline;
 
     let monitoringSiteSetAt = existing && existing.monitoring_site_set_at ? existing.monitoring_site_set_at : null;
     let monitoringSiteSetPipeline = existing && existing.monitoring_site_set_pipeline ? existing.monitoring_site_set_pipeline : null;
     let monitoringSiteSetStage = existing && existing.monitoring_site_set_stage ? existing.monitoring_site_set_stage : null;
 
-    const siteJustSet = monitoringSite && !hadSiteBefore && !hadSiteInPrevPayload;
-    if (siteJustSet) {
-      // The report was pulled now: capture the moment and the pipeline/stage it was in.
+    if (shouldCredit) {
+      // Genuine fresh pull in an early pipeline: credit it now.
       monitoringSiteSetAt = new Date().toISOString();
       monitoringSiteSetPipeline = pipelineName;
       monitoringSiteSetStage = stageName;
-    } else if (monitoringSite && !monitoringSiteSetAt) {
-      // Site is present but we have no prior set-date on file (e.g. first time this deal is
-      // seen by the webhook and it already had a site). Use the deal's update time if available,
-      // else now, so the report still gets dated instead of being dropped.
-      monitoringSiteSetAt = current.update_time || new Date().toISOString();
-      monitoringSiteSetPipeline = monitoringSiteSetPipeline || pipelineName;
-      monitoringSiteSetStage = monitoringSiteSetStage || stageName;
     }
+    // Any other case: do NOT touch monitoring_site_set_at. If it was already set (real prior credit),
+    // it is preserved above. If it was null, it stays null and the metrics use deal_created_at. We never
+    // stamp now or update_time on a deal whose site did not just change.
 
     const row = {
       deal_id: dealId,
