@@ -157,10 +157,11 @@ function Layout() {
   // Playbook, Team View, Training, Ask AI, and Claim Reviews items are hidden for them.
   const isCreditConsultant = currentUser?.department === 'credit_consultants';
 
-  // Credit Team AND Account Managers get the lean nav: hide My Playbook, Team View, Training,
-  // Ask AI, and My Paysheet for both departments.
+  // Credit Team, Account Managers, AND Customer Support (CSR) get the lean nav: hide My Playbook,
+  // Team View, Training, Ask AI, and My Paysheet for all three departments.
   const isAccountManagerDept = currentUser?.department === 'account_managers' || currentUser?.role === 'account_manager';
-  const hideExtras = isCreditConsultant || isAccountManagerDept;
+  const isCustomerSupportDept = currentUser?.department === 'customer_support';
+  const hideExtras = isCreditConsultant || isAccountManagerDept || isCustomerSupportDept;
 
   // Core nav items (shown to regular employees only)
   const coreNavItems = [
