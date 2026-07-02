@@ -139,16 +139,46 @@ exports.handler = async (event) => {
       } catch (e) {}
     }
 
+    // Canonicalize AM names to the account_managers user roster so middle-name variants
+    // (e.g. "Zairen Stephanie Verzales") collapse to the user record ("Zairen Verzales").
+    let amUsers = [];
+    try {
+      const auRes = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.account_managers&select=name`, { headers: supa });
+      if (auRes.ok) amUsers = await auRes.json();
+    } catch (e) {}
+    const amRoster = amUsers.map(u => {
+      const parts = (u.name || '').toLowerCase().trim().split(/\s+/);
+      return { name: u.name, first: parts[0] || '', last: parts[parts.length - 1] || '' };
+    });
+    const canonicalAM = (raw) => {
+      const n = (raw || '').toLowerCase().trim();
+      if (!n) return raw;
+      const parts = n.split(/\s+/);
+      const first = parts[0] || '', last = parts[parts.length - 1] || '';
+      const hit = amRoster.find(r => r.first === first && r.last === last);
+      return hit ? hit.name : raw;
+    };
+
     const byAM = {};
     let attributed = 0;
+    const unattributedList = [];
     for (const p of payments) {
       const did = p.pipedrive_deal_id ? String(p.pipedrive_deal_id) : null;
-      const am = (did && dealToAM[did]) ? dealToAM[did] : 'Unattributed';
-      if (am !== 'Unattributed') attributed += 1;
+      let am = (did && dealToAM[did]) ? dealToAM[did] : 'Unattributed';
+      if (am !== 'Unattributed') { am = canonicalAM(am); attributed += 1; }
+      else {
+        unattributedList.push({
+          client: p.client_name || '(no name)',
+          dealId: did,
+          amount: parseFloat(p.amount) || 0,
+          type: p.payment_type || 'other'
+        });
+      }
       const k = typeKey(p.payment_type);
       if (!byAM[am]) byAM[am] = blank();
       byAM[am][k] += 1; byAM[am].amount += (parseFloat(p.amount) || 0);
     }
+    unattributedList.sort((a, b) => b.amount - a.amount);
 
     const body = JSON.stringify({
       month,
@@ -157,6 +187,7 @@ exports.handler = async (event) => {
       byAM: Object.entries(byAM).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.amount - a.amount),
       attributionCoverage: payments.length ? Math.round((attributed / payments.length) * 100) : 0,
       totalPayments: payments.length,
+      unattributedPayments: unattributedList,
       calculatedAt: new Date().toISOString(),
     });
 

@@ -1215,6 +1215,34 @@ export default function AMBonus() {
                   </table>
                 </div>
               </div>
+
+              {paymentsData.unattributedPayments?.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm border border-amber-200 overflow-hidden">
+                  <div className="px-5 py-3 border-b border-amber-100 bg-amber-50">
+                    <h3 className="font-bold text-slate-800">Unattributed Payments ({paymentsData.unattributedPayments.length})</h3>
+                    <p className="text-xs text-slate-500">These payments have no Account Manager yet. Open the deal, check the client, and set the Account Manager on the person in Pipedrive. It will attribute on the next refresh.</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 text-slate-500 text-left">
+                        <tr><th className="px-4 py-2 font-medium">Client</th><th className="px-4 py-2 font-medium">Type</th><th className="px-4 py-2 font-medium text-right">Amount</th><th className="px-4 py-2 font-medium text-center">Deal</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {paymentsData.unattributedPayments.map((u, i) => (
+                          <tr key={i}>
+                            <td className="px-4 py-2.5 font-medium">{u.client}</td>
+                            <td className="px-4 py-2.5 text-slate-500">{u.type}</td>
+                            <td className="px-4 py-2.5 text-right font-medium">{fmt(u.amount)}</td>
+                            <td className="px-4 py-2.5 text-center">
+                              {u.dealId ? <a href={DEAL_URL(u.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">Deal #{u.dealId} ↗</a> : <span className="text-slate-300">no deal</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
