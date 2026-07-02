@@ -221,19 +221,11 @@ exports.handler = async (event) => {
     // Owner-based tracking: reports with NO Call Center Rep get attributed to the deal OWNER
     // (mapped to an employee/user name when we can), tracked for visibility only (no bonus).
     const ownerTally = {};   // ownerName -> { idiq, smart, other, total, reportList, ownerBased:true }
-    const allUserList = Array.isArray(users) ? users : [];
+    // Pipedrive owner names are already the employee names (e.g. "Cindy", "Eric De La Rosa"), so we
+    // use them directly. No frontend `users` variable exists in this function.
     const mapOwnerToEmployee = (ownerName) => {
       const n = (ownerName || '').trim();
-      if (!n) return null;
-      const nl = n.toLowerCase();
-      // exact user-name match
-      let u = allUserList.find(x => (x.name || '').toLowerCase().trim() === nl);
-      if (u) return u.name;
-      // unique first-name match
-      const first = nl.split(/\s+/)[0];
-      const fm = allUserList.filter(x => (x.name || '').toLowerCase().split(/\s+/)[0] === first);
-      if (fm.length === 1) return fm[0].name;
-      return n; // fall back to the raw Pipedrive owner name
+      return n || null;
     };
 
     // Debug: what the data actually looks like
