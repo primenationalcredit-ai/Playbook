@@ -209,33 +209,36 @@ function Reviews() {
       }
     });
     
-    // Count reviews per timeframe
-    const monthStart = startOfMonth(now);
+    // Count reviews per timeframe. Compare on yyyy-MM-dd STRINGS (not Date objects) so a
+    // review_date like "2026-07-01" is not shifted to the previous day by UTC parsing in
+    // timezones west of UTC. This matches the timezone-safe logic used by the personal cards.
+    const monthStartStr = format(startOfMonth(now), 'yyyy-MM-dd');
     const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
-    const quarterStart = new Date(now.getFullYear(), quarterMonth, 1);
-    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const quarterStartStr = format(new Date(now.getFullYear(), quarterMonth, 1), 'yyyy-MM-dd');
+    const yearStartStr = format(new Date(now.getFullYear(), 0, 1), 'yyyy-MM-dd');
     
     allReviews.forEach(review => {
       const userId = review.user_id;
       if (!statsMap[userId]) return;
       
-      const reviewDate = new Date(review.review_date);
+      const d = (review.review_date || '').slice(0, 10);
+      if (!d) return;
       const isFiveStar = review.rating === 5 || review.rating === null;
       
       // This month
-      if (reviewDate >= monthStart) {
+      if (d >= monthStartStr) {
         statsMap[userId].thisMonth++;
         if (isFiveStar) statsMap[userId].thisMonthFiveStar++;
       }
       
       // This quarter
-      if (reviewDate >= quarterStart) {
+      if (d >= quarterStartStr) {
         statsMap[userId].thisQuarter++;
         if (isFiveStar) statsMap[userId].thisQuarterFiveStar++;
       }
       
       // This year
-      if (reviewDate >= yearStart) {
+      if (d >= yearStartStr) {
         statsMap[userId].thisYear++;
         if (isFiveStar) statsMap[userId].thisYearFiveStar++;
       }
