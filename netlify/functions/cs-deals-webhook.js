@@ -180,26 +180,24 @@ exports.handler = async (event) => {
     const inCreditPipeline = CREDIT_PIPELINES.some(p => pipelineLower === p || pipelineLower.includes(p));
 
     const existing = await getExistingRow(dealId);
-    const previousMsRaw = previous ? previous[MONITORING_SITE_FIELD] : undefined;
-    const prevHadSite = previousMsRaw !== undefined && previousMsRaw !== null && previousMsRaw !== '';
-    // Site genuinely changed on THIS event: previous snapshot present and showed no site, current has one.
-    const siteChanged = !!(monitoringSite && previous && !prevHadSite);
-    // Credit only when the site just changed AND we are in an early pipeline.
-    const shouldCredit = siteChanged && inCreditPipeline;
 
     let monitoringSiteSetAt = existing && existing.monitoring_site_set_at ? existing.monitoring_site_set_at : null;
     let monitoringSiteSetPipeline = existing && existing.monitoring_site_set_pipeline ? existing.monitoring_site_set_pipeline : null;
     let monitoringSiteSetStage = existing && existing.monitoring_site_set_stage ? existing.monitoring_site_set_stage : null;
 
+    // The monitoring-site change IS the trigger. Credit (stamp NOW) when the deal has a monitoring
+    // site, is in an early pipeline (New Leads / Reports / Quoted), and does not already have a
+    // set-date. We do NOT read the `previous` payload (Pipedrive omits custom fields there, which
+    // caused reports to be missed). We never overwrite an existing set-date, so re-touching an already
+    // credited deal keeps its original date (Marcel does not move); and the early-pipeline gate keeps
+    // old SOLD/CRS deals from being stamped when they are edited.
+    const shouldCredit = !!monitoringSite && inCreditPipeline && !monitoringSiteSetAt;
+
     if (shouldCredit) {
-      // Genuine fresh pull in an early pipeline: credit it now.
       monitoringSiteSetAt = new Date().toISOString();
       monitoringSiteSetPipeline = pipelineName;
       monitoringSiteSetStage = stageName;
     }
-    // Any other case: do NOT touch monitoring_site_set_at. If it was already set (real prior credit),
-    // it is preserved above. If it was null, it stays null and the metrics use deal_created_at. We never
-    // stamp now or update_time on a deal whose site did not just change.
 
     const row = {
       deal_id: dealId,
