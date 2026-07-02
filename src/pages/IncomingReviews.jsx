@@ -70,6 +70,9 @@ function IncomingReviews() {
 
   useEffect(() => {
     loadData();
+    // Auto-refresh every 30s so newly-arrived reviews appear without a manual reload.
+    const id = setInterval(() => { loadData(); }, 30000);
+    return () => clearInterval(id);
   }, [locationFilter]);
 
   const runRecheck = async () => {

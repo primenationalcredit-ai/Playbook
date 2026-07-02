@@ -73,6 +73,9 @@ function Reviews() {
   useEffect(() => {
     if (currentUser) {
       loadAllReviewData();
+      // Auto-refresh every 30s so newly-arrived reviews appear without a manual reload.
+      const id = setInterval(() => { loadAllReviewData(); }, 30000);
+      return () => clearInterval(id);
     }
   }, [currentUser]);
 
