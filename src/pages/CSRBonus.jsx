@@ -207,8 +207,22 @@ export default function CSRBonus() {
                   </tr>
                 );
               })}
+              {Object.entries(data.ownerBasedReports || {}).map(([owner, o]) => (
+                <tr key={'owner-' + owner} className="border-t border-slate-100 bg-amber-50/40">
+                  <td className="px-4 py-2 text-slate-600">{owner} <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-600 font-semibold">owner-based (no rep)</span></td>
+                  <td className="px-4 py-2 text-right">{o.idiq}</td>
+                  <td className="px-4 py-2 text-right">{o.smart}</td>
+                  <td className="px-4 py-2 text-right">{o.total}</td>
+                  <td className="px-4 py-2 text-right text-slate-300">—</td>
+                  <td className="px-4 py-2 text-right text-slate-300">tracking only</td>
+                  <td className="px-4 py-2 text-right text-slate-300">—</td>
+                </tr>
+              ))}
             </tbody>
           </table>
+          {Object.keys(data.ownerBasedReports || {}).length > 0 && (
+            <p className="px-4 py-2 text-xs text-slate-500 bg-amber-50/40 border-t border-slate-100">Owner-based rows are reports with no Call Center Rep, attributed to the deal owner for tracking only. They do not earn a bonus.</p>
+          )}
         </div>
       )}
 

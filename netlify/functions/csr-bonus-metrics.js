@@ -66,6 +66,21 @@ function pipelineRank(name) { return PIPELINE_RANK[(name || '').trim().toLowerCa
 const SPOTLIGHT_TOP_CONVERTER = 50;   // highest IDIQ enrollment rate among qualified CSRs
 const SPOTLIGHT_ALL_STAR = 100;       // manual award
 
+async function pdGetDealOwner(dealId) {
+  // Returns the Pipedrive deal owner's name (user_id.name), or null. Used to attribute a report
+  // that has no Call Center Rep to whoever owns the deal, for tracking only.
+  try {
+    const url = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals/${dealId}?api_token=${PIPEDRIVE_API_KEY}`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const o = j && j.data ? j.data.user_id : null;
+    if (!o) return null;
+    if (typeof o === 'object') return o.name || null;
+    return null;
+  } catch (e) { return null; }
+}
+
 async function supaGet(table, query) {
   // Paginate past the 1000-row cap
   const out = [];
@@ -109,7 +124,7 @@ function classify(ms) {
   const s = (ms || '').toLowerCase();
   if (!s) return null;
   if (s.includes('smart')) return 'smart';                          // Smart Credit, incl. "Smart Credit (Client Sent Reports)"
-  if (s.includes('identity') || s.includes('client sent')) return 'idiq'; // Identity IQ, "Identity Iq (Client Sent Reports)", and "Client sent credit reports to us"
+  if (s.includes('identity') || s.includes('idiq')) return 'idiq'; // Identity IQ, incl. "Identity Iq (Client Sent Reports)". Generic "client sent"/Experian fall through to other.
   return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 45 only
 }
 
@@ -203,6 +218,24 @@ exports.handler = async (event) => {
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
 
+    // Owner-based tracking: reports with NO Call Center Rep get attributed to the deal OWNER
+    // (mapped to an employee/user name when we can), tracked for visibility only (no bonus).
+    const ownerTally = {};   // ownerName -> { idiq, smart, other, total, reportList, ownerBased:true }
+    const allUserList = Array.isArray(users) ? users : [];
+    const mapOwnerToEmployee = (ownerName) => {
+      const n = (ownerName || '').trim();
+      if (!n) return null;
+      const nl = n.toLowerCase();
+      // exact user-name match
+      let u = allUserList.find(x => (x.name || '').toLowerCase().trim() === nl);
+      if (u) return u.name;
+      // unique first-name match
+      const first = nl.split(/\s+/)[0];
+      const fm = allUserList.filter(x => (x.name || '').toLowerCase().split(/\s+/)[0] === first);
+      if (fm.length === 1) return fm[0].name;
+      return n; // fall back to the raw Pipedrive owner name
+    };
+
     // Debug: what the data actually looks like
     const msSeen = {};            // distinct monitoring_site -> count
     const stageSeen = {};         // "pipeline | stage" -> count
@@ -265,7 +298,22 @@ exports.handler = async (event) => {
         ops[rep].monthDealList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, rank: dealRank, docFee: hasDocFee, created: r.deal_created_at || null });
       }
 
-      if (!rep || !tally[rep]) continue;        // must have a Call Center Rep who is a known CSR
+      // No Call Center Rep who is a known CSR: instead of dropping the report, attribute it to the
+      // deal OWNER for tracking only (flagged ownerBased, excluded from bonus). Only for in-month,
+      // gate-passing, sited reports so we do not fan out Pipedrive lookups over the whole history.
+      if (!rep || !tally[rep]) {
+        if (ms && monthOf(r) === month && gatePass(r)) {
+          const ownerRaw = await pdGetDealOwner(r.deal_id);
+          const ownerName = mapOwnerToEmployee(ownerRaw);
+          if (ownerName) {
+            if (!ownerTally[ownerName]) ownerTally[ownerName] = { idiq: 0, smart: 0, other: 0, total: 0, reportList: [], ownerBased: true };
+            ownerTally[ownerName][cls]++;
+            ownerTally[ownerName].total++;
+            ownerTally[ownerName].reportList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls });
+          }
+        }
+        continue;
+      }
 
       if (monthOf(r) !== month) { tally[rep].outOfMonth++; continue; }
 
@@ -461,6 +509,7 @@ exports.handler = async (event) => {
         payout: 'Calculated at month-end, paid on the 15th of the following month',
         gateConfig: REPORT_PIPELINE_GATE,
         csrs,
+        ownerBasedReports: ownerTally,
         debug: {
           totalDeals: rows.length,
           movedToQuotedFilter: MOVED_TO_QUOTED_FILTER,
