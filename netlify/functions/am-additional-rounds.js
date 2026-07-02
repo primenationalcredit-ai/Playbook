@@ -107,11 +107,41 @@ exports.handler = async (event) => {
       } catch (e) { return null; }
     };
 
+    // Canonicalize AM names to the account_managers user roster so the name a round is bucketed
+    // under matches the AM's login identity. Handles missing last names ("Dex-Ann" -> "Dex-Ann
+    // Tillock") and extra middle names ("Zairen Stephanie Verzales" -> "Zairen Verzales").
+    let amRosterUsers = [];
+    try {
+      const arRes2 = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.account_managers&select=name`, { headers: supa });
+      if (arRes2.ok) amRosterUsers = await arRes2.json();
+    } catch (e) {}
+    const amRoster = amRosterUsers.map(u => {
+      const parts = (u.name || '').toLowerCase().trim().split(/\s+/);
+      return { name: u.name, first: parts[0] || '', last: parts[parts.length - 1] || '' };
+    });
+    const canonicalAM = (raw) => {
+      const n = (raw || '').toLowerCase().trim();
+      if (!n) return raw;
+      const parts = n.split(/\s+/);
+      const first = parts[0] || '', last = parts[parts.length - 1] || '';
+      // exact full-name match
+      let hit = amRoster.find(r => r.name.toLowerCase().trim() === n);
+      if (hit) return hit.name;
+      // first + last match (handles extra middle names)
+      hit = amRoster.find(r => r.first === first && r.last === last);
+      if (hit) return hit.name;
+      // unique first-name match (handles a raw name with no last name, e.g. "Dex-Ann")
+      const firstMatches = amRoster.filter(r => r.first === first);
+      if (firstMatches.length === 1) return firstMatches[0].name;
+      return raw;
+    };
+
     const byAM = {};
     let unattributed = 0;
     for (const p of paid) {
-      const am = await resolveAM(Number(p.pipedrive_deal_id));
+      let am = await resolveAM(Number(p.pipedrive_deal_id));
       if (!am) { unattributed++; continue; }
+      am = canonicalAM(am);
       if (!byAM[am]) byAM[am] = { count: 0, amount: 0, deals: [] };
       byAM[am].count++;
       byAM[am].amount += Number(p.amount || 0);
