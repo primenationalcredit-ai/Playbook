@@ -122,6 +122,12 @@ exports.handler = async (event) => {
         let am = amNameOf(deal?.[ACCOUNT_MANAGER_FIELD]);
         const personId = deal?.person_id?.value || deal?.person_id || null;
         if (!am && personId && personToAM[personId]) am = personToAM[personId];
+        // The Account Manager lives on the PERSON record (not the deal). If we still have no AM,
+        // fetch the person and read the AM field straight off it. amNameOf handles the {id,name} shape.
+        if (!am && personId) {
+          const pr = await pdGet(`/persons/${personId}`);
+          am = amNameOf(pr?.data?.[ACCOUNT_MANAGER_FIELD]);
+        }
         if (am) {
           dealToAM[dealId] = am;
           await fetch(`${SUPABASE_URL}/rest/v1/deal_am_map`, {
