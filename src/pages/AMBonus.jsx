@@ -55,6 +55,8 @@ export default function AMBonus() {
   const [breakdown, setBreakdown] = useState(null); // {amName, metric, m}
   const [uploading, setUploading] = useState(false);
   const [proofFile, setProofFile] = useState(null);
+  const [audioFile, setAudioFile] = useState(null);
+  const [callTimestamp, setCallTimestamp] = useState('');
   const [viewerUrl, setViewerUrl] = useState(null);
   const [processingId, setProcessingId] = useState(null);
   const [formData, setFormData] = useState({ client_name: '', pipedrive_deal_id: '', product_name: '', proof_description: '', account_manager_id: '' });
@@ -133,6 +135,25 @@ export default function AMBonus() {
 
   useEffect(() => { loadData(); }, [selectedMonth]);
 
+  // Audio proof is stored WITHOUT any database change by packing the audio URL and the call
+  // timestamp into the existing proof_description text field, behind a hidden marker. The
+  // human-typed description still displays normally; the audio info rides along invisibly.
+  const AUDIO_MARK = '||AUDIO||';
+  const packDescription = (desc, audioUrl, ts) => {
+    if (!audioUrl) return desc || '';
+    const payload = JSON.stringify({ a: audioUrl, t: ts || '' });
+    return `${desc || ''}${AUDIO_MARK}${payload}`;
+  };
+  const unpackDescription = (raw) => {
+    const s = raw || '';
+    const i = s.indexOf(AUDIO_MARK);
+    if (i === -1) return { desc: s, audioUrl: null, ts: '' };
+    const desc = s.slice(0, i);
+    let audioUrl = null, ts = '';
+    try { const p = JSON.parse(s.slice(i + AUDIO_MARK.length)); audioUrl = p.a || null; ts = p.t || ''; } catch (e) {}
+    return { desc, audioUrl, ts };
+  };
+
   const submitCreditBuilding = async () => {
     if (!formData.client_name || !formData.product_name) return;
     setUploading(true);
@@ -146,8 +167,19 @@ export default function AMBonus() {
         const { data: pub } = supabase.storage.from('credit-proofs').getPublicUrl(path);
         proofUrl = pub?.publicUrl || null;
       }
+      // Optional call recording: confirms the client verbally signed up over the phone.
+      let audioUrl = null;
+      if (audioFile) {
+        const aext = (audioFile.name.split('.').pop() || 'm4a').toLowerCase();
+        const apath = `${currentUser?.id || 'unknown'}/audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${aext}`;
+        const { error: aErr } = await supabase.storage.from('credit-proofs').upload(apath, audioFile, { upsert: false, contentType: audioFile.type || 'audio/mpeg' });
+        if (aErr) { setError('Audio upload failed: ' + aErr.message); setUploading(false); return; }
+        const { data: apub } = supabase.storage.from('credit-proofs').getPublicUrl(apath);
+        audioUrl = apub?.publicUrl || null;
+      }
       const body = {
         ...formData,
+        proof_description: packDescription(formData.proof_description, audioUrl, callTimestamp),
         proof_image_url: proofUrl,
         submitted_by: currentUser?.id,
         account_manager_id: formData.account_manager_id || selectedAM || currentUser?.id,
@@ -160,6 +192,8 @@ export default function AMBonus() {
       });
       setFormData({ client_name: '', pipedrive_deal_id: '', product_name: '', proof_description: '', account_manager_id: '' });
       setProofFile(null);
+      setAudioFile(null);
+      setCallTimestamp('');
       setShowForm(false);
       loadData();
     } catch (e) {
@@ -1252,10 +1286,29 @@ export default function AMBonus() {
                   {proofFile && <span className="text-xs text-slate-500 truncate max-w-[200px]">{proofFile.name}</span>}
                 </div>
               </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Call Recording (optional)</label>
+                <p className="text-[11px] text-slate-400 mb-1">Attach the call where the client confirms they signed up. Confirms verbal consent over the phone, not just text or email.</p>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-sm text-slate-600 cursor-pointer hover:bg-slate-50">
+                    <Upload size={16} /> {audioFile ? 'Change audio' : 'Choose audio'}
+                    <input type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" className="hidden" onChange={e => setAudioFile(e.target.files?.[0] || null)} />
+                  </label>
+                  {audioFile && <span className="text-xs text-slate-500 truncate max-w-[200px]">{audioFile.name}</span>}
+                </div>
+              </div>
+              {audioFile && (
+                <div>
+                  <label className="text-xs text-slate-500 mb-1 block">Where in the call did they confirm? <span className="text-red-500">*</span></label>
+                  <input type="text" value={callTimestamp} onChange={e => setCallTimestamp(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="e.g. 12:34, or 2 minutes in" />
+                  <p className="text-[11px] text-slate-400 mt-1">Tell us the time in the recording so we can jump right to it instead of listening to the whole call.</p>
+                </div>
+              )}
               <div className="flex gap-2">
-                <button onClick={submitCreditBuilding} disabled={!formData.client_name || !formData.product_name || uploading}
+                <button onClick={submitCreditBuilding} disabled={!formData.client_name || !formData.product_name || uploading || (audioFile && !callTimestamp.trim())}
                   className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50">{uploading ? 'Uploading...' : 'Submit'}</button>
-                <button onClick={() => { setShowForm(false); setProofFile(null); }} className="px-4 py-2 bg-slate-200 text-slate-700 text-sm rounded-lg hover:bg-slate-300">Cancel</button>
+                <button onClick={() => { setShowForm(false); setProofFile(null); setAudioFile(null); setCallTimestamp(''); }} className="px-4 py-2 bg-slate-200 text-slate-700 text-sm rounded-lg hover:bg-slate-300">Cancel</button>
               </div>
             </div>
           )}
@@ -1281,12 +1334,18 @@ export default function AMBonus() {
                     </td>
                     <td className="px-4 py-3">{s.product_name}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {s.proof_image_url ? (
                           <img src={s.proof_image_url} alt="proof" onClick={() => setViewerUrl(s.proof_image_url)}
                             className="w-10 h-10 object-cover rounded border cursor-pointer hover:opacity-80" />
                         ) : <span className="text-slate-300"><ImageIcon size={16} /></span>}
-                        <span>{s.proof_description || '--'}</span>
+                        <span>{unpackDescription(s.proof_description).desc || '--'}</span>
+                        {unpackDescription(s.proof_description).audioUrl && (
+                          <div className="w-full flex items-center gap-2 mt-1">
+                            <audio controls preload="none" src={unpackDescription(s.proof_description).audioUrl} className="h-8 max-w-[220px]" />
+                            {unpackDescription(s.proof_description).ts && <span className="text-[11px] text-slate-500 whitespace-nowrap">at {unpackDescription(s.proof_description).ts}</span>}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="text-center px-4 py-3">
@@ -1335,12 +1394,18 @@ export default function AMBonus() {
                       </td>
                       <td className="px-4 py-3">{s.product_name}</td>
                       <td className="px-4 py-3 text-xs text-slate-500">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {s.proof_image_url ? (
                             <img src={s.proof_image_url} alt="proof" onClick={() => setViewerUrl(s.proof_image_url)}
                               className="w-14 h-14 object-cover rounded border cursor-pointer hover:opacity-80" />
                           ) : <span className="text-slate-300 flex items-center gap-1"><ImageIcon size={16} /> none</span>}
-                          <span>{s.proof_description || ''}</span>
+                          <span>{unpackDescription(s.proof_description).desc || ''}</span>
+                          {unpackDescription(s.proof_description).audioUrl && (
+                            <div className="w-full flex items-center gap-2 mt-1">
+                              <audio controls preload="none" src={unpackDescription(s.proof_description).audioUrl} className="h-8 max-w-[240px]" />
+                              {unpackDescription(s.proof_description).ts && <span className="text-[11px] font-medium text-slate-600 whitespace-nowrap bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Confirms at {unpackDescription(s.proof_description).ts}</span>}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="text-center px-4 py-3">
