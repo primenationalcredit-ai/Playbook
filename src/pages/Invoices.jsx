@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ExternalLink, RefreshCw, FileText, AlertTriangle, CheckCircle2, Clock, XCircle, DollarSign, CalendarClock, PauseCircle, PlayCircle, Zap, Undo2, ChevronDown, ChevronUp, AlarmClock } from 'lucide-react';
+import { Search, Send, ExternalLink, RefreshCw, FileText, AlertTriangle, CheckCircle2, Clock, XCircle, DollarSign, CalendarClock, PauseCircle, PlayCircle, Zap, Undo2, ChevronDown, ChevronUp, AlarmClock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 
@@ -439,6 +439,14 @@ function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} })
                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-white text-asap-blue border border-asap-blue text-xs font-semibold rounded hover:bg-blue-50"
               >
                 <DollarSign size={13} /> Update Card
+              </button>
+            )}
+            {(isAdmin || canRequest) && (
+              <button
+                onClick={() => onAction({ type: 'send_payment_form', deal_id, client_name, client_email, client_phone, amount: (doc_fee && typeof doc_fee.balance === 'number' && doc_fee.balance > 0) ? doc_fee.balance : parseFloat((initial_payment && initial_payment.initial_amount) || 0) })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded hover:bg-green-700"
+              >
+                <Send size={13} /> Send to Client
               </button>
             )}
             <a href={DEAL_URL(deal_id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-asap-blue hover:underline">Open in Pipedrive <ExternalLink size={12} /></a>
@@ -943,6 +951,13 @@ export default function Invoices() {
           reason: form.reason
         });
         setNotice({ type: 'success', text: r.message || 'Pause request submitted for approval.' });
+      } else if (modal.type === 'send_payment_form') {
+        if (!modal.channel) throw new Error('Choose SMS, Email, or Both');
+        if (modal.channel === 'email' && !modal.client_email) throw new Error('No email on file for this client');
+        if (modal.channel === 'sms' && !modal.client_phone) throw new Error('No phone on file for this client');
+        const r = await callApi('send_payment_form', { deal_id: modal.deal_id, client_name: modal.client_name, client_email: modal.client_email, client_phone: modal.client_phone, amount: modal.amount, channel: modal.channel });
+        const sentVia = [r.sentSms && 'SMS', r.sentEmail && 'email'].filter(Boolean).join(' and ');
+        setNotice({ type: 'success', text: `Payment form sent via ${sentVia || 'the selected channel'}.` });
       }
       setTimeout(() => { setModal(null); loadPendingApprovals(); if (mode === 'browse') browse(); else lookup(dealInput); }, 1400);
     } catch (e) {
@@ -981,6 +996,7 @@ export default function Invoices() {
   }, []);
 
   const modalTitles = {
+    send_payment_form: 'Send Payment Form to Client',
     update_due_date: 'Edit Due Date',
     pause_admin: 'Pause Invoice',
     resume: 'Resume Invoice',
@@ -1100,6 +1116,24 @@ export default function Invoices() {
               </>
             )}
 
+            {modal.type === 'send_payment_form' && (
+              <div className="mb-4 space-y-3">
+                <p className="text-sm text-slate-600">Send the payment form link to <b>{modal.client_name}</b> for {fmtMoney(modal.amount)}.</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[{ id: 'sms', label: 'Text (SMS)', disabled: !modal.client_phone }, { id: 'email', label: 'Email', disabled: !modal.client_email }, { id: 'both', label: 'Both', disabled: !modal.client_phone || !modal.client_email }].map(opt => (
+                    <button key={opt.id} type="button" disabled={opt.disabled} onClick={() => setModal(m => ({ ...m, channel: opt.id }))}
+                      className={`px-3 py-2 rounded-md text-sm font-medium border transition ${modal.channel === opt.id ? 'bg-asap-blue text-white border-asap-blue' : opt.disabled ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed' : 'bg-white text-slate-700 border-slate-200 hover:border-asap-blue'}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs text-slate-500 space-y-1">
+                  <p>Phone: {modal.client_phone || <span className="text-slate-400">none on file</span>}</p>
+                  <p>Email: {modal.client_email || <span className="text-slate-400">none on file (email disabled)</span>}</p>
+                </div>
+                <p className="text-[11px] text-slate-400">A secure payment link is generated and sent. The client taps it to open the form and pay.</p>
+              </div>
+            )}
             {(modal.type === 'refund_initial' || modal.type === 'refund_scheduled') && (
               <div className="mb-4">
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Manager passcode</label>
@@ -1135,6 +1169,7 @@ export default function Invoices() {
                 {busy ? 'Submitting...' : (
                   modal.type === 'charge_now' ? `Charge ${fmtMoney(modal.amount)}` :
                   (modal.type === 'refund_initial' || modal.type === 'refund_scheduled') ? `Refund ${fmtMoney(modal.amount)}` :
+                  modal.type === 'send_payment_form' ? 'Send to Client' :
                   modal.type === 'resume' ? 'Resume' :
                   modal.type.startsWith('request_') ? 'Submit for approval' :
                   'Apply'

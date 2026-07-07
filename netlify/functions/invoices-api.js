@@ -17,7 +17,8 @@ const WRITE_ACTIONS = new Set([
   // Admin direct actions (the payment processor still gates these via isAdmin)
   'update_due_date', 'pause', 'resume', 'charge_now', 'refund_initial', 'refund_scheduled',
   // Card on file (save a card for a client, e.g. Zelle clients with no card yet)
-  'update_card_on_file', 'collect_and_save_card'
+  'update_card_on_file', 'collect_and_save_card',
+  'send_payment_form'
 ]);
 const ALLOWED = new Set([...READ_ONLY, ...WRITE_ACTIONS]);
 
