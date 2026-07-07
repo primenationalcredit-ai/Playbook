@@ -175,6 +175,12 @@ exports.handler = async (event) => {
           .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')));
         let paid = arPaidByDeal[dealId] || 0;
         let am = null, resolved = false;
+        // Only chase OPEN deals in the past-due list — skip won and lost deals.
+        try {
+          const statusRes = await pdGet(`/deals/${dealId}`);
+          const dealStatus = statusRes?.data?.status;
+          if (dealStatus && dealStatus !== 'open') continue;
+        } catch (e) { /* if status lookup fails, fall through and include it */ }
         for (const inv of sorted) {
           const total = Math.round(parseFloat(inv.total) || 0);
           let remaining;
