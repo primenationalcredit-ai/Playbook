@@ -214,7 +214,7 @@ export default function CSRBonus() {
                   <td className="px-4 py-2 text-slate-600">{owner} <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-600 font-semibold">owner-based (no rep)</span></td>
                   <td className="px-4 py-2 text-right">{o.idiq}</td>
                   <td className="px-4 py-2 text-right">{o.smart}</td>
-                  <td className="px-4 py-2 text-right">{o.other}</td>
+                  <td className="px-4 py-2 text-right">{o.other ?? ((o.total||0)-(o.idiq||0)-(o.smart||0))}</td>
                   <td className="px-4 py-2 text-right">{o.total}</td>
                   <td className="px-4 py-2 text-right text-slate-300">—</td>
                   <td className="px-4 py-2 text-right text-slate-300">tracking only</td>
