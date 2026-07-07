@@ -221,6 +221,7 @@ function Layout() {
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...((isAM || isConsultant) ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
+    ...((isAM || isConsultant) ? [{ path: '/agreements', icon: FileText, label: 'Agreements' }] : []),
     ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: amApprovalsBadge, unread: approvalsUnread }] : []),
     ...(isConsultant && !hideExtras ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
@@ -239,6 +240,7 @@ function Layout() {
     ...(isConsultant ? [{ path: '/affiliates', icon: Users2, label: 'Affiliates' }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     { path: '/invoices', icon: FileText, label: 'Invoices' },
+    { path: '/agreements', icon: FileText, label: 'Agreements' },
     ...((isConsultant || isCSR) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),

@@ -21,6 +21,7 @@ import ReviewRandomizer from './pages/ReviewRandomizer';
 import ConsultantPayments from './pages/ConsultantPayments';
 import AllPayments from './pages/AllPayments';
 import Invoices from './pages/Invoices';
+import Agreements from './pages/Agreements';
 import Approvals from './pages/Approvals';
 import SecuredCards from './pages/SecuredCards';
 import CSRDashboard from './pages/CSRDashboard';
@@ -128,6 +129,7 @@ function App() {
         <Route path="review-link" element={<ReviewRandomizer />} />
         <Route path="payments" element={<ConsultantPayments />} />
         <Route path="invoices" element={<Invoices />} />
+        <Route path="agreements" element={<Agreements />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="approvals/:id" element={<Approvals />} />
         <Route path="admin/all-payments" element={<ConsultantPayments />} />
