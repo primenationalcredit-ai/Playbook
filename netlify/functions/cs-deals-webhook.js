@@ -239,7 +239,7 @@ exports.handler = async (event) => {
       success: true,
       deal_id: dealId,
       monitoring_site: monitoringSite,
-      site_just_set: !!siteJustSet,
+      site_just_set: !!shouldCredit,
       monitoring_site_set_at: monitoringSiteSetAt,
       rep: callCenterRepName
     });
