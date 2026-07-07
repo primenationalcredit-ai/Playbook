@@ -213,3 +213,272 @@ CSRBonus, AMBonus, Approvals, BonusTracker, Paysheet, DOOPaysheet, FinancialDash
 
 ---
 *END OF MASTER VAULT. Remember the standing rule: UPDATE THIS FILE ON EVERY PUSH.*
+
+---
+
+## 13. PLANNED FEATURE — "SEND TO CLIENT" BUTTON ON INVOICES TAB (spec'd 2026-07-07, NOT built yet)
+**Goal:** In the Playbook Invoices tab, a "Send to Client" button next to each invoice that sends the
+doc fee payment form to the client via SMS and/or Email (user chooses at send time).
+
+**Key technical reality:** You cannot embed an interactive card form inside SMS/email. Standard approach
+(what to build): send a LINK to the hosted doc fee payment page (pay.html on the payment processor).
+Client taps link → form opens in browser → pays. Functionally "the form," reached via a link.
+
+**All infrastructure already exists — this is wiring, not new capability:**
+- Link/token generation: `create-payment-token.js` (payment processor) — produces the token pay.html uses
+  (token carries client + zoho_doc_fee_invoice_id). pay.html is the doc fee form (the one Kim tested).
+- SMS send: RingCentral code in `send-payment-reminders.js` (payment processor).
+- Email send: Microsoft Graph code in `send-payment-reminders.js`.
+- Playbook→payment-processor bridge: `invoices-api.js` (Playbook) proxies allow-listed actions to
+  `consultant-dashboard-api.js` (payment processor), forwarding X-Acting-As = Playbook user email.
+
+**Build steps (3 files, 2 repos):**
+1. Playbook `netlify/functions/invoices-api.js`: add new action `send_payment_form` to the ALLOWED /
+   WRITE_ACTIONS set (one line). It's a write action (requires Playbook sign-in).
+2. Payment processor `netlify/functions/consultant-dashboard-api.js`: implement action `send_payment_form`:
+   - input: invoice/deal id + channel ('sms'|'email'|'both')
+   - generate (or fetch existing) doc fee payment token/link via create-payment-token logic
+   - send via the RingCentral (SMS) and/or MS Graph (email) helpers lifted from send-payment-reminders.js
+   - pull client phone/email from the deal/person or Zoho customer
+   - return {ok, sentSms, sentEmail, link}
+3. Playbook `src/pages/Invoices.jsx`: add "Send to Client" button per invoice row → opens a small dialog
+   (choose SMS / Email / Both, show the message preview, Confirm) → calls invoices-api with
+   action send_payment_form. Show success/failure inline.
+
+**UX decision (confirmed by Joe):** small dialog on click (choose SMS/Email/Both, preview, send) — not
+one-tap — so the user controls the channel. Message copy must follow writing rules (no em-dashes; friendly).
+
+**Deploy:** both repos (Playbook + payment-processor). Verify: committed + pushed + Netlify published on BOTH.
+Test end to end with a real deal (send to Joe's own phone/email first).
+
+**Open questions to confirm at build time:**
+- Does an invoice already carry a usable payment link/token, or must we always mint one via create-payment-token?
+- Exact client phone/email source (person record vs Zoho customer).
+- Message wording for SMS vs email.
+
+---
+
+## 13b. SEND-TO-CLIENT — CODE BUILT + VALIDATED (2026-07-07), READY TO DEPLOY
+All code written and node --check passed. Files in outputs: handle_send_payment_form.js,
+sms_helpers_for_cda.js, invoices_api_patch.txt, FRONTEND_PATCHES.txt. Wiring confirmed:
+onAction flows parent→DealView→buttons (like charge_now/refund); response helper is respond();
+consultant-dashboard-api.js ALREADY has sendEmail()+getGraphToken (line ~1439) so email is reuse;
+only SMS helpers are new. create-payment-token returns {payment_link}; called via internal x-api-key
+(same pattern as handleReissueAgreement). invoices-api.js is the Playbook→payment-processor proxy.
+
+### DEPLOY ORDER (backend first, both repos):
+PAYMENT PROCESSOR (payment-fresh-win):
+1. Add SMS helpers (sms_helpers_for_cda.js) near line ~1418 (by the OUTLOOK block). Includes RC_* consts,
+   SMS_ENABLED, getRingCentralAccessToken, sendSms, normalizePhoneSms.
+2. Add handleSendPaymentForm (handle_send_payment_form.js) — uses existing sendEmail + new sendSms +
+   create-payment-token. Note: create-payment-token REQUIRES a valid email; for SMS-only clients it
+   passes placeholder noemail@asapcreditrepairusa.com (acceptable; 98% have email).
+3. Add to the switch (~line 145, before default): case 'send_payment_form': return await handleSendPaymentForm(body, user);
+4. node --check; commit; push; verify Netlify published.
+
+PLAYBOOK (playbook-fresh-win):
+5. invoices-api.js: add 'send_payment_form' to WRITE_ACTIONS set (invoices_api_patch.txt).
+6. Invoices.jsx: 5 insertions (FRONTEND_PATCHES.txt):
+   F1 submit-handler else-if for send_payment_form (after request_pause block ~947)
+   F2 modalTitles: send_payment_form: 'Send Payment Form to Client'
+   F3 channel-picker UI block in generic modal body (after refund block ~1110). SMS/Email/Both buttons;
+      email disabled when !client_email; both disabled unless both phone+email present.
+   F4 submit button label: modal.type === 'send_payment_form' ? 'Send to Client' :  (and ensure not
+      disabled by missing reason/date; require modal.channel set)
+   F5 "Send to Client" button in DealView near doc fee banner: onAction({type:'send_payment_form',
+      deal_id, client_name, client_email, client_phone, amount: docfee balance or initial_amount}).
+      Import Send icon from lucide-react.
+7. npm build not required (Netlify builds); commit; push; verify published.
+
+### TEST FIRST: send to Joe's OWN phone/email before any client. Verify link opens pay.html, SMS + email
+both arrive, and a note posts on the deal. Only then announce to team.
+
+### REMAINING CONFIRM AT DEPLOY: exact submit-button disabled logic in Invoices.jsx (~1125-1140) so the
+send button isn't blocked by refund/date validators; grab the lucide-react import line to add Send.
+
+---
+
+## 13c. SEND-TO-CLIENT — DEPLOYED + TESTED WORKING (2026-07-07)
+STATUS: LIVE. Tested end to end — payment form sent, SMS + email both received.
+Commits:
+- Payment processor: 860fa21 (send_payment_form action + SMS helpers), d27174e (auth gate: added
+  send_payment_form to SYSTEM_WRITE_ACTIONS so acting-as Playbook users are allowed).
+- Playbook: 3adb047 (invoices-api allowlist + Send to Client button/dialog in DealView),
+  08af2c2 (Send button added to BrowseView "All Invoices" list rows too).
+How it works: Playbook Invoices tab → "Send to Client" (green button, in single-deal DealView AND in
+every row of the All Invoices list) → dialog picks SMS/Email/Both (email grays if no email on file) →
+invoices-api proxies action send_payment_form to consultant-dashboard-api with X-Acting-As=user email →
+handleSendPaymentForm mints a link via create-payment-token (internal x-api-key) → sends SMS
+(RingCentral sendSms) and/or email (existing sendEmail/Graph) → posts a note on the deal.
+Auth: send_payment_form is in BOTH invoices-api WRITE_ACTIONS (Playbook) AND consultant-dashboard-api
+SYSTEM_WRITE_ACTIONS (payment processor). The latter was the missing piece that caused the initial
+"System API key cannot perform this action" 403.
+Notes: create-payment-token REQUIRES a valid email; SMS-only clients use placeholder
+noemail@asapcreditrepairusa.com. List-view rows may lack client_phone (list query returns less than the
+single-deal lookup) so SMS may gray out there; email works (98% have email). If phone needed in list,
+add client_phone to list_recent_invoices query. Message copy follows writing rules (no em-dashes).
+
+## 13d. SEND-TO-CLIENT — FINAL SCOPE (2026-07-07, commit 4c089cd)
+DECISION: Send is DOC-FEE-ONLY. Not used for scheduled charges (would complicate auto-charge
+reconciliation, and Amex cannot go through Zoho — so all sends use the create-payment-token → pay.html
+form, which handles Amex via the Amex merchant routing).
+- Send button HIDDEN when doc fee already paid (prevents duplicate payment).
+  DealView (line ~444): gated `(isAdmin || canRequest) && !(doc_fee && doc_fee.paid)`.
+  List/BrowseView (line ~662): gated `(isAdmin || canRequest) && isToken && !(i.status === 'used' && i.transaction_id)`
+  — so it only shows on UNPAID doc-fee token rows, never on paid doc fees or scheduled-charge rows.
+- FUTURE (deferred): to send links for scheduled charges after a decline, would need: an invoice picker
+  in the dialog (list unpaid scheduled_charges), and a decision on whether paying via link marks the
+  charge paid / stops auto-charge. Kept out for now to avoid reconciliation risk.
+Full commit chain: 860fa21, 3adb047, d27174e, 08af2c2, 4c089cd.
+
+---
+
+## 14. PLANNED FEATURE — PARTIAL PAYMENT / SPLIT A SCHEDULED CHARGE (spec'd 2026-07-07, NOT built)
+### Goal
+Client can't cover a full scheduled charge on the due date but wants to pay a portion. STAFF (consultant)
+splits it: reduce the charge to the partial amount (same due date), and add a new charge for the
+remainder on a chosen date. Both apply to the SAME Zoho invoice.
+
+### Confirmed rules (from Joe)
+- STAFF-initiated, not client self-service. Client just requests it.
+- Edit the scheduled_charge AMOUNT down (e.g. $300 -> $150). Due date does NOT change (partial still runs
+  on the original due date). Changing the DATE is a separate existing admin-approval flow — not part of this.
+- Create a NEW scheduled_charge for the remaining balance ($150) with a staff-chosen date.
+- Keep the SAME Zoho invoice ($300). Collect it in two charges against that one invoice.
+
+### THE HARD PROBLEM (why this needs careful build + testing, not a same-day patch)
+Current code (consultant-dashboard-api.js ~line 414-416 in handleChargeNow, and ~657-660): when ANY
+scheduled_charge clears, it calls markZohoInvoicePaidIdempotent which marks the ENTIRE Zoho invoice PAID.
+So splitting $300 into two $150 charges on the same invoice would mark the whole $300 invoice paid the
+moment the FIRST $150 clears — even though $150 is still owed. WRONG.
+Fixes to choose from at build time:
+  (A) Apply a PARTIAL payment to the Zoho invoice (Zoho "apply payment" API, partial amount) instead of
+      mark-fully-paid. Requires a new Zoho call (current code only does mark-paid).
+  (B) Only mark the Zoho invoice paid when the FINAL charge against it clears — track remaining balance
+      on the invoice; each charge reduces it; last one closes it. Needs a per-invoice balance tracker.
+Recommendation: (A) if Zoho's apply-partial-payment API is available; else (B).
+
+### What exists already (reuse)
+- handleUpdateDueDate (~712): edits a charge's DATE (pattern for a charge-edit action). No amount edit yet.
+- handleChargeNow (~407): charges a scheduled_charge; marks Zoho invoice paid on success (the problem above).
+- chargeCustomerProfile (~841): the card-charge primitive.
+- scheduled_charges rows carry zoho_invoice_id (link to Zoho). link-zoho-invoice.js handles doc_fee/partial/final.
+
+### What to build
+1. New action edit_charge_amount (consultant-dashboard-api.js): change a scheduled_charge.amount
+   (staff only, X-Acting-As). Add to SYSTEM_WRITE_ACTIONS + invoices-api WRITE_ACTIONS.
+2. New action add_scheduled_charge (or split_charge doing both at once): insert a new scheduled_charge
+   row (pipedrive_deal_id, amount, due_date chosen by staff, same customer profile/card, same
+   zoho_invoice_id). Add to allowlists.
+3. Zoho: implement partial-payment application (option A/B above) so the invoice isn't marked fully paid
+   until the total is collected.
+4. Frontend (Invoices.jsx): a "Split / Partial" action on a scheduled charge -> modal: enter partial
+   amount (must be < full), show remainder auto-calculated, pick remainder date -> calls split_charge.
+   Mirror the existing update_due_date modal pattern.
+
+### TESTING REQUIRED BEFORE LIVE (money-handling)
+Use a test deal: split a charge, verify (a) partial charges on original date, (b) Zoho shows partial paid
+NOT paid-in-full, (c) remainder charges on chosen date, (d) Zoho invoice closes only after both clear,
+(e) card is charged the right amounts and never double-charged. Only go live after all pass.
+
+---
+
+## 15. PLANNED FEATURE — PLAYBOOK AGREEMENTS TAB: search / edit / resend (spec'd 2026-07-07, NOT built)
+### Goal
+A new Agreements tab in the Playbook to (1) SEARCH agreements, (2) EDIT amounts/dates, (3) RESEND.
+Editing must cascade to the document (client re-signs), the linked scheduled_charges, AND the Zoho
+invoices. Editing ALWAYS requires the client to re-sign.
+
+### What EXISTS today (reuse)
+- Payment processor `agreements-search.js`: searches agreements table (query, status, type, from/to date).
+  Auth via X-API-Key = INTERNAL_API_KEY or ADMIN_PASSCODE. Currently used by agreements-search.html.
+- Payment processor `handleReissueAgreement` (consultant-dashboard-api.js line 252) + action
+  `reissue_agreement`: voids existing agreement, calls create-agreement with force_recreate:true (same
+  terms), sends new signing link (real email+SMS, not test mode). This IS the "resend" primitive.
+- agreements table stores all terms: agreement_type, partial_amount, partial_date, final_amount,
+  final_date, client info, status, token, etc.
+- NO agreements UI in the Playbook yet (no jsx, no route). Tab is fully new.
+
+### PHASES (build in this order; risk increases each phase)
+PHASE 1 — SEARCH + RESEND (LOW RISK, mostly reuse):
+- New Playbook page AgreementsSearch.jsx + route /agreements + nav item (gate to admin/leadership or
+  whoever should manage agreements).
+- New Playbook proxy action(s) in invoices-api.js (or a new agreements-api.js proxy) → forward to
+  agreements-search (search) and reissue_agreement (resend). Add to WRITE_ACTIONS/SYSTEM_WRITE_ACTIONS.
+- UI: search box + filters (status/type/date) → results table → per-row "Resend" (calls reissue_agreement).
+- This phase is safe: resend already works, search already works. Just a Playbook UI + proxy.
+
+PHASE 2 — EDIT amounts/dates (HIGH RISK, money + legal + Zoho; build + test carefully):
+- Editing an agreement's partial/final amount or date must cascade:
+  (a) DOCUMENT: create a new agreement version with the new terms → client must RE-SIGN (reuse
+      create-agreement with force_recreate + new terms instead of copied terms).
+  (b) SCHEDULED CHARGES: update the linked scheduled_charges to the new amounts/dates.
+  (c) ZOHO INVOICES: update/reissue the linked Zoho invoices to match. SAME reconciliation danger as the
+      split-charge feature (Section 14) — the "mark whole invoice paid on any charge" logic must not
+      mis-fire. Editing amounts means the Zoho invoice total changes; must update Zoho invoice, not just
+      the charge.
+- Shares the "safely update a charge + its Zoho invoice" primitive with Section 14 (split-charge).
+  DESIGN THESE TOGETHER.
+- TESTING REQUIRED before live: edit an agreement on a TEST deal, verify new doc requires re-sign,
+  scheduled_charges updated, Zoho invoice total corrected, no double-charge, old agreement voided.
+
+### Recommendation
+Phase 1 (search+resend) is a safe, useful win — can be built soon. Phase 2 (edit-cascade) is money+legal
+sensitive and should be designed alongside Section 14 and tested thoroughly on test deals before launch to
+real clients. Do NOT rush Phase 2 same-day.
+
+---
+
+## 16. SESSION LOG ADDENDUM — 2026-07-07 (afternoon/evening, the big root-cause day)
+
+### *** THE BIG ROOT CAUSE *** cs-deals-webhook was CRASHING on every update (commit 525c6cb)
+- cs-deals-webhook.js line 242 referenced `site_just_set: !!siteJustSet` but the variable is named
+  `shouldCredit` (defined line 194). `siteJustSet` was never defined → the function threw
+  "siteJustSet is not defined" and returned HTTP 500 on EVERY deal update.
+- Effect: every time a rep set a monitoring site, the webhook died, so the cs_deals row stayed stale at
+  its old "new lead, no site" state → deals never counted → the ENTIRE day's missing-conversion ticket
+  stream (CJ, Reni x4, Earl, etc.) all traced to this ONE typo.
+- Webhooks ARE registered + firing (Pipedrive webhooks 1336184 delete, 1365362 create, 1365364 change →
+  cs-deals-webhook). The function just crashed when they fired.
+- FIX: line 242 → `site_just_set: !!shouldCredit`. Verified: webhook now returns {"success":true} HTTP 200.
+- AFTER FIX: ran full initial-sync backfill (paginated, done at start=40) + ran CSV backfill
+  (backfill_this_month_reports.sql, 72 real deals, 8 tests skipped, 18 credited to owner). Deals now sync
+  in real time. Ticket stream should STOP.
+
+### cs-deals-initial-sync now stamps set_at (commit a8ee93b)
+- Backfills now stamp monitoring_site_set_at (from deal update_time) for deals with a site in an early
+  credit pipeline (NEW LEADS / Reports / Quoted 2.0) that don't already have a set_at. Preserves existing
+  set_at (fetches page's existing values first). So future backfills self-credit — no more manual stamping.
+
+### Individual conversion tickets fixed (Supabase PATCH, anon key)
+- Earl Bell Jr (267782, Reni): cs_deals was stale (site null); Pipedrive had 486/IDIQ pipeline 42. PATCHED
+  Identity IQ / Reni / set today / Reports. FIXED.
+- Melany Mendoza (267541, Reni): site BLANK in Pipedrive but Reni pulled IDIQ reports. Joe: credit IDIQ.
+  PATCHED monitoring_site → Identity IQ (kept set_at Jul 3). Joe also setting site in Pipedrive to persist.
+- "There Hi" (267694): was showing in total reports while a new lead; backfill cleared stale data → now
+  correctly does NOT count (site null, NEW LEADS). Resolved by backfill.
+
+### Agreement POA blank-address fix (payment processor, commit 0399ea8)
+- create-agreement.js line 157 read address from standard personData['address'] (empty for everyone).
+  Address actually lives in PERSON custom field b42afe37cc9f83eff88d6b87a1be5a81cad64f31.
+  FIX: `body.client_address || personData?.['b42afe37cc9f83eff88d6b87a1be5a81cad64f31'] || personData?.['address'] || ''`.
+  Fixes NEW agreements (POA + standalone LPOA now show address; matters for dispute filing). Existing
+  blank agreements won't retro-fix.
+
+### Doc fee "linked" Pipedrive note disabled (payment processor, commit 3672b2e)
+- link-zoho-invoice.js line 268: commented out postPipedriveNote for the "📄 DOC FEE INVOICE — Linked"
+  note (unwanted clutter). Linking still happens; partial/final linked note left intact.
+
+### Raquel AM-dashboard fixes
+- WON DEAL showing in past-due (230988, pipeline 65 status won): am-additional-rounds.js pastDueRounds loop
+  didn't check deal status. FIX (commit 8d787b4): fetch deal status per past-due deal, `continue` (skip) if
+  status !== 'open' → excludes WON and LOST, only chases open deals.
+- PAID REFERRAL not showing (267692 Lisa Casillas): DATA issue, not code. Raquel had TWO Pipedrive orgs
+  both named "Raquel Lanzas": 100970 (7 deals, all 2025, stale — was stored in users table) and 199625
+  (3 deals, all 2026, current — where Lisa lives). am-referrals queries /organizations/{stored}/deals so it
+  missed 199625. FIX: PATCHED users table pipedrive_org_id 100970 → 199625. TELL RAQUEL: always use org
+  199625 going forward. (Watch for same dup-org issue on other AMs.)
+
+### Send to Client — see Sections 13b/13c/13d. Shipped, tested (SMS+email received), doc-fee-only,
+  hidden when doc fee paid, button in both DealView and All Invoices list. Commits 860fa21, 3adb047,
+  d27174e, 08af2c2, 4c089cd.
