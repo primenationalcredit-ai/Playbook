@@ -659,6 +659,12 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {(isAdmin || canRequest) && (
+                        <button onClick={() => onAction({ type: 'send_payment_form', deal_id: i.pipedrive_deal_id, client_name: i.client_name, client_email: i.client_email, client_phone: i.client_phone, amount: (isToken ? i.initial_amount : i.amount) })}
+                          className="inline-flex items-center gap-1 px-2 py-1 mr-1 text-[11px] font-semibold text-white bg-green-600 rounded hover:bg-green-700" title="Send payment form to client">
+                          <Send size={11} /> Send
+                        </button>
+                      )}
                       {canAdminAct ? (
                         <div className="inline-flex gap-1">
                           {(i.status === 'scheduled' || i.status === 'failed' || i.status === 'paused') && (
