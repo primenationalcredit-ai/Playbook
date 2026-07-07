@@ -220,7 +220,7 @@ function Layout() {
   // Core department items (Payment Dashboard & Paysheet - shown in main nav)
   const coreDepartmentItems = [
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
-    ...(isAM ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
+    ...((isAM || isConsultant) ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
     ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: amApprovalsBadge, unread: approvalsUnread }] : []),
     ...(isConsultant && !hideExtras ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
