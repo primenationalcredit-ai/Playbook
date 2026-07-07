@@ -185,6 +185,7 @@ export default function CSRBonus() {
                 <th className="text-left font-medium px-4 py-2">CSR</th>
                 <th className="text-right font-medium px-4 py-2">IDIQ</th>
                 <th className="text-right font-medium px-4 py-2">SmartCredit</th>
+                <th className="text-right font-medium px-4 py-2">Other</th>
                 <th className="text-right font-medium px-4 py-2">Total</th>
                 <th className="text-right font-medium px-4 py-2">Qualified</th>
                 <th className="text-right font-medium px-4 py-2">Report Bonus</th>
@@ -200,6 +201,7 @@ export default function CSRBonus() {
                     <td className="px-4 py-2 font-medium text-slate-800">{n}</td>
                     <td className="px-4 py-2 text-right">{r.reports.idiq}</td>
                     <td className="px-4 py-2 text-right">{r.reports.smartcredit}</td>
+                    <td className="px-4 py-2 text-right">{r.reports.other}</td>
                     <td className="px-4 py-2 text-right">{r.reports.total}</td>
                     <td className="px-4 py-2 text-right">{r.reportBonus.qualified ? '✓' : '—'}</td>
                     <td className="px-4 py-2 text-right font-semibold text-emerald-600">{fmt(r.reportBonus.bonus)}</td>
@@ -212,6 +214,7 @@ export default function CSRBonus() {
                   <td className="px-4 py-2 text-slate-600">{owner} <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-600 font-semibold">owner-based (no rep)</span></td>
                   <td className="px-4 py-2 text-right">{o.idiq}</td>
                   <td className="px-4 py-2 text-right">{o.smart}</td>
+                  <td className="px-4 py-2 text-right">{o.other}</td>
                   <td className="px-4 py-2 text-right">{o.total}</td>
                   <td className="px-4 py-2 text-right text-slate-300">—</td>
                   <td className="px-4 py-2 text-right text-slate-300">tracking only</td>
