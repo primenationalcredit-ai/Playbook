@@ -124,6 +124,35 @@ exports.handler = async (event) => {
       });
     }
 
+    // ------------------------------------------------------------------
+    // Stamp monitoring_site_set_at for backfilled deals so they CREDIT.
+    // Rule: deal has a monitoring_site + is in an early credit pipeline
+    // (New Leads / Reports / Quoted 2.0) + does NOT already have a set_at.
+    // Use deal update_time as the proxy for when the site was set.
+    const EARLY_CREDIT_PIPELINES = ['NEW LEADS', 'Reports', 'Quoted 2.0'];
+    try {
+      const pageIds = dealsToInsert.map(r => r.deal_id).filter(Boolean);
+      let existingSetAt = {};
+      if (SUPABASE_URL && SUPABASE_KEY && pageIds.length > 0) {
+        const exRes = await fetch(`${SUPABASE_URL}/rest/v1/cs_deals?deal_id=in.(${pageIds.join(',')})&select=deal_id,monitoring_site_set_at`, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+        });
+        if (exRes.ok) {
+          for (const row of await exRes.json()) {
+            if (row.monitoring_site_set_at) existingSetAt[String(row.deal_id)] = true;
+          }
+        }
+      }
+      for (const r of dealsToInsert) {
+        const alreadyStamped = existingSetAt[String(r.deal_id)];
+        const inEarlyPipeline = r.pipeline_name && EARLY_CREDIT_PIPELINES.includes(r.pipeline_name);
+        if (r.monitoring_site && inEarlyPipeline && !alreadyStamped) {
+          r.monitoring_site_set_at = r.deal_updated_at || new Date().toISOString();
+          r.monitoring_site_set_pipeline = r.pipeline_name;
+        }
+      }
+    } catch (e) { console.error('set_at stamping skipped:', e.message); }
+
     // Upsert this page (merge on deal_id). No delete-all, so chunked runs are safe.
     if (SUPABASE_URL && SUPABASE_KEY && dealsToInsert.length > 0) {
       const upsert = await fetch(`${SUPABASE_URL}/rest/v1/cs_deals?on_conflict=deal_id`, {
