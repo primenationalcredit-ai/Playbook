@@ -18,7 +18,9 @@ const WRITE_ACTIONS = new Set([
   'update_due_date', 'pause', 'resume', 'charge_now', 'refund_initial', 'refund_scheduled',
   // Card on file (save a card for a client, e.g. Zelle clients with no card yet)
   'update_card_on_file', 'collect_and_save_card',
-  'send_payment_form'
+  'send_payment_form',
+  // Split a scheduled charge into partial + remainder
+  'split_charge'
 ]);
 const ALLOWED = new Set([...READ_ONLY, ...WRITE_ACTIONS]);
 
