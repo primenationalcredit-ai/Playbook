@@ -441,7 +441,7 @@ function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} })
                 <DollarSign size={13} /> Update Card
               </button>
             )}
-            {(isAdmin || canRequest) && (
+            {(isAdmin || canRequest) && !(doc_fee && doc_fee.paid) && (
               <button
                 onClick={() => onAction({ type: 'send_payment_form', deal_id, client_name, client_email, client_phone, amount: (doc_fee && typeof doc_fee.balance === 'number' && doc_fee.balance > 0) ? doc_fee.balance : parseFloat((initial_payment && initial_payment.initial_amount) || 0) })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-semibold rounded hover:bg-green-700"
@@ -659,7 +659,7 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      {(isAdmin || canRequest) && (
+                      {(isAdmin || canRequest) && isToken && !(i.status === 'used' && i.transaction_id) && (
                         <button onClick={() => onAction({ type: 'send_payment_form', deal_id: i.pipedrive_deal_id, client_name: i.client_name, client_email: i.client_email, client_phone: i.client_phone, amount: (isToken ? i.initial_amount : i.amount) })}
                           className="inline-flex items-center gap-1 px-2 py-1 mr-1 text-[11px] font-semibold text-white bg-green-600 rounded hover:bg-green-700" title="Send payment form to client">
                           <Send size={11} /> Send
