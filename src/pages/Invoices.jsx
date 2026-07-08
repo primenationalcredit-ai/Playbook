@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 
 const PIPEDRIVE_DOMAIN = 'asapcredit';
+// Split-charge feature flag. Flip to true only after the full lifecycle test passes.
+const SPLIT_ENABLED = false;
 const DEAL_URL = (id) => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${id}`;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const RESTRICTED_LEADER_IDS = [
@@ -243,10 +245,12 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
                 <CalendarClock size={12} /> Edit Date
               </button>
+              {SPLIT_ENABLED && (
               <button onClick={() => onAction({ type: 'split_charge', charge_id: c.id, amount: c.amount, current_due_date: c.due_date })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded hover:bg-purple-700">
                 <Undo2 size={12} /> Split
               </button>
+              )}
               <button onClick={() => onAction({ type: 'pause_admin', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700">
                 <PauseCircle size={12} /> Pause
