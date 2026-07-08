@@ -507,7 +507,7 @@ exports.handler = async (event) => {
         const diff = Math.abs(t - docAmt);
         if (docAmt > 0 && diff <= 1 && diff < best) { best = diff; docIdx = i; }
       });
-      if (docIdx === -1) { let min = Infinity; invs.forEach((inv, i) => { const t = parseFloat(inv.total) || 0; if (t < min) { min = t; docIdx = i; } }); }
+      if (docIdx === -1 && !(invs.length === 1 && docAmt > 0)) { // a lone invoice that doesn't match the doc payment is a BALANCE invoice - don't discard it let min = Infinity; invs.forEach((inv, i) => { const t = parseFloat(inv.total) || 0; if (t < min) { min = t; docIdx = i; } }); }
       const nonDoc = invs.filter((_, i) => i !== docIdx);
 
       if (nonDoc.length === 0) return { qualified: false, reason: 'doc fee only, no balance invoice yet', paid: 0, owed: 0 };
