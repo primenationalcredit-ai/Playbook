@@ -243,6 +243,10 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
                 <CalendarClock size={12} /> Edit Date
               </button>
+              <button onClick={() => onAction({ type: 'split_charge', charge_id: c.id, amount: c.amount, current_due_date: c.due_date })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded hover:bg-purple-700">
+                <Undo2 size={12} /> Split
+              </button>
               <button onClick={() => onAction({ type: 'pause_admin', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700">
                 <PauseCircle size={12} /> Pause
@@ -897,6 +901,7 @@ export default function Invoices() {
   const openAction = (info) => {
     setModal(info);
     if (info.type === 'update_due_date') setForm({ new_due_date: '' });
+    else if (info.type === 'split_charge') setForm({ partial_amount: '', remainder_date: '' });
     else if (info.type === 'pause_admin') setForm({ pause_until_date: '', pause_indefinite: false });
     else if (info.type === 'request_date_change') setForm({ new_due_date: '', reason: '' });
     else if (info.type === 'request_pause') setForm({ pause_until_date: '', pause_indefinite: false, reason: '' });
@@ -964,6 +969,14 @@ export default function Invoices() {
         const r = await callApi('send_payment_form', { deal_id: modal.deal_id, client_name: modal.client_name, client_email: modal.client_email, client_phone: modal.client_phone, amount: modal.amount, channel: modal.channel });
         const sentVia = [r.sentSms && 'SMS', r.sentEmail && 'email'].filter(Boolean).join(' and ');
         setNotice({ type: 'success', text: `Payment form sent via ${sentVia || 'the selected channel'}.` });
+      } else if (modal.type === 'split_charge') {
+        const partial = parseFloat(form.partial_amount);
+        const orig = parseFloat(modal.amount);
+        if (!(partial > 0)) throw new Error('Enter a partial amount greater than 0');
+        if (partial >= orig) throw new Error('Partial must be less than the charge amount');
+        if (!form.remainder_date) throw new Error('Choose a date for the remainder');
+        await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, remainder_date: form.remainder_date });
+        setNotice({ type: 'success', text: 'Split into $' + partial.toFixed(2) + ' and $' + (orig - partial).toFixed(2) + '.' });
       }
       setTimeout(() => { setModal(null); loadPendingApprovals(); if (mode === 'browse') browse(); else lookup(dealInput); }, 1400);
     } catch (e) {
@@ -1102,6 +1115,29 @@ export default function Invoices() {
                 <input type="date" value={form.new_due_date || ''} onChange={e => setForm({ ...form, new_due_date: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
               </div>
+            )}
+
+            {modal.type === 'split_charge' && (
+              <>
+                <div className="mb-3 text-sm text-slate-600">
+                  Original charge: <b>${(parseFloat(modal.amount) || 0).toFixed(2)}</b> due {fmtDate(modal.current_due_date)}.
+                </div>
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Pay now (partial amount)</label>
+                  <input type="number" step="0.01" min="0.01" value={form.partial_amount || ''} onChange={e => setForm({ ...form, partial_amount: e.target.value })}
+                    placeholder="e.g. 150.00"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  <p className="text-[11px] text-slate-500 mt-1">Charges on the original due date ({fmtDate(modal.current_due_date)}).</p>
+                </div>
+                <div className="mb-3 px-3 py-2 bg-slate-50 rounded text-sm">
+                  Remainder: <b>${Math.max(0, (parseFloat(modal.amount) || 0) - (parseFloat(form.partial_amount) || 0)).toFixed(2)}</b>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Charge remainder on</label>
+                  <input type="date" value={form.remainder_date || ''} onChange={e => setForm({ ...form, remainder_date: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                </div>
+              </>
             )}
 
             {(modal.type === 'pause_admin' || modal.type === 'request_pause') && (
