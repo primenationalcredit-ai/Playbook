@@ -38,7 +38,7 @@
 # Active-client scan (CRS/Sold/Incomplete). Every 30 min during business window.
 # With PD_ACTIVE_PERSONS_FILTER set, one run completes a full refresh.
 [functions."am-pipeline-cache"]
-  schedule = "*/30 12-23 * * 1-6"
+  schedule = "*/5 12-23 * * 1-6"
 
 # Pre-warm the consultant bonus cache every 10 min during business hours so the page
 # always loads instantly off the cache instead of computing live.
