@@ -146,7 +146,8 @@ exports.handler = async (event) => {
       for (const r of dealsToInsert) {
         const alreadyStamped = existingSetAt[String(r.deal_id)];
         const inEarlyPipeline = r.pipeline_name && EARLY_CREDIT_PIPELINES.includes(r.pipeline_name);
-        if (r.monitoring_site && inEarlyPipeline && !alreadyStamped) {
+        const createdThisMonth = String(r.deal_created_at || '').slice(0,7) === new Date().toISOString().slice(0,7);
+        if (r.monitoring_site && inEarlyPipeline && !alreadyStamped && createdThisMonth) {
           r.monitoring_site_set_at = r.deal_updated_at || new Date().toISOString();
           r.monitoring_site_set_pipeline = r.pipeline_name;
         }
