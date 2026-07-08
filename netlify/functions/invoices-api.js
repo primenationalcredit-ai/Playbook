@@ -10,7 +10,7 @@ const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY;
 const PLAYBOOK_SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://kkcbpqbcpzcarxhknzza.supabase.co';
 const PLAYBOOK_SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
-const READ_ONLY = new Set(['get_deal', 'list_recent_invoices', 'list_pending_approvals', 'list_approval_messages']);
+const READ_ONLY = new Set(['get_deal', 'billing_overview', 'list_recent_invoices', 'list_pending_approvals', 'list_approval_messages']);
 const WRITE_ACTIONS = new Set([
   // Approval workflow (used by AMs and Consultants, and by admins reviewing)
   'request_date_change', 'request_pause', 'post_approval_message', 'approve_request', 'reject_request', 'mark_approval_read',

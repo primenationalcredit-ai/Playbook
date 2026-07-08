@@ -47,9 +47,9 @@ const chargeLabel = (idx, total) => {
 // match the payment processor's Authorize.net account that update_card_on_file
 // saves the card to. TEST values below mirror pay.html; swap to production
 // (js.authorize.net + production API Login ID / Client Key) before launch.
-const ACCEPT_JS_URL = 'https://jstest.authorize.net/v1/Accept.js';
-const AUTH_NET_API_LOGIN_ID = '9fxe738GPVX';
-const AUTH_NET_CLIENT_KEY = '727jMf46uPcCgbL32yjCDm54Ax928zd6kKh3yaQE29QyX4emHV2vgP6mXS9C47PU';
+const ACCEPT_JS_URL = 'https://js.authorize.net/v1/Accept.js';
+const AUTH_NET_API_LOGIN_ID = '28Rt3gAu5';
+const AUTH_NET_CLIENT_KEY = '23Cz947fH6EdMnj59seGRJjJTw93Fe78GDgEZQ4wFeBQULM7pgwRvNMDUWhQLR62';
 
 let _acceptJsPromise = null;
 function loadAcceptJs() {
@@ -849,6 +849,122 @@ function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
+
+// ===== Billing Overview (autobill ops dashboard) =====
+function MetricCard({ label, count, amount, tone }) {
+  const tones = {
+    green: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    red: 'border-red-200 bg-red-50 text-red-700',
+    blue: 'border-sky-200 bg-sky-50 text-sky-700'
+  };
+  return (
+    <div className={`rounded-xl border p-4 ${tones[tone] || tones.blue}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide opacity-70">{label}</p>
+      <p className="text-2xl font-bold mt-1">{fmtMoney(amount)}</p>
+      <p className="text-xs mt-0.5 opacity-70">{count} payment{count === 1 ? '' : 's'}</p>
+    </div>
+  );
+}
+
+function BillingRow({ r, showDecline }) {
+  const noCard = !r.customer_profile_id;
+  return (
+    <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-sm">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-slate-800 truncate">{r.client_name || 'Unknown'}</span>
+          <span className="font-bold text-slate-900">{fmtMoney(r.amount)}</span>
+          {noCard && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">NO CARD</span>}
+        </div>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Due {fmtDate(r.due_date)}
+          {r.client_phone ? ` · ${r.client_phone}` : ''}
+          {showDecline && r.decline_reason ? <span className="text-red-600 font-medium"> · {r.decline_reason}{r.decline_code ? ` (${r.decline_code})` : ''}</span> : null}
+          {showDecline && r.next_retry_date ? ` · retries ${fmtDate(r.next_retry_date)}` : (showDecline ? ' · no more retries' : '')}
+        </p>
+      </div>
+      {r.pipedrive_deal_id && (
+        <a href={DEAL_URL(r.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="shrink-0 text-asap-blue hover:underline inline-flex items-center gap-1 text-xs font-semibold">
+          Deal <ExternalLink size={11} />
+        </a>
+      )}
+    </div>
+  );
+}
+
+function BillingList({ title, icon, rows, emptyText, showDecline = false, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between p-4">
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+          {icon}{title}
+          <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{rows.length}</span>
+        </span>
+        {open ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {rows.length === 0
+            ? <p className="text-xs text-slate-400 italic">{emptyText}</p>
+            : rows.map(r => <BillingRow key={r.id} r={r} showDecline={showDecline} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BillingOverview() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [window_, setWindow_] = useState('month');
+
+  const load = async () => {
+    setLoading(true); setErr(null);
+    try {
+      const d = await callApi('billing_overview');
+      setData(d);
+    } catch (e) { setErr(e.message || 'Failed to load billing overview'); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  if (loading && !data) return <div className="text-sm text-slate-400 p-4">Loading billing overview…</div>;
+  if (err) return <div className="text-sm text-red-600 p-4">Billing overview failed: {err} <button onClick={load} className="underline font-semibold">Retry</button></div>;
+  if (!data) return null;
+
+  const m = (data.metrics || {})[window_] || {};
+  return (
+    <div className="space-y-3 mb-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-asap-blue flex items-center gap-2"><Zap size={16} /> Billing Overview</h2>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+            {['week','month','year'].map(w => (
+              <button key={w} onClick={() => setWindow_(w)}
+                className={`px-3 py-1.5 capitalize ${window_ === w ? 'bg-asap-blue text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                {w}
+              </button>
+            ))}
+          </div>
+          <button onClick={load} title="Refresh" className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <MetricCard label="Succeeded" tone="green" count={m.succeeded?.count || 0} amount={m.succeeded?.amount || 0} />
+        <MetricCard label="Declined (open)" tone="red" count={m.declined?.count || 0} amount={m.declined?.amount || 0} />
+        <MetricCard label="Recovered" tone="blue" count={m.recovered?.count || 0} amount={m.recovered?.amount || 0} />
+      </div>
+      <BillingList title="Due Today" icon={<AlarmClock size={15} className="text-amber-600" />} rows={data.due_today || []} emptyText="Nothing bills today." defaultOpen={true} />
+      <BillingList title="Upcoming (7 days)" icon={<CalendarClock size={15} className="text-sky-600" />} rows={data.upcoming_7_days || []} emptyText="Nothing scheduled in the next 7 days." />
+      <BillingList title="Declined — needs outreach" icon={<XCircle size={15} className="text-red-600" />} rows={data.declined_open || []} emptyText="No open declines. 🎉" showDecline={true} defaultOpen={true} />
+    </div>
+  );
+}
+// ===== End Billing Overview =====
 export default function Invoices() {
   const { currentUser } = useApp();
 
@@ -1045,6 +1161,8 @@ export default function Invoices() {
               : 'Track doc fees and scheduled payments. Read-only.'}
         </p>
       </div>
+      <BillingOverview />
+
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
         <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
