@@ -11,6 +11,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ROUND1_STARTED_FILTER = 523849; // CRS deals where RD 1 Start/End is set
 const F = {
   rd1: '6979c70df67f42c28dfcff39284ae17d564d600f',
+  rd2: 'ff3697496664744d64d9f290766f919f40c23aa0',
   rd3: '8d681007c089ee4c7390c02ee2f027ca60374708',
   rd4: '1d1bc8fbf1b8982640ef70131f010908788a7bd0',
 };
@@ -40,10 +41,11 @@ exports.handler = async () => {
       const r = await pdGet(`/deals?filter_id=${ROUND1_STARTED_FILTER}&start=${start}&limit=500`);
       for (const d of (r.data || [])) {
         const a = d[F.rd1] || null;   // RD1 start
+        const b = d[F.rd2] || null;   // RD2 start (for stuck-at-R1 detection)
         const c = d[F.rd3] || null;   // RD3 start
         const e = d[RD3_END] || null; // RD3 end
         const dd = d[F.rd4] || null;  // RD4 start
-        if (a || e || dd) out.push({ id: d.id, n: d.title || null, a, c, e, d: dd });
+        if (a || e || dd) out.push({ id: d.id, n: d.title || null, a, b, c, e, d: dd });
       }
       more = r.additional_data && r.additional_data.pagination && r.additional_data.pagination.more_items_in_collection;
       start = (r.additional_data && r.additional_data.pagination && r.additional_data.pagination.next_start) || (start + 500);

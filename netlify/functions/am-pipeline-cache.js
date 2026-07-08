@@ -269,6 +269,10 @@ async function publish(personData, complete, extra) {
   if (complete) {
     await writeCache('am_pipeline_full', { accountManagers: results, totalEvaluated: evaluated, totalStalled: stalledTotal, stallThresholdDays: STALL_MIN_DAYS, startWindowDays: { min: START_WINDOW_MIN_DAYS, max: START_WINDOW_MAX_DAYS }, paymentWindowDays: PAYMENT_WINDOW_DAYS, pastDueMinDays: PASTDUE_MIN_DAYS, basis: 'round_start_45_90d_logins_not_ready', complete, calculatedAt, ...extra });
     await writeCache('am_person_to_am', { personToAM, calculatedAt });
+    // dealId -> Update Status option id, for the credit-team cohort metric (bucketing + payment exclusion)
+    const dealStatus = {};
+    for (const pd of Object.values(personData)) { if (pd.dealId != null) dealStatus[String(pd.dealId)] = pd.statusId != null ? pd.statusId : null; }
+    await writeCache('am_deal_status', { dealStatus, calculatedAt });
   }
   return { managers: Object.keys(results).length, evaluated, stalledTotal, sample };
 }
