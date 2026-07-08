@@ -191,7 +191,8 @@ exports.handler = async (event) => {
     // caused reports to be missed). We never overwrite an existing set-date, so re-touching an already
     // credited deal keeps its original date (Marcel does not move); and the early-pipeline gate keeps
     // old SOLD/CRS deals from being stamped when they are edited.
-    const shouldCredit = !!monitoringSite && inCreditPipeline && !monitoringSiteSetAt;
+    const createdThisMonth = String(current.add_time || '').slice(0,7) === new Date().toISOString().slice(0,7);
+    const shouldCredit = !!monitoringSite && inCreditPipeline && !monitoringSiteSetAt && createdThisMonth;
 
     if (shouldCredit) {
       monitoringSiteSetAt = new Date().toISOString();
