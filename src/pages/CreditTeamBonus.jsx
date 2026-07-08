@@ -21,6 +21,12 @@ const META = {
   round3_results: { label: 'Round 3 Results Rate', cmp: 'gte',
     how: 'We look at the Round 3 result entries logged in the Master Dispute Tracking sheet, dated this month. Of those, how many had at least one item removed. That divided by the total is the percentage. Higher is better. The list below is this month’s Round 3 results, each marked removed or nothing removed.', listLabel: 'This month’s Round 3 results' },
 };
+const BUCKET_BADGE = {
+  payment: ['Payment', 'bg-amber-50 text-amber-700 border-amber-200'],
+  logins: ['Logins', 'bg-red-50 text-red-600 border-red-200'],
+  round2_in_progress: ['In Rd 2', 'bg-sky-50 text-sky-700 border-sky-200'],
+  other: ['Other', 'bg-slate-100 text-slate-500 border-slate-200'],
+};
 const ORDER = ['round3_cohort', 'ontime_r1', 'day4_delay', 'fourth_round', 'round3_results'];
 const stdText = (m) => {
   const c = META[m.key]?.cmp; const s = `${m.standard}${m.unit}`;
@@ -142,7 +148,7 @@ export default function CreditTeamBonus() {
                   </div>
                   {m.detail && (
                     <p className="text-xs text-slate-400 mt-1 ml-6">
-                      {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} reached Round 3 · ${m.detail.stalled} stalled (started 120 to 210 days ago)`}
+                      {m.key === 'round3_cohort' && `${m.detail.reachedR3} of ${m.detail.cohort} reached Round 3 · ${m.detail.stalled} stalled${m.detail.buckets ? ` (${m.detail.buckets.payment || 0} payment · ${m.detail.buckets.logins || 0} logins · ${m.detail.buckets.round2_in_progress || 0} in Rd 2 · ${m.detail.buckets.other || 0} other)` : ' (started 120 to 210 days ago)'}${m.detail.excludedPayment ? ` · ${m.detail.excludedPayment} excluded: payment hold at Rd 1` : ''}`}
                       {m.key === 'fourth_round' && `${m.detail.startedR4} of ${m.detail.endedR3In90d} clients who ended Round 3 in the last 90 days started a 4th round`}
                       {m.key === 'day4_delay' && `${m.detail.overdue} deal${m.detail.overdue === 1 ? '' : 's'} past 4 business days in Reports Received (queue of ${m.detail.queue})`}
                       {m.key === 'ontime_r1' && `${m.detail.dueOrLate} Round 1 deal${m.detail.dueOrLate === 1 ? '' : 's'} still in the submission filter`}
@@ -189,6 +195,9 @@ export default function CreditTeamBonus() {
                       <div className="border border-slate-200 rounded-lg divide-y max-h-72 overflow-auto">
                         {clients.map((c, i) => (
                           <div key={i} className="px-3 py-1.5 flex items-center justify-between gap-3 text-xs">
+                            {c.bucket && BUCKET_BADGE[c.bucket] && (
+                              <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${BUCKET_BADGE[c.bucket][1]}`}>{BUCKET_BADGE[c.bucket][0]}</span>
+                            )}
                             {c.dealId ? (
                               <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1 min-w-0">
                                 <span className="truncate">{c.name}</span><ExternalLink size={11} className="shrink-0" />

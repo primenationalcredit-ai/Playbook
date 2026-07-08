@@ -123,15 +123,38 @@ exports.handler = async (event) => {
     const cacheDeals = (cache && cache.deals) || [];
 
     // --- Metric 1: Round 3 Cohort Rate / Metric 4: 4th Round Started % (both from cached round dates) ---
+    // Per Astrid (2026-07-08): clients stuck at Round 1 BECAUSE OF PAYMENT are
+    // excluded from the cohort entirely; all other stalls stay counted but are
+    // bucketed by reason so the list is actionable.
+    const PAYMENT_STATUSES = new Set([1616, 1777]); // OWES MONEY *AUTO PILOT*, RD 1 DONE WANTS RESULTS (OWES MONEY)
+    const LOGIN_STATUSES = new Set([934, 937]);     // LOGINS NOT READY (INDIVIDUAL), ******CHECK LOGINS******
+    let dealStatusMap = {};
+    try {
+      const sr = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.am_deal_status&select=cache_value`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+      if (sr.ok) { const rows = await sr.json(); if (rows[0]) dealStatusMap = (JSON.parse(rows[0].cache_value).dealStatus) || {}; }
+    } catch (e) {}
+    const cohortExcludedPayment = [];
     let cohortDen = 0, cohortNum = 0, r4Den = 0, r4Num = 0;
     const cohortStalled = [], r4Started = [];
     const r3EndWindowStart = new Date(asOf.getTime() - 90 * 86400000); // 4th round: Round 3 ended in last 90 days
     for (const x of cacheDeals) {
-      const rd1 = parseDate(x.a), rd3 = parseDate(x.c), rd3end = parseDate(x.e), rd4 = parseDate(x.d);
+      const rd1 = parseDate(x.a), rd2 = parseDate(x.b), rd3 = parseDate(x.c), rd3end = parseDate(x.e), rd4 = parseDate(x.d);
       if (rd1 && rd1 <= cohortNewest && rd1 >= cohortOldest) {
-        cohortDen++;
-        if (rd3) cohortNum++;
-        else cohortStalled.push({ name: x.n || `Deal ${x.id}`, dealId: x.id || null });
+        const stRaw = dealStatusMap[String(x.id)];
+        const st = stRaw != null ? Number(stRaw) : null;
+        if (!rd2 && !rd3 && st != null && PAYMENT_STATUSES.has(st)) {
+          // Stuck at Round 1 on a payment hold: out of the cohort (per Astrid).
+          cohortExcludedPayment.push({ name: x.n || `Deal ${x.id}`, dealId: x.id || null, statusId: st });
+        } else {
+          cohortDen++;
+          if (rd3) cohortNum++;
+          else {
+            const bucket = st != null && PAYMENT_STATUSES.has(st) ? 'payment'
+              : st != null && LOGIN_STATUSES.has(st) ? 'logins'
+              : rd2 ? 'round2_in_progress' : 'other';
+            cohortStalled.push({ name: x.n || `Deal ${x.id}`, dealId: x.id || null, bucket, statusId: st });
+          }
+        }
       }
       if (rd3end && rd3end >= r3EndWindowStart && rd3end <= asOf) {
         r4Den++;
@@ -139,6 +162,8 @@ exports.handler = async (event) => {
       }
     }
     const round3CohortRate = cohortDen > 0 ? Math.round((cohortNum / cohortDen) * 100) : 0;
+    const stallBuckets = { payment: 0, logins: 0, round2_in_progress: 0, other: 0 };
+    for (const sb of cohortStalled) stallBuckets[sb.bucket] = (stallBuckets[sb.bucket] || 0) + 1;
     const fourthRoundRate = r4Den > 0 ? Math.round((r4Num / r4Den) * 100) : 0;
 
     // --- Day 4+ Delay (all rounds): deals in Reports Received past the 4-business-day window ---
@@ -191,7 +216,7 @@ exports.handler = async (event) => {
 
     const metrics = {
       round3_cohort: { value: round3CohortRate, standard: STD.round3_cohort, unit: '%', source: 'auto',
-        met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen, stalled: cohortDen - cohortNum, clients: cohortStalled.slice(0, 300) } },
+        met: round3CohortRate >= STD.round3_cohort, detail: { reachedR3: cohortNum, cohort: cohortDen, stalled: cohortDen - cohortNum, buckets: stallBuckets, excludedPayment: cohortExcludedPayment.length, excludedPaymentClients: cohortExcludedPayment.slice(0, 100), clients: cohortStalled.slice(0, 300) } },
       ontime_r1: { value: ontimeR1Rate, standard: STD.ontime_r1, unit: '%', source: 'auto',
         met: ontimeR1Rate >= STD.ontime_r1, detail: { dueOrLate: r1DueCount, clients: r1List.slice(0, 300) } },
       day4_delay: { value: day4Count, standard: STD.day4_delay, unit: '', source: 'auto',
