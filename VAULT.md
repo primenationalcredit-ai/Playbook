@@ -482,3 +482,129 @@ real clients. Do NOT rush Phase 2 same-day.
 ### Send to Client — see Sections 13b/13c/13d. Shipped, tested (SMS+email received), doc-fee-only,
   hidden when doc fee paid, button in both DealView and All Invoices list. Commits 860fa21, 3adb047,
   d27174e, 08af2c2, 4c089cd.
+
+---
+
+## 17. STALL-SYNC IS BROKEN (502 timeout) — POST-LAUNCH FIX (found 2026-07-07)
+- stall-sync.js does a FULL scan of all open deals (line ~97-113) AND all persons (line ~122-152),
+  paginated — thousands of records, many sequential Pipedrive calls, 30+ seconds. It is NOT a background
+  function (filename is stall-sync.js, no -background suffix) → hits Netlify's 10s limit → HTTP 502.
+  Confirmed: curl stall-sync?dryRun=1 returns 502.
+- It is also NOT scheduled in netlify.toml (no [functions."stall-sync"] block).
+- IMPACT: LOW right now. stall-webhook.js is live and keeps stall_clients current on every deal/person
+  event (the main path). stall-sync is the daily full-recompute BACKUP that also catches purely
+  time-based transitions (deals aging past 45/90 with no triggering event). That backup is currently
+  not running.
+- FIX (post-launch): rename stall-sync.js → stall-sync-background.js (background funcs get 15 min).
+  NOTE: background functions respond 202 immediately and DON'T return a body to the caller — so the
+  ?dryRun=1 return-counts behavior won't work the same; test by checking what it WRITES to stall_clients,
+  not by reading the HTTP response. Then add schedule in netlify.toml, e.g.:
+    [functions."stall-sync-background"]
+    schedule = "0 13 * * *"   # ~7am CT daily, catches overnight time-based aging
+  Update any code/docs that reference the old name. Test: run it, confirm stall_clients repopulates and
+  the AM dashboard rate still matches (Dex 27% / Raquel 32% / Zairen 33% baseline).
+- netlify.toml schedule format confirmed: [functions."NAME"] then schedule = "cron".
+
+---
+
+## 18. ZOHO PARTIAL-PAYMENT FOUNDATION — PROVEN WORKING (2026-07-07)
+Shared foundation for BOTH Section 14 (split-charge) and Section 15 Phase 2 (edit-agreement).
+
+### The key discovery
+markZohoInvoicePaidIdempotent (duplicated in 4 files: autobill-run, consultant-dashboard-api,
+link-zoho-invoice, process-initial-payment) does NOT hard-flip status to paid. It records a payment via
+Zoho's customerpayments API applying amount_applied = FULL balance. Zoho then auto-sets status. So the
+"marks whole invoice paid" behavior is just because it always applies the full balance.
+=> To support PARTIAL payments, apply a SMALLER amount. Zoho natively sets status to "partially_paid"
+   and keeps the remaining balance open. No manual status flipping needed.
+
+### The helper (built, TESTED, works)
+applyZohoPartialPayment({ invoiceId, amount, referenceNumber, description }):
+  - looks up invoice (balance, customer_id)
+  - caps amount at remaining balance (never over-applies)
+  - POSTs to /customerpayments with amount_applied = that amount
+  - re-reads invoice, returns { applied, remaining_balance, invoice_status }
+Same Zoho auth/API as the working code (ZOHO_ACCOUNT_REGION, ZOHO_REFRESH_TOKEN/CLIENT_ID/CLIENT_SECRET,
+customerpayments endpoint). It is a NEW helper — does NOT modify markZohoInvoicePaidIdempotent.
+
+### TEST RESULTS (real Zoho, test deal 267781 "Test Astridone", INV-051489, $149)
+- Applied $49 -> {applied:49, remaining_balance:100, status:"partially_paid"}  ✓
+- Dry-run confirmed balance 100, partially_paid  ✓
+- Applied remaining $100 -> {applied:100, remaining_balance:0, status:"paid"}  ✓
+Proven: partials apply exactly, remainder stays open, multiple partials sum and close correctly.
+
+### Tested via temp endpoint test-zoho-partial.js (committed ad08ee6, then DELETED after testing).
+It had a dry_run mode (read-only) + apply mode, gated by INTERNAL_API_KEY.
+
+### NEXT: add applyZohoPartialPayment as a real helper in consultant-dashboard-api.js, then build
+split-charge (Section 14) and edit-agreement (Section 15 Phase 2) on top of it. Each still needs its own
+test pass on a test deal before going live.
+
+### SECURITY TODO: INTERNAL_API_KEY was exposed during testing — ROTATE it (new value in Netlify on the
+payment processor, and update PAYMENT_API_KEY on the Playbook to match).
+
+---
+
+## 19. SPLIT-CHARGE — FULLY BUILT, GATED OFF, UNPROVEN (2026-07-07)
+
+### STATUS: deployed but HIDDEN. `SPLIT_ENABLED = false` (Invoices.jsx line 8).
+Flip to `true` ONLY after the full lifecycle test below passes.
+
+### What it does
+Staff-initiated. Reduce a scheduled_charge to a partial amount (SAME due date), create a NEW
+scheduled_charge for the remainder on a staff-chosen date. Both share the SAME zoho_invoice_id.
+When each auto-bills, applyZohoPartialPayment applies its amount as a partial, so the Zoho invoice
+only closes once BOTH have cleared.
+
+### Commits
+- payment processor 9f36f9c — applyZohoPartialPayment added to autobill-run.js (line 570), unused
+- payment processor 87271b6 — autobill call site (line 152) switched to applyZohoPartialPayment,
+  param expectedAmount -> amount. SAFE: normal charge amount == full balance == fully pays as before.
+  markZohoInvoicePaidIdempotent still in file (line 507) = instant revert (2-line change back).
+- payment processor d601ea4 — handleSplitCharge (line 733), switch case (134), SYSTEM_WRITE_ACTIONS (84)
+- Playbook 9de4322 — split_charge added to invoices-api WRITE_ACTIONS (line 23)
+- Playbook 36e0a6b — UI: Split button, modal body, submit case, form init
+- Playbook 46be872 — SPLIT_ENABLED flag gate (button hidden)
+
+### handleSplitCharge safety design
+- Validates: partial > 0, partial < original, remainder >= $0.01, date YYYY-MM-DD,
+  status in (scheduled|failed|paused)
+- Reduces original via PATCH (amount only; due_date untouched)
+- Creates remainder by COPYING the whole original row, then deleting DB-generated/charge-result
+  fields (id, created_at, updated_at, transaction_id, auth_code, paid_at, charged_at,
+  next_retry_date, retry_count, last_decline_reason, claimed_at) and overriding
+  amount / due_date / status='scheduled' / sequence_number(+100).
+  => guarantees the remainder inherits customer_profile_id, payment_profile_id, zoho_invoice_id,
+     pipedrive_deal_id, client_name (everything autobill needs). No hand-picked column list.
+- ROLLBACK: if the remainder insert fails, the original amount is restored.
+- Posts a Pipedrive note documenting the split.
+
+### VALIDATION DONE
+- node --check on all backend files: pass
+- @babel/parser JSX parse of Invoices.jsx: OK
+- `npx vite build`: builds clean (this is the real check; brace-counting alone let a mangled
+  template-literal line through earlier — see gotcha below)
+
+### *** REQUIRED BEFORE GOING LIVE ***
+1. Confirm the AUTOBILL change is safe on NORMAL charges. autobill cron = `0 */8 * * *`
+   (00:00 / 08:00 / 16:00 UTC = 6 PM / 2 AM / 10 AM Mountain). After a run:
+     - Netlify > payment-processor > Functions > autobill-run > latest log: no Zoho errors
+     - Pick a charged client's Zoho invoice: status `paid`, balance $0
+     - Pipedrive AUTOBILL SUCCESS note looks normal
+   If an invoice sits at `partially_paid` when it should be closed -> REVERT autobill line 152/154
+   back to markZohoInvoicePaidIdempotent / expectedAmount.
+2. Split lifecycle test on a TEST DEAL: split a charge -> verify rows (original reduced, remainder
+   created, same zoho_invoice_id, note posted) -> let BOTH pieces auto-bill naturally -> verify Zoho
+   closes only after the second clears, cards charged correctly, no double-charge, no orphan rows.
+3. Only then set SPLIT_ENABLED = true.
+
+### GOTCHA LEARNED (important for future PowerShell JSX edits)
+Building a JS template literal inside a PowerShell double-quoted string mangles it. A line that
+brace-counted as balanced was actually invalid JS:
+  BAD  -> text: Split into +'$'+${partial.toFixed(2)} ...
+  FIXED-> text: 'Split into $' + partial.toFixed(2) + ' and $' + (orig - partial).toFixed(2) + '.'
+Use plain string concatenation, or splice JSX in from a downloaded file. And ALWAYS validate with
+`npx vite build` or @babel/parser, never brace-count alone.
+
+### NOTE: netlify.toml comment above the autobill cron is stale (says "daily", says 14:00 UTC).
+Actual cron is `0 */8 * * *`. Cosmetic; fix when convenient.
