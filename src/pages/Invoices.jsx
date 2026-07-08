@@ -3,7 +3,7 @@ import { Search, Send, ExternalLink, RefreshCw, FileText, AlertTriangle, CheckCi
 import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 
-const PIPEDRIVE_DOMAIN = 'asapcredit';
+const PIPEDRIVE_DOMAIN = 'asapcreditrepair';
 // Split-charge feature flag. Flip to true only after the full lifecycle test passes.
 const SPLIT_ENABLED = false;
 const DEAL_URL = (id) => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${id}`;
