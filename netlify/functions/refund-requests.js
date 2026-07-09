@@ -180,7 +180,7 @@ exports.handler = async (event) => {
       if (!b.request_id || !b.check_number) return respond(400, { error: 'request_id and check_number required' });
       const lead = await supa(`users?email=eq.${encodeURIComponent(String(b.requested_by || '').trim().toLowerCase())}&department=eq.leadership&select=id`);
       if (!Array.isArray(lead.json) || lead.json.length === 0) return respond(403, { error: 'Only leadership can record checks' });
-      const rows = await supa(`refund_requests?id=eq.${b.request_id}&select=id,status,pipedrive_deal_id,client_name,check_amount`);
+      const rows = await supa(`refund_requests?id=eq.${b.request_id}&select=id,status,pipedrive_deal_id,client_name,client_email,check_amount,card_refunded_amount`);
       const req = (rows.json || [])[0];
       if (!req) return respond(404, { error: 'Request not found' });
       if (req.status !== 'check_needed') return respond(409, { error: `Request is ${req.status} - checks are recorded on check-needed requests` });
@@ -191,7 +191,23 @@ exports.handler = async (event) => {
       if (upd.ok) {
         await postNote(req.pipedrive_deal_id, `<p><b>\u{1F4E8} REFUND CHECK MAILED</b></p><ul><li>Client: ${esc(req.client_name)}</li><li>Amount: <b>$${(parseFloat(req.check_amount) || 0).toFixed(2)}</b></li><li>Check #: ${esc(b.check_number)}</li><li>Mailed: ${esc(b.mailed_date || new Date().toISOString().slice(0, 10))}</li></ul>`);
       }
-      return respond(upd.ok ? 200 : 500, upd.ok ? { success: true } : { error: 'update failed' });
+      let email_sent = false;
+      if (upd.ok && req.client_email) {
+        try {
+          const n = await fetch(`${process.env.PROCESSOR_URL || 'https://asap-payment-processor.netlify.app'}/.netlify/functions/notify-refund-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': process.env.PAYMENT_API_KEY || '' },
+            body: JSON.stringify({
+              mode: 'check', to: req.client_email, client_name: req.client_name,
+              check_amount: req.check_amount, check_number: String(b.check_number),
+              mailed_date: b.mailed_date || new Date().toISOString().slice(0, 10),
+              card_amount: req.card_refunded_amount || 0
+            })
+          });
+          email_sent = ((await n.json()) || {}).email_sent === true;
+        } catch (e) {}
+      }
+      return respond(upd.ok ? 200 : 500, upd.ok ? { success: true, email_sent } : { error: 'update failed' });
     }
 
     // ---------------- LIST ----------------

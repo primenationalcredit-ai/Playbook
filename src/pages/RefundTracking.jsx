@@ -710,12 +710,15 @@ function PendingRequests({ currentUser }) {
   const markCheckMailed = async (r) => {
     const num = window.prompt(`Check number for ${r.client_name} ($${(parseFloat(r.check_amount) || 0).toFixed(2)}):`);
     if (!num) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const mailedDate = window.prompt('Date the check was mailed (yyyy-mm-dd):', today);
+    if (mailedDate === null) return;
     setBusy(true);
     try {
-      const resp = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'check_mailed', request_id: r.id, check_number: num, requested_by: currentUser?.email }) });
+      const resp = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'check_mailed', request_id: r.id, check_number: num, mailed_date: mailedDate || today, requested_by: currentUser?.email }) });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
-      window.alert('Check recorded - request closed.');
+      window.alert('Check recorded - request closed.' + (d.email_sent ? ' Client emailed.' : ' (No client email sent - check email on file.)'));
       await load();
     } catch (e) { window.alert(e.message); }
     setBusy(false);
