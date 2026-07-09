@@ -155,6 +155,26 @@ exports.handler = async (event) => {
       return respond(upd.ok ? 200 : 500, upd.ok ? { success: true } : { error: 'update failed' });
     }
 
+    // ---------------- ROUTE TO CHECK (skip the card attempt entirely) ----------------
+    if (b.action === 'route_to_check') {
+      if (!b.request_id) return respond(400, { error: 'request_id required' });
+      const lead = await supa(`users?email=eq.${encodeURIComponent(String(b.requested_by || '').trim().toLowerCase())}&department=eq.leadership&select=id`);
+      if (!Array.isArray(lead.json) || lead.json.length === 0) return respond(403, { error: 'Only leadership can route refunds' });
+      const rows = await supa(`refund_requests?id=eq.${b.request_id}&select=id,status,amount,card_refunded_amount,pipedrive_deal_id,client_name`);
+      const req = (rows.json || [])[0];
+      if (!req) return respond(404, { error: 'Request not found' });
+      if (req.status !== 'ready_to_pay') return respond(409, { error: `Request is ${req.status} - only ready-to-pay refunds can be routed to check` });
+      const remaining = Math.max(0, Math.round(((parseFloat(req.amount) || 0) - (parseFloat(req.card_refunded_amount) || 0)) * 100) / 100);
+      const upd = await supa(`refund_requests?id=eq.${b.request_id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'check_needed', check_amount: remaining })
+      });
+      if (upd.ok) {
+        await postNote(req.pipedrive_deal_id, `<p><b>\u{1F4B5} REFUND ROUTED TO CHECK</b></p><ul><li>Client: ${esc(req.client_name)}</li><li>Amount: <b>$${remaining.toFixed(2)}</b> by check (card refund skipped)</li><li>By: ${esc(b.requested_by || 'leadership')}</li></ul>`);
+      }
+      return respond(upd.ok ? 200 : 500, upd.ok ? { success: true, check_amount: remaining } : { error: 'update failed' });
+    }
+
     // ---------------- CHECK MAILED (closes a check_needed request) ----------------
     if (b.action === 'check_mailed') {
       if (!b.request_id || !b.check_number) return respond(400, { error: 'request_id and check_number required' });

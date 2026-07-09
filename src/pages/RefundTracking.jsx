@@ -695,6 +695,18 @@ function PendingRequests({ currentUser }) {
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
+  const payByCheck = async (r) => {
+    const remaining = Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.card_refunded_amount) || 0));
+    if (!window.confirm(`Skip the card and pay ${r.client_name}'s $${remaining.toFixed(2)} refund by check?`)) return;
+    setBusy(true);
+    try {
+      const resp = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'route_to_check', request_id: r.id, requested_by: currentUser?.email }) });
+      const d = await resp.json();
+      if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
+      await load();
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
   const markCheckMailed = async (r) => {
     const num = window.prompt(`Check number for ${r.client_name} ($${(parseFloat(r.check_amount) || 0).toFixed(2)}):`);
     if (!num) return;
@@ -719,6 +731,9 @@ function PendingRequests({ currentUser }) {
               <span className="font-semibold">{r.client_name || 'Unknown'}</span>
               <span className="text-gray-500"> - ${parseFloat(r.amount || 0).toFixed(2)} - deal {r.pipedrive_deal_id}</span>
               <span className="ml-2 text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">{(r.status || '').replace(/_/g, ' ')}</span>
+            {(r.release_signed_at || ['ready_to_pay', 'check_needed', 'check_mailed', 'card_refunded'].includes(r.status)) && (
+              <span className="ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title={r.release_signed_at ? `Release signed ${String(r.release_signed_at).slice(0, 10)}` : 'Release signed'}>&#10003; Release signed - OK to pay</span>
+            )}
               <p className="text-xs text-gray-500 mt-0.5">By {r.requested_by_name || r.requested_by || 'unknown'}: {r.reason}{r.rounds_started ? ' (rounds started - release required)' : ''}</p>
             </div>
             {isLeader && r.status === 'pending' && (
@@ -731,7 +746,10 @@ function PendingRequests({ currentUser }) {
               <button disabled={busy} onClick={() => sendRelease(r.id)} className="px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">Send Release</button>
             )}
             {isLeader && r.status === 'ready_to_pay' && (
-              <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Pay Refund</button>
+              <div className="flex items-center gap-2">
+                <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Refund to Card</button>
+                <button disabled={busy} onClick={() => payByCheck(r)} className="px-3 py-1 text-xs font-semibold text-white bg-slate-700 rounded hover:bg-slate-800 disabled:opacity-50">Pay by Check</button>
+              </div>
             )}
             {isLeader && r.status === 'check_needed' && (
               <div className="flex items-center gap-2">
