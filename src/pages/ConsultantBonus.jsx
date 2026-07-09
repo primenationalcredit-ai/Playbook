@@ -1187,7 +1187,13 @@ export default function ConsultantBonus() {
               <ClientPanel title={`Affiliate Clients — ${c.affiliateRate}`} items={c.clientDetail.affiliateClients} onClose={() => setExpandedSection(null)} />
             )}
           </div>
+          {(c.refundDeduction || 0) > 0 && (
+            <div className="flex justify-between"><span className="text-red-600"><Tip text="Payroll deduction from refunds recorded this month (10% VA / 14% regular of each refund).">Refund Deductions ({c.refundCount})</Tip></span><span className="font-medium text-red-600">-{fmt(c.refundDeduction)}</span></div>
+          )}
           <div className="flex justify-between pt-2 border-t font-bold"><span>Total Commission</span><span className="text-green-600">{fmt(c.totalCommission)}</span></div>
+          {(c.refundDeduction || 0) > 0 && (
+            <div className="flex justify-between font-bold"><span>Net After Refund Deductions</span><span className="text-slate-800">{fmt((c.totalCommission || 0) - (c.refundDeduction || 0))}</span></div>
+          )}
         </div>
       </div>
 
