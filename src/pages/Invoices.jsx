@@ -953,6 +953,21 @@ function BillingOverview() {
           </button>
         </div>
       </div>
+      {(() => {
+        const na = data.needs_attention || {};
+        const items = [
+          na.sold_without_card_capture > 0 && `${na.sold_without_card_capture} sold without card capture`,
+          na.paid_no_agreement > 0 && `${na.paid_no_agreement} paid without agreement`,
+          na.agreement_no_billing > 0 && `${na.agreement_no_billing} agreement but no billing`,
+          na.links_missing_invoice_recent > 0 && `${na.links_missing_invoice_recent} new links missing invoice`
+        ].filter(Boolean);
+        if (!items.length) return null;
+        return (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 font-medium">
+            ⚠ Needs attention: {items.join(' · ')}
+          </div>
+        );
+      })()}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <MetricCard label="Succeeded" tone="green" count={m.succeeded?.count || 0} amount={m.succeeded?.amount || 0} />
         <MetricCard label="Declined (open)" tone="red" count={m.declined?.count || 0} amount={m.declined?.amount || 0} />
