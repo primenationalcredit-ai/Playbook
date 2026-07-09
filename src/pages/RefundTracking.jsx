@@ -144,11 +144,13 @@ export default function RefundTracking() {
     };
 
     try {
-      const { error } = await supabase
-        .from('refunds')
-        .insert([refundData]);
-
-      if (error) throw error;
+      const resp = await fetch('/.netlify/functions/record-refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(refundData)
+      });
+      const result = await resp.json();
+      if (!resp.ok || result.error) throw new Error(result.error || 'Record refund failed');
 
       setShowModal(false);
       setFormData({
@@ -514,6 +516,19 @@ export default function RefundTracking() {
                   value={formData.client_email}
                   onChange={(e) => setFormData(prev => ({ ...prev, client_email: e.target.value }))}
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg"
+                />
+              </div>
+
+              {/* Pipedrive Deal ID - enables payment matching + deal note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pipedrive Deal ID *</label>
+                <input
+                  type="text"
+                  value={formData.pipedrive_deal_id}
+                  onChange={(e) => setFormData(prev => ({ ...prev, pipedrive_deal_id: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg"
+                  placeholder="e.g. 267682"
+                  required
                 />
               </div>
 

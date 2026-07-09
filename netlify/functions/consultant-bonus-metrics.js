@@ -232,7 +232,7 @@ exports.handler = async (event) => {
     // Get refunds for refund rate
     let refunds = [];
     try {
-      refunds = await supaGet('refund_tracking', `refund_date=gte.${monthStart}&select=*`);
+      refunds = await supaGet('refunds', `refund_date=gte.${monthStart}&select=*`);
     } catch(e) { /* table may not exist yet */ }
 
     // Get invoice data for collection metrics
