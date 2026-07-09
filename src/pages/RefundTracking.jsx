@@ -248,6 +248,8 @@ export default function RefundTracking() {
         </div>
       </div>
 
+      <PendingRequests currentUser={currentUser} />
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -636,6 +638,57 @@ export default function RefundTracking() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+function PendingRequests({ currentUser }) {
+  const [reqs, setReqs] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const isLeader = currentUser?.department === 'leadership';
+  const load = async () => {
+    try {
+      const r = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list' }) });
+      const d = await r.json();
+      setReqs((d.requests || []).filter(x => ['pending','awaiting_signature','ready_to_pay','check_needed'].includes(x.status)));
+    } catch (e) {}
+  };
+  useEffect(() => { load(); }, []);
+  const decide = async (id, decision) => {
+    let denial_reason = null;
+    if (decision === 'denied') { denial_reason = window.prompt('Reason for denial (required):'); if (!denial_reason) return; }
+    setBusy(true);
+    try {
+      const r = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'decide', request_id: id, decision, decided_by: currentUser?.email, denial_reason }) });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || 'Failed');
+      await load();
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
+  if (reqs.length === 0) return null;
+  return (
+    <div className="bg-white rounded-xl border border-amber-200 p-5 mb-6">
+      <h2 className="font-bold text-gray-900 mb-3">Refund Requests ({reqs.length})</h2>
+      <div className="space-y-2">
+        {reqs.map(r => (
+          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
+            <div>
+              <span className="font-semibold">{r.client_name || 'Unknown'}</span>
+              <span className="text-gray-500"> - ${parseFloat(r.amount || 0).toFixed(2)} - deal {r.pipedrive_deal_id}</span>
+              <span className="ml-2 text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">{(r.status || '').replace(/_/g, ' ')}</span>
+              <p className="text-xs text-gray-500 mt-0.5">By {r.requested_by_name || r.requested_by || 'unknown'}: {r.reason}{r.rounds_started ? ' (rounds started - release required)' : ''}</p>
+            </div>
+            {isLeader && r.status === 'pending' && (
+              <div className="flex gap-2">
+                <button disabled={busy} onClick={() => decide(r.id, 'approved')} className="px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">Approve</button>
+                <button disabled={busy} onClick={() => decide(r.id, 'denied')} className="px-3 py-1 text-xs font-semibold text-white bg-red-500 rounded hover:bg-red-600 disabled:opacity-50">Deny</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

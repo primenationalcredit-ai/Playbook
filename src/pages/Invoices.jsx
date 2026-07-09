@@ -153,13 +153,10 @@ function DocFeeCard({ token, isAdmin, onAction }) {
       </div>
       {isAdmin && isPaid && !refunded && (
         <div className="pt-3 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={() => onAction({ type: 'refund_initial', token_id: token.id, amount: token.initial_amount, cardLast4: token.card_last_4 })}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700"
-          >
-            <Undo2 size={12} /> Refund {fmtMoney(token.initial_amount)}
-          </button>
+          <RequestRefundButton
+            amount={token.initial_amount}
+            payload={{ pipedrive_deal_id: token.pipedrive_deal_id, client_name: token.client_name, client_email: token.client_email, amount: token.initial_amount, refund_type: 'initial', token_id: token.id }}
+          />
         </div>
       )}
     </div>
@@ -1359,5 +1356,32 @@ export default function Invoices() {
         </div>
       )}
     </div>
+  );
+}
+
+
+function RequestRefundButton({ amount, payload }) {
+  const { currentUser } = useApp();
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    const reason = window.prompt('Reason for this refund request (required):');
+    if (!reason || !reason.trim()) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/.netlify/functions/refund-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'submit', ...payload, reason: reason.trim(), requested_by: currentUser?.email || null, requested_by_name: currentUser?.name || null })
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || 'Request failed');
+      window.alert('Refund request #' + d.request_id + ' submitted for leadership approval.' + (d.rounds_started ? ' Client has started rounds - a signed release will be required before payment.' : ''));
+    } catch (e) { window.alert('Could not submit request: ' + e.message); }
+    setBusy(false);
+  };
+  return (
+    <button type="button" onClick={submit} disabled={busy}
+      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50">
+      <Undo2 size={12} /> {busy ? 'Submitting...' : `Request Refund ${fmtMoney(amount)}`}
+    </button>
   );
 }
