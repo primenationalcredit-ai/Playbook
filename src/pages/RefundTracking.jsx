@@ -667,6 +667,17 @@ function PendingRequests({ currentUser }) {
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
+  const sendRelease = async (id) => {
+    setBusy(true);
+    try {
+      const r = await fetch('/.netlify/functions/send-release', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: id, requested_by: currentUser?.email }) });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || 'Failed');
+      window.alert('Release sent to client. Email: ' + (d.email_sent ? 'sent' : 'not sent') + ' - SMS: ' + (d.sms_sent ? 'sent' : 'not sent'));
+      await load();
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
   if (reqs.length === 0) return null;
   return (
     <div className="bg-white rounded-xl border border-amber-200 p-5 mb-6">
@@ -685,6 +696,9 @@ function PendingRequests({ currentUser }) {
                 <button disabled={busy} onClick={() => decide(r.id, 'approved')} className="px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">Approve</button>
                 <button disabled={busy} onClick={() => decide(r.id, 'denied')} className="px-3 py-1 text-xs font-semibold text-white bg-red-500 rounded hover:bg-red-600 disabled:opacity-50">Deny</button>
               </div>
+            )}
+            {isLeader && r.status === 'awaiting_signature' && (
+              <button disabled={busy} onClick={() => sendRelease(r.id)} className="px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">Send Release</button>
             )}
           </div>
         ))}

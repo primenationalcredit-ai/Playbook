@@ -142,6 +142,19 @@ exports.handler = async (event) => {
       return respond(200, { success: true, status: newStatus });
     }
 
+    // ---------------- RELEASE SIGNED (called by processor submit-release) ----------------
+    if (b.action === 'release_signed') {
+      if (!b.request_id) return respond(400, { error: 'request_id required' });
+      const rows = await supa(`refund_requests?id=eq.${b.request_id}&select=id,status`);
+      const req = (rows.json || [])[0];
+      if (!req) return respond(404, { error: 'Request not found' });
+      const upd = await supa(`refund_requests?id=eq.${b.request_id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'ready_to_pay', release_signed_at: new Date().toISOString(), release_agreement_id: b.release_id || null })
+      });
+      return respond(upd.ok ? 200 : 500, upd.ok ? { success: true } : { error: 'update failed' });
+    }
+
     // ---------------- LIST ----------------
     if (b.action === 'list') {
       const filter = b.status ? `status=eq.${encodeURIComponent(b.status)}&` : '';
