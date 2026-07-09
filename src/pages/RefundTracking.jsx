@@ -678,6 +678,36 @@ function PendingRequests({ currentUser }) {
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
+  const payRefund = async (r) => {
+    const amtStr = window.prompt('Refund amount to attempt on the card(s):', String(r.amount || ''));
+    if (amtStr === null) return;
+    const amt = parseFloat(amtStr);
+    if (!amt || amt <= 0) { window.alert('Enter a positive amount.'); return; }
+    if (!window.confirm(`Attempt to refund $${amt.toFixed(2)} to ${r.client_name}'s card(s) now?`)) return;
+    setBusy(true);
+    try {
+      const resp = await fetch('/.netlify/functions/pay-refund', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: r.id, amount: amt, requested_by: currentUser?.email }) });
+      const d = await resp.json();
+      if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
+      const lines = (d.results || []).map(x => x.ok ? `OK  $${x.amount.toFixed(2)} -> ${x.card}` : `FAIL ${x.source}: ${x.error}`).join('\n');
+      window.alert(`Refunded to card: $${(d.refunded_to_card || 0).toFixed(2)}\n` + (d.check_needed > 0 ? `CHECK NEEDED: $${d.check_needed.toFixed(2)}` : 'Fully covered - request closed as card refunded') + (lines ? `\n\n${lines}` : '') + (d.no_candidates ? '\n\nNo refundable card transactions were found on this deal.' : ''));
+      await load();
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
+  const markCheckMailed = async (r) => {
+    const num = window.prompt(`Check number for ${r.client_name} ($${(parseFloat(r.check_amount) || 0).toFixed(2)}):`);
+    if (!num) return;
+    setBusy(true);
+    try {
+      const resp = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'check_mailed', request_id: r.id, check_number: num, requested_by: currentUser?.email }) });
+      const d = await resp.json();
+      if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
+      window.alert('Check recorded - request closed.');
+      await load();
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
   if (reqs.length === 0) return null;
   return (
     <div className="bg-white rounded-xl border border-amber-200 p-5 mb-6">
@@ -699,6 +729,16 @@ function PendingRequests({ currentUser }) {
             )}
             {isLeader && r.status === 'awaiting_signature' && (
               <button disabled={busy} onClick={() => sendRelease(r.id)} className="px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">Send Release</button>
+            )}
+            {isLeader && r.status === 'ready_to_pay' && (
+              <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Pay Refund</button>
+            )}
+            {isLeader && r.status === 'check_needed' && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-rose-600">Check: ${(parseFloat(r.check_amount) || 0).toFixed(2)}</span>
+                <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Retry Card</button>
+                <button disabled={busy} onClick={() => markCheckMailed(r)} className="px-3 py-1 text-xs font-semibold text-white bg-slate-700 rounded hover:bg-slate-800 disabled:opacity-50">Mark Check Mailed</button>
+              </div>
             )}
           </div>
         ))}

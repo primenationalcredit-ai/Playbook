@@ -155,6 +155,25 @@ exports.handler = async (event) => {
       return respond(upd.ok ? 200 : 500, upd.ok ? { success: true } : { error: 'update failed' });
     }
 
+    // ---------------- CHECK MAILED (closes a check_needed request) ----------------
+    if (b.action === 'check_mailed') {
+      if (!b.request_id || !b.check_number) return respond(400, { error: 'request_id and check_number required' });
+      const lead = await supa(`users?email=eq.${encodeURIComponent(String(b.requested_by || '').trim().toLowerCase())}&department=eq.leadership&select=id`);
+      if (!Array.isArray(lead.json) || lead.json.length === 0) return respond(403, { error: 'Only leadership can record checks' });
+      const rows = await supa(`refund_requests?id=eq.${b.request_id}&select=id,status,pipedrive_deal_id,client_name,check_amount`);
+      const req = (rows.json || [])[0];
+      if (!req) return respond(404, { error: 'Request not found' });
+      if (req.status !== 'check_needed') return respond(409, { error: `Request is ${req.status} - checks are recorded on check-needed requests` });
+      const upd = await supa(`refund_requests?id=eq.${b.request_id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'check_mailed', check_number: String(b.check_number), check_mailed_date: b.mailed_date || new Date().toISOString().slice(0, 10) })
+      });
+      if (upd.ok) {
+        await postNote(req.pipedrive_deal_id, `<p><b>\u{1F4E8} REFUND CHECK MAILED</b></p><ul><li>Client: ${esc(req.client_name)}</li><li>Amount: <b>$${(parseFloat(req.check_amount) || 0).toFixed(2)}</b></li><li>Check #: ${esc(b.check_number)}</li><li>Mailed: ${esc(b.mailed_date || new Date().toISOString().slice(0, 10))}</li></ul>`);
+      }
+      return respond(upd.ok ? 200 : 500, upd.ok ? { success: true } : { error: 'update failed' });
+    }
+
     // ---------------- LIST ----------------
     if (b.action === 'list') {
       const filter = b.status ? `status=eq.${encodeURIComponent(b.status)}&` : '';
