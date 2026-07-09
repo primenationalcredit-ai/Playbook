@@ -948,7 +948,8 @@ exports.handler = async (event) => {
         return rOwner.includes(firstName) || (lastName.length > 3 && rOwner.includes(lastName));
       });
       const refundCount = myRefunds.length;
-      const refundAmount = myRefunds.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+      const refundAmount = myRefunds.reduce((sum, r) => sum + (parseFloat(r.refund_amount) || parseFloat(r.amount) || 0), 0);
+      const refundDeduction = myRefunds.reduce((sum, r) => sum + (parseFloat(r.deduction_amount) || 0), 0);
 
       // === WEEKLY SPRINT (all weeks in the month) ===
       const weeks = [];
@@ -1160,7 +1161,7 @@ exports.handler = async (event) => {
         docFeeClients: docFeeClientKeys.size,
         paidPastDocClients: paidPastDocCount,
         meetsPayPastDocStandard: payPastDocRate >= 84,
-        refundCount, refundAmount,
+        refundCount, refundAmount, refundDeduction,
         // KPIs
         onboardedClients, affiliateClientsAdded, organicClientsAdded,
         avgDealValue, revenuePerConsult, projectedSales, dailyAvgSales,
