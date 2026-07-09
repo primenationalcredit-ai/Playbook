@@ -1162,6 +1162,7 @@ exports.handler = async (event) => {
         paidPastDocClients: paidPastDocCount,
         meetsPayPastDocStandard: payPastDocRate >= 84,
         refundCount, refundAmount, refundDeduction,
+        refundClients: myRefunds.map(r => ({ name: r.client_name || 'Unknown', amount: parseFloat(r.refund_amount) || parseFloat(r.amount) || 0, deduction: parseFloat(r.deduction_amount) || 0, pct: parseFloat(r.deduction_percentage) || 0, date: r.refund_date || null, dealId: r.pipedrive_deal_id || null })),
         // KPIs
         onboardedClients, affiliateClientsAdded, organicClientsAdded,
         avgDealValue, revenuePerConsult, projectedSales, dailyAvgSales,

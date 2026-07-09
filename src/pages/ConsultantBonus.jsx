@@ -1213,6 +1213,14 @@ export default function ConsultantBonus() {
             <p className="text-xs text-slate-500"><Tip text="Number of refunds processed for your clients this month.">Refunds</Tip></p>
             <p className="text-lg font-bold">{c.refundCount || 0}</p>
             <p className="text-xs">{c.refundCount === 0 ? '✅ No refunds' : `⚠️ ${fmt(c.refundAmount)} refunded - ${fmt(c.refundDeduction || 0)} payroll deduction`}</p>
+            {(c.refundClients || []).length > 0 && (
+              <details className="mt-1">
+                <summary className="text-[11px] text-red-600 cursor-pointer hover:underline">View refunds</summary>
+                {(c.refundClients || []).map((r, i) => (
+                  <p key={i} className="text-[11px] text-slate-600 mt-0.5">{r.name}: {fmt(r.amount)} refunded{r.pct ? ` - ${r.pct}% = ${fmt(r.deduction)} deducted` : ''}{r.date ? ` (${r.date})` : ''}</p>
+                ))}
+              </details>
+            )}
           </div>
           <div className={`p-3 rounded-lg ${c.meetsReviewStandard ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className="text-xs text-slate-500"><Tip text="Client reviews assigned to you. Standard: 10 minimum per month.">Reviews</Tip></p>
