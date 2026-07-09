@@ -45,17 +45,14 @@ export default function RefundTracking() {
   });
 
   // Get consultants from users
-  const consultants = users?.filter(u => 
-    u.role === 'Consultants' || 
-    u.department === 'consultants' ||
-    u.full_name?.includes('Eric') ||
-    u.full_name?.includes('Carlos') ||
-    u.full_name?.includes('Cindy')
-  ) || [
-    { id: '1', full_name: 'Eric De La Rosa', consultant_type: 'regular' },
-    { id: '2', full_name: 'Carlos Salguera', consultant_type: 'va' },
-    { id: '3', full_name: 'Cindy', consultant_type: 'regular' }
-  ];
+  const consultants = (users || [])
+    .filter(u => u.is_active !== false)
+    .map(u => ({
+      id: u.id,
+      full_name: u.name,
+      consultant_type: u.department === 'credit_consultants' ? (u.is_va ? 'va' : 'regular') : 'none'
+    }))
+    .sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
 
   useEffect(() => {
     fetchRefunds();
@@ -120,6 +117,7 @@ export default function RefundTracking() {
   };
 
   const calculateDeduction = (amount, type) => {
+    if (type === 'none') return { percentage: 0, amount: '0.00' };
     const percentage = type === 'va' ? 10 : 14;
     return {
       percentage,
@@ -544,7 +542,7 @@ export default function RefundTracking() {
                   <option value="">Select consultant...</option>
                   {consultants.map(c => (
                     <option key={c.id} value={c.id}>
-                      {c.full_name} ({c.consultant_type === 'va' ? '10% VA' : '14% Regular'})
+                      {c.full_name}{c.consultant_type === 'none' ? '' : c.consultant_type === 'va' ? ' (10% VA)' : ' (14% Regular)'}
                     </option>
                   ))}
                 </select>
@@ -586,7 +584,7 @@ export default function RefundTracking() {
               {formData.refund_amount && formData.consultant_type && (
                 <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
                   <p className="text-sm text-purple-700">
-                    <strong>Payroll Deduction:</strong> {formData.consultant_type === 'va' ? '10%' : '14%'} = 
+                    <strong>Payroll Deduction:</strong> {formData.consultant_type === 'none' ? '0% (not a consultant)' : formData.consultant_type === 'va' ? '10%' : '14%'} =
                     <span className="text-lg font-bold ml-2">
                       ${calculateDeduction(formData.refund_amount, formData.consultant_type).amount}
                     </span>
