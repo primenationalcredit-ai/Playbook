@@ -377,7 +377,7 @@ export default function AMBonus() {
       creditBonus, submissions: amSubs, approvedSubs: approved,
       reviewCount, bbbReviews, reviewBonus,
       reviewList: amReviews.map(r => ({ reviewer: r.reviewer_name, location: r.location_name, rating: r.rating, text: r.review_text, dealId: r.pipedrive_deal_id || null, date: r.review_date || r.created_at })),
-      stallRate, stallCount, stallTotal, stalledClients, healthyInWindow, stallBonus,
+      stallRate, stallCount, stallTotal, stalledClients, healthyInWindow, stallBonus, stallCalculatedAt: stallData?.calculatedAt || null,
       additionalRounds, roundsBonus, roundDeals, pastDueRounds,
       referrals, referralPaid, referralBonus, referralNeedsConfig, referralTopProducer, referralDeals,
       csatAvg, csatResponses, csatEligible, csatOverall,
@@ -734,7 +734,7 @@ export default function AMBonus() {
                 })()}
                 {currentAMMetrics.stallTotal > 0 && (
                   <details className="mt-3 ml-8">
-                    <summary className="text-xs text-blue-600 cursor-pointer hover:underline">View breakdown · {currentAMMetrics.stallCount} stalled and {Math.max(0, currentAMMetrics.stallTotal - currentAMMetrics.stallCount)} on time</summary>
+                    <summary className="text-xs text-blue-600 cursor-pointer hover:underline">View breakdown · {currentAMMetrics.stallCount} stalled and {Math.max(0, currentAMMetrics.stallTotal - currentAMMetrics.stallCount)} on time{currentAMMetrics.stallCalculatedAt ? ` · Data as of ${new Date(currentAMMetrics.stallCalculatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}</summary>
                     <div className="mt-2 space-y-3">
                       {(currentAMMetrics.stalledClients || []).length > 0 && (
                         <div>
@@ -743,7 +743,7 @@ export default function AMBonus() {
                             {(currentAMMetrics.stalledClients || []).map((c, i) => (
                               <div key={i} className="flex justify-between text-xs py-1 px-2 border-b border-slate-100 gap-2 last:border-b-0">
                                 <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
-                                <span className="text-red-500 text-right">{c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)} · ${c.daysSinceRoundEnd}d behind` : (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd}d past round end` : (c.reason || ''))}</span>
+                                <span className="text-red-500 text-right">{c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)} · ${c.daysSinceRoundEnd}d behind · Logins Not Ready` : (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd}d past round end` : (c.reason || ''))}</span>
                               </div>
                             ))}
                           </div>
@@ -1514,7 +1514,7 @@ export default function AMBonus() {
                           {stalled.map((c, i) => (
                             <div key={i} className="flex justify-between text-sm py-1.5 px-3 border-b border-slate-100 gap-2 last:border-b-0">
                               <span className="text-slate-700">{c.dealId ? <a href={DEAL_URL(c.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : (c.id ? <a href={PERSON_URL(c.id)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{c.name} ↗</a> : c.name)}</span>
-                              <span className="text-red-500 text-right whitespace-nowrap">{c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)} · ${c.daysSinceRoundEnd}d behind` : (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd}d past round end` : (c.reason || ''))}</span>
+                              <span className="text-red-500 text-right whitespace-nowrap">{c.roundEndDate ? `Round ended ${fmtDate(c.roundEndDate)} · ${c.daysSinceRoundEnd}d behind · Logins Not Ready` : (c.daysSinceRoundEnd != null ? `${c.daysSinceRoundEnd}d past round end` : (c.reason || ''))}</span>
                             </div>
                           ))}
                         </div>
