@@ -151,7 +151,7 @@ function DocFeeCard({ token, isAdmin, onAction }) {
         {refunded && (<><span className="text-slate-400">Refunded</span><span className="font-semibold">{fmtDate(token.refunded_at)}</span></>)}
         {token.refund_reason && (<><span className="text-slate-400">Refund reason</span><span className="font-semibold italic">{token.refund_reason}</span></>)}
       </div>
-      {isAdmin && isPaid && !refunded && (
+      {isPaid && !refunded && (
         <div className="pt-3 border-t border-slate-100">
           <RequestRefundButton
             amount={token.initial_amount}
@@ -272,6 +272,15 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
               payload={{ pipedrive_deal_id: c.pipedrive_deal_id, client_name: c.client_name, client_email: c.client_email, amount: c.amount, refund_type: 'scheduled', charge_id: c.id }}
             />
           )}
+        </div>
+      )}
+
+      {!isAdmin && canRequest && !refunded && isPaid && (
+        <div className="pt-3 border-t border-slate-100">
+          <RequestRefundButton
+            amount={c.amount}
+            payload={{ pipedrive_deal_id: c.pipedrive_deal_id, client_name: c.client_name, client_email: c.client_email, amount: c.amount, refund_type: 'scheduled', charge_id: c.id }}
+          />
         </div>
       )}
 
