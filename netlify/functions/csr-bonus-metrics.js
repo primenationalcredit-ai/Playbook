@@ -192,7 +192,7 @@ exports.handler = async (event) => {
     for (let i = 0; i < dealIds.length; i += 100) {
       const chunk = dealIds.slice(i, i + 100);
       try {
-        const pays = await supaGet('consultant_payments', `payment_type=eq.doc_fee&pipedrive_deal_id=in.(${chunk.join(',')})&select=pipedrive_deal_id,payment_date`);
+        const pays = await supaGet('consultant_payments', `payment_type=eq.doc_fee&excluded_from_bonus=not.is.true&pipedrive_deal_id=in.(${chunk.join(',')})&select=pipedrive_deal_id,payment_date`);
         for (const p of pays) {
           if (p.pipedrive_deal_id == null) continue;
           const id = String(p.pipedrive_deal_id);

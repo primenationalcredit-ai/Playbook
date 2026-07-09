@@ -51,7 +51,7 @@ exports.handler = async (event) => {
     }
 
     // Payments this month
-    const pRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${month}&select=payment_type,amount,consultant_name,pipedrive_deal_id,client_name&limit=10000`, { headers: supa });
+    const pRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${month}&excluded_from_bonus=not.is.true&select=payment_type,amount,consultant_name,pipedrive_deal_id,client_name&limit=10000`, { headers: supa });
     const payments = pRes.ok ? await pRes.json() : [];
 
     // Real consultants only: the "By Consultant" breakdown must show people in the

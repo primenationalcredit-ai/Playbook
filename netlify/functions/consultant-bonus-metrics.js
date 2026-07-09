@@ -187,7 +187,7 @@ exports.handler = async (event) => {
     const consultants = await supaGet('users', 'department=eq.credit_consultants&select=id,name,email,is_va');
 
     // Get payments for the rolling window (paged past the 1000-row cap) for cross-referencing client journeys
-    const allPayments = await supaGet('consultant_payments', `payment_date=gte.${windowStart}&select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org`);
+    const allPayments = await supaGet('consultant_payments', `payment_date=gte.${windowStart}&excluded_from_bonus=not.is.true&select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org`);
 
     // Full affiliate payment history (all time, small subset, few columns) so the reactivation kicker
     // and new-affiliate-launch can measure dormancy beyond the rolling window.
@@ -1275,7 +1275,7 @@ exports.handler = async (event) => {
     // same one MTD uses), instead of filtering the date-windowed set. That window keys off payment_date,
     // so any 2026 payment with a blank/odd date was being dropped and the YTD total came up short.
     const year = targetMonth.split('-')[0];
-    const ytdPayments = await supaGet('consultant_payments', `payment_month=like.${year}-*&select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org`);
+    const ytdPayments = await supaGet('consultant_payments', `payment_month=like.${year}-*&excluded_from_bonus=not.is.true&select=pipedrive_deal_id,client_name,payment_type,payment_month,payment_date,amount,consultant_name,is_affiliate_deal,referrer_org`);
 
     const ytdSales = ytdPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
     const ytdDocs = ytdPayments.filter(p => p.payment_type === 'doc_fee').length;

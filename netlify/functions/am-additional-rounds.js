@@ -40,7 +40,7 @@ exports.handler = async (event) => {
     const month = params.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     // 1. Paid additional rounds this month
-    const payRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${month}&payment_type=eq.additional_round&select=pipedrive_deal_id,amount,client_name,payment_date`, { headers: supa });
+    const payRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${month}&payment_type=eq.additional_round&excluded_from_bonus=not.is.true&select=pipedrive_deal_id,amount,client_name,payment_date`, { headers: supa });
     const payments = payRes.ok ? await payRes.json() : [];
     const paid = payments.filter(p => p.pipedrive_deal_id);
 
