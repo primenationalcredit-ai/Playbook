@@ -247,6 +247,23 @@ function Layout() {
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
   ] : coreDepartmentItems;
 
+  // Red pill on Refund Tracking: refunds awaiting leadership action.
+  const [refundActionCount, setRefundActionCount] = useState(0);
+  useEffect(() => {
+    if (currentUser?.department !== 'leadership') return;
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list' }) });
+        const d = await r.json();
+        if (alive) setRefundActionCount(((d && d.requests) || []).filter(x => ['pending', 'ready_to_pay', 'check_needed'].includes(x.status)).length);
+      } catch (e) {}
+    };
+    check();
+    const t = setInterval(check, 120000);
+    return () => { alive = false; clearInterval(t); };
+  }, [currentUser]);
+
   const adminItems = [
     { path: '/projects', icon: FolderKanban, label: 'Projects' },
     { path: '/admin/tasks', icon: ListTodo, label: 'Manage Tasks' },
@@ -507,6 +524,9 @@ function Layout() {
                     >
                       <item.icon size={20} />
                       <span>{item.label}</span>
+                      {item.path === '/admin/refunds' && refundActionCount > 0 && (
+                        <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">{refundActionCount}</span>
+                      )}
                     </NavLink>
                   ))}
                 </div>
@@ -525,7 +545,7 @@ function Layout() {
                       `}
                       title={item.label}
                     >
-                      <item.icon size={20} />
+                      <span className="relative inline-flex"><item.icon size={20} />{item.path === '/admin/refunds' && refundActionCount > 0 && (<span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />)}</span>
                     </NavLink>
                   ))}
                 </div>

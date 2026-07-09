@@ -1,683 +1,82 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
-import {
-  DollarSign,
-  Plus,
-  X,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  Search,
-  Filter,
-  Download,
-  RefreshCw,
-  User,
-  Calendar,
-  FileText,
-  TrendingDown
-} from 'lucide-react';
-import { format } from 'date-fns';
+import { DollarSign, CheckCircle, Clock, RefreshCw, AlertTriangle } from 'lucide-react';
 
-export default function RefundTracking() {
-  const { currentUser, users } = useApp();
-  const [refunds, setRefunds] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterConsultant, setFilterConsultant] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [summary, setSummary] = useState({ total: 0, pending: 0, processed: 0, deductions: 0 });
+// Refund Tracking - single workflow:
+// request (from Invoices) -> leadership approve/deny -> release e-sign -> pay
+// (card engine and/or check) -> client emailed -> closed into Completed history.
 
-  // Form state
-  const [formData, setFormData] = useState({
-    client_name: '',
-    client_email: '',
-    pipedrive_deal_id: '',
-    consultant_id: '',
-    consultant_name: '',
-    consultant_type: 'regular',
-    refund_amount: '',
-    original_payment_amount: '',
-    refund_reason: '',
-    notes: ''
-  });
+const OPEN_STATUSES = ['pending', 'awaiting_signature', 'ready_to_pay', 'check_needed'];
+const DONE_STATUSES = ['card_refunded', 'check_mailed', 'denied'];
 
-  // Get consultants from users
-  const consultants = (users || [])
-    .filter(u => u.is_active !== false)
-    .map(u => ({
-      id: u.id,
-      full_name: u.name,
-      consultant_type: u.department === 'credit_consultants' ? (u.is_va ? 'va' : 'regular') : 'none'
-    }))
-    .sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
-
-  useEffect(() => {
-    fetchRefunds();
-  }, [selectedMonth, filterStatus, filterConsultant]);
-
-  const fetchRefunds = async () => {
-    setLoading(true);
-    try {
-      let query = supabase
-        .from('refunds')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      // Filter by month
-      if (selectedMonth) {
-        const startDate = `${selectedMonth}-01`;
-        const endDate = `${selectedMonth}-31`;
-        query = query.gte('refund_date', startDate).lte('refund_date', endDate);
-      }
-
-      if (filterStatus !== 'all') {
-        query = query.eq('status', filterStatus);
-      }
-
-      if (filterConsultant !== 'all') {
-        query = query.eq('consultant_id', filterConsultant);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      setRefunds(data || []);
-
-      // Calculate summary
-      const total = data?.reduce((sum, r) => sum + parseFloat(r.refund_amount || 0), 0) || 0;
-      const pending = data?.filter(r => r.status === 'pending').reduce((sum, r) => sum + parseFloat(r.refund_amount || 0), 0) || 0;
-      const processed = data?.filter(r => r.status === 'processed').reduce((sum, r) => sum + parseFloat(r.refund_amount || 0), 0) || 0;
-      const deductions = data?.reduce((sum, r) => sum + parseFloat(r.deduction_amount || 0), 0) || 0;
-
-      setSummary({ total, pending, processed, deductions });
-
-    } catch (error) {
-      console.error('Error fetching refunds:', error);
-      // Use mock data for demo
-      setRefunds([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConsultantChange = (consultantId) => {
-    const consultant = consultants.find(c => c.id === consultantId);
-    if (consultant) {
-      setFormData(prev => ({
-        ...prev,
-        consultant_id: consultantId,
-        consultant_name: consultant.full_name,
-        consultant_type: consultant.consultant_type || 'regular'
-      }));
-    }
-  };
-
-  const calculateDeduction = (amount, type) => {
-    if (type === 'none') return { percentage: 0, amount: '0.00' };
-    const percentage = type === 'va' ? 10 : 14;
-    return {
-      percentage,
-      amount: (parseFloat(amount) * percentage / 100).toFixed(2)
-    };
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    const deduction = calculateDeduction(formData.refund_amount, formData.consultant_type);
-    
-    const refundData = {
-      ...formData,
-      refund_amount: parseFloat(formData.refund_amount),
-      original_payment_amount: formData.original_payment_amount ? parseFloat(formData.original_payment_amount) : null,
-      deduction_percentage: deduction.percentage,
-      deduction_amount: parseFloat(deduction.amount),
-      payroll_period: selectedMonth,
-      status: 'pending',
-      created_by: currentUser?.id
-    };
-
-    try {
-      const resp = await fetch('/.netlify/functions/record-refund', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(refundData)
-      });
-      const result = await resp.json();
-      if (!resp.ok || result.error) throw new Error(result.error || 'Record refund failed');
-
-      setShowModal(false);
-      setFormData({
-        client_name: '',
-        client_email: '',
-        pipedrive_deal_id: '',
-        consultant_id: '',
-        consultant_name: '',
-        consultant_type: 'regular',
-        refund_amount: '',
-        original_payment_amount: '',
-        refund_reason: '',
-        notes: ''
-      });
-      fetchRefunds();
-    } catch (error) {
-      console.error('Error creating refund:', error);
-      alert('Error creating refund. Please try again.');
-    }
-  };
-
-  const updateRefundStatus = async (refundId, newStatus) => {
-    try {
-      const updateData = { status: newStatus };
-      
-      if (newStatus === 'approved') {
-        updateData.approved_by = currentUser?.id;
-        updateData.approved_at = new Date().toISOString();
-      } else if (newStatus === 'processed') {
-        updateData.processed_at = new Date().toISOString();
-        updateData.deducted_from_payroll = true;
-      }
-
-      const { error } = await supabase
-        .from('refunds')
-        .update(updateData)
-        .eq('id', refundId);
-
-      if (error) throw error;
-      fetchRefunds();
-    } catch (error) {
-      console.error('Error updating refund:', error);
-    }
-  };
-
-  const getStatusBadge = (status) => {
-    const styles = {
-      pending: 'bg-amber-100 text-amber-700',
-      approved: 'bg-blue-100 text-blue-700',
-      processed: 'bg-green-100 text-green-700',
-      disputed: 'bg-red-100 text-red-700'
-    };
-    
-    const icons = {
-      pending: <Clock className="w-3 h-3" />,
-      approved: <CheckCircle className="w-3 h-3" />,
-      processed: <CheckCircle className="w-3 h-3" />,
-      disputed: <AlertTriangle className="w-3 h-3" />
-    };
-
-    return (
-      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${styles[status]}`}>
-        {icons[status]}
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
-  };
-
-  const filteredRefunds = refunds.filter(r => 
-    r.client_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.consultant_name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Refund Tracking</h1>
-          <p className="text-gray-600">Track refunds and consultant payroll deductions</p>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
-          />
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Record Refund
-          </button>
-        </div>
-      </div>
-
-      <PendingRequests currentUser={currentUser} />
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <TrendingDown className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Refunds</p>
-              <p className="text-2xl font-bold text-red-600">${summary.total.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <Clock className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Pending</p>
-              <p className="text-2xl font-bold text-amber-600">${summary.pending.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Processed</p>
-              <p className="text-2xl font-bold text-green-600">${summary.processed.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <DollarSign className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Deductions</p>
-              <p className="text-2xl font-bold text-purple-600">${summary.deductions.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by client or consultant name..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm"
-            />
-          </div>
-          
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2 border border-gray-200 rounded-lg text-sm"
-          >
-            <option value="all">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="processed">Processed</option>
-            <option value="disputed">Disputed</option>
-          </select>
-          
-          <select
-            value={filterConsultant}
-            onChange={(e) => setFilterConsultant(e.target.value)}
-            className="px-4 py-2 border border-gray-200 rounded-lg text-sm"
-          >
-            <option value="all">All Consultants</option>
-            {consultants.map(c => (
-              <option key={c.id} value={c.id}>{c.full_name}</option>
-            ))}
-          </select>
-          
-          <button
-            onClick={fetchRefunds}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Refunds Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
-          </div>
-        ) : filteredRefunds.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-            <DollarSign className="w-12 h-12 mb-3 text-gray-300" />
-            <p>No refunds recorded for this period</p>
-            <button
-              onClick={() => setShowModal(true)}
-              className="mt-3 text-red-500 hover:text-red-600 text-sm"
-            >
-              Record a refund
-            </button>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Client</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Consultant</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Refund Amount</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Deduction</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Reason</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Date</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Status</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRefunds.map((refund) => (
-                  <tr key={refund.id} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="py-3 px-4">
-                      <div>
-                        <p className="font-medium text-gray-900">{refund.client_name}</p>
-                        {refund.client_email && (
-                          <p className="text-xs text-gray-500">{refund.client_email}</p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div>
-                        <p className="text-gray-900">{refund.consultant_name}</p>
-                        <p className="text-xs text-gray-500">
-                          {refund.consultant_type === 'va' ? 'VA (10%)' : 'Regular (14%)'}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-red-600 font-semibold">
-                        ${parseFloat(refund.refund_amount).toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-purple-600 font-medium">
-                        -${parseFloat(refund.deduction_amount).toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <p className="text-sm text-gray-600 max-w-xs truncate" title={refund.refund_reason}>
-                        {refund.refund_reason}
-                      </p>
-                    </td>
-                    <td className="py-3 px-4 text-gray-600 text-sm">
-                      {refund.refund_date && format(new Date(refund.refund_date), 'MMM d, yyyy')}
-                    </td>
-                    <td className="py-3 px-4">
-                      {getStatusBadge(refund.status)}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        {refund.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => updateRefundStatus(refund.id, 'approved')}
-                              className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => updateRefundStatus(refund.id, 'disputed')}
-                              className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
-                            >
-                              Dispute
-                            </button>
-                          </>
-                        )}
-                        {refund.status === 'approved' && (
-                          <button
-                            onClick={() => updateRefundStatus(refund.id, 'processed')}
-                            className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
-                          >
-                            Mark Processed
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Deductions by Consultant Summary */}
-      <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold mb-4">Deductions by Consultant - {format(new Date(selectedMonth + '-01'), 'MMMM yyyy')}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {consultants.map(consultant => {
-            const consultantRefunds = refunds.filter(r => r.consultant_id === consultant.id || r.consultant_name === consultant.full_name);
-            const totalDeduction = consultantRefunds.reduce((sum, r) => sum + parseFloat(r.deduction_amount || 0), 0);
-            const refundCount = consultantRefunds.length;
-            
-            return (
-              <div key={consultant.id} className="p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                    <User className="w-5 h-5 text-gray-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{consultant.full_name}</p>
-                    <p className="text-xs text-gray-500">{refundCount} refund{refundCount !== 1 ? 's' : ''}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold text-purple-600">
-                  -${totalDeduction.toFixed(2)}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Add Refund Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b">
-              <h2 className="text-xl font-bold">Record Refund</h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {/* Client Info */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Client Name *</label>
-                <input
-                  type="text"
-                  value={formData.client_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, client_name: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Client Email</label>
-                <input
-                  type="email"
-                  value={formData.client_email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, client_email: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-                />
-              </div>
-
-              {/* Pipedrive Deal ID - enables payment matching + deal note */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Pipedrive Deal ID *</label>
-                <input
-                  type="text"
-                  value={formData.pipedrive_deal_id}
-                  onChange={(e) => setFormData(prev => ({ ...prev, pipedrive_deal_id: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-                  placeholder="e.g. 267682"
-                  required
-                />
-              </div>
-
-              {/* Consultant Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Consultant *</label>
-                <select
-                  value={formData.consultant_id}
-                  onChange={(e) => handleConsultantChange(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-                  required
-                >
-                  <option value="">Select consultant...</option>
-                  {consultants.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name}{c.consultant_type === 'none' ? '' : c.consultant_type === 'va' ? ' (10% VA)' : ' (14% Regular)'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Refund Amount */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Refund Amount *</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.refund_amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, refund_amount: e.target.value }))}
-                      className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-lg"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Original Payment</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.original_payment_amount}
-                      onChange={(e) => setFormData(prev => ({ ...prev, original_payment_amount: e.target.value }))}
-                      className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-lg"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Deduction Preview */}
-              {formData.refund_amount && formData.consultant_type && (
-                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  <p className="text-sm text-purple-700">
-                    <strong>Payroll Deduction:</strong> {formData.consultant_type === 'none' ? '0% (not a consultant)' : formData.consultant_type === 'va' ? '10%' : '14%'} =
-                    <span className="text-lg font-bold ml-2">
-                      ${calculateDeduction(formData.refund_amount, formData.consultant_type).amount}
-                    </span>
-                  </p>
-                </div>
-              )}
-
-              {/* Reason */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Refund Reason *</label>
-                <textarea
-                  value={formData.refund_reason}
-                  onChange={(e) => setFormData(prev => ({ ...prev, refund_reason: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-                  rows={3}
-                  required
-                  placeholder="Enter the reason for the refund..."
-                />
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg"
-                  rows={2}
-                />
-              </div>
-
-              {/* Submit */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-                >
-                  Record Refund
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function StatusPill({ status }) {
+  const s = status || '';
+  const color =
+    s === 'pending' ? 'bg-amber-100 text-amber-800' :
+    s === 'awaiting_signature' ? 'bg-blue-100 text-blue-700' :
+    s === 'ready_to_pay' ? 'bg-emerald-100 text-emerald-700' :
+    s === 'check_needed' ? 'bg-rose-100 text-rose-700' :
+    s === 'card_refunded' ? 'bg-green-100 text-green-700' :
+    s === 'check_mailed' ? 'bg-green-100 text-green-700' :
+    s === 'denied' ? 'bg-slate-200 text-slate-600' :
+    'bg-slate-100 text-slate-600';
+  return <span className={`text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-full font-semibold ${color}`}>{s.replace(/_/g, ' ')}</span>;
 }
 
-
-function PendingRequests({ currentUser }) {
-  const [reqs, setReqs] = useState([]);
-  const [busy, setBusy] = useState(false);
+export default function RefundTracking() {
+  const { currentUser } = useApp();
   const isLeader = currentUser?.department === 'leadership';
+  const [reqs, setReqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
   const load = async () => {
     try {
-      const r = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list' }) });
+      const r = await fetch('/.netlify/functions/refund-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list' })
+      });
       const d = await r.json();
-      setReqs((d.requests || []).filter(x => ['pending','awaiting_signature','ready_to_pay','check_needed'].includes(x.status)));
-    } catch (e) {}
+      setReqs(d.requests || []);
+    } catch (e) { /* keep whatever we had */ }
+    setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
   const decide = async (id, decision) => {
     let denial_reason = null;
-    if (decision === 'denied') { denial_reason = window.prompt('Reason for denial (required):'); if (!denial_reason) return; }
+    if (decision === 'denied') {
+      denial_reason = window.prompt('Reason for denial (required):');
+      if (!denial_reason) return;
+    }
     setBusy(true);
     try {
-      const r = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'decide', request_id: id, decision, decided_by: currentUser?.email, denial_reason }) });
-      const d = await r.json();
-      if (!r.ok || d.error) throw new Error(d.error || 'Failed');
+      const resp = await fetch('/.netlify/functions/refund-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'decide', request_id: id, decision, decided_by: currentUser?.email, denial_reason })
+      });
+      const d = await resp.json();
+      if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
       await load();
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
+
   const sendRelease = async (id) => {
     setBusy(true);
     try {
-      const r = await fetch('/.netlify/functions/send-release', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: id, requested_by: currentUser?.email }) });
-      const d = await r.json();
-      if (!r.ok || d.error) throw new Error(d.error || 'Failed');
+      const resp = await fetch('/.netlify/functions/send-release', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: id, requested_by: currentUser?.email })
+      });
+      const d = await resp.json();
+      if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
       window.alert('Release sent to client. Email: ' + (d.email_sent ? 'sent' : 'not sent') + ' - SMS: ' + (d.sms_sent ? 'sent' : 'not sent'));
       await load();
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
+
   const payRefund = async (r) => {
     const amtStr = window.prompt('Refund amount to attempt on the card(s):', String(r.amount || ''));
     if (amtStr === null) return;
@@ -686,27 +85,41 @@ function PendingRequests({ currentUser }) {
     if (!window.confirm(`Attempt to refund $${amt.toFixed(2)} to ${r.client_name}'s card(s) now?`)) return;
     setBusy(true);
     try {
-      const resp = await fetch('/.netlify/functions/pay-refund', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ request_id: r.id, amount: amt, requested_by: currentUser?.email }) });
+      const resp = await fetch('/.netlify/functions/pay-refund', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: r.id, amount: amt, requested_by: currentUser?.email })
+      });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
       const lines = (d.results || []).map(x => x.ok ? `OK  $${x.amount.toFixed(2)} -> ${x.card}` : `FAIL ${x.source}: ${x.error}`).join('\n');
-      window.alert(`Refunded to card: $${(d.refunded_to_card || 0).toFixed(2)}\n` + (d.check_needed > 0 ? `CHECK NEEDED: $${d.check_needed.toFixed(2)}` : 'Fully covered - request closed as card refunded') + (lines ? `\n\n${lines}` : '') + (d.no_candidates ? '\n\nNo refundable card transactions were found on this deal.' : ''));
+      window.alert(
+        `Refunded to card: $${(d.refunded_to_card || 0).toFixed(2)}\n` +
+        (d.check_needed > 0 ? `CHECK NEEDED: $${d.check_needed.toFixed(2)}` : 'Fully covered - request closed as card refunded') +
+        (d.email_sent ? '\nClient emailed.' : '') +
+        (lines ? `\n\n${lines}` : '') +
+        (d.no_candidates ? '\n\nNo refundable card transactions were found on this deal.' : '')
+      );
       await load();
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
+
   const payByCheck = async (r) => {
     const remaining = Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.card_refunded_amount) || 0));
     if (!window.confirm(`Skip the card and pay ${r.client_name}'s $${remaining.toFixed(2)} refund by check?`)) return;
     setBusy(true);
     try {
-      const resp = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'route_to_check', request_id: r.id, requested_by: currentUser?.email }) });
+      const resp = await fetch('/.netlify/functions/refund-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'route_to_check', request_id: r.id, requested_by: currentUser?.email })
+      });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
       await load();
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
+
   const markCheckMailed = async (r) => {
     const num = window.prompt(`Check number for ${r.client_name} ($${(parseFloat(r.check_amount) || 0).toFixed(2)}):`);
     if (!num) return;
@@ -715,7 +128,10 @@ function PendingRequests({ currentUser }) {
     if (mailedDate === null) return;
     setBusy(true);
     try {
-      const resp = await fetch('/.netlify/functions/refund-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'check_mailed', request_id: r.id, check_number: num, mailed_date: mailedDate || today, requested_by: currentUser?.email }) });
+      const resp = await fetch('/.netlify/functions/refund-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check_mailed', request_id: r.id, check_number: num, mailed_date: mailedDate || today, requested_by: currentUser?.email })
+      });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
       window.alert('Check recorded - request closed.' + (d.email_sent ? ' Client emailed.' : ' (No client email sent - check email on file.)'));
@@ -723,47 +139,113 @@ function PendingRequests({ currentUser }) {
     } catch (e) { window.alert(e.message); }
     setBusy(false);
   };
-  if (reqs.length === 0) return null;
+
+  const open = reqs.filter(r => OPEN_STATUSES.includes(r.status));
+  const done = reqs.filter(r => DONE_STATUSES.includes(r.status)).slice(0, 25);
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64"><RefreshCw className="w-8 h-8 animate-spin text-gray-400" /></div>;
+  }
+
   return (
-    <div className="bg-white rounded-xl border border-amber-200 p-5 mb-6">
-      <h2 className="font-bold text-gray-900 mb-3">Refund Requests ({reqs.length})</h2>
-      <div className="space-y-2">
-        {reqs.map(r => (
-          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
-            <div>
-              <span className="font-semibold">{r.client_name || 'Unknown'}</span>
-              <span className="text-gray-500"> - ${parseFloat(r.amount || 0).toFixed(2)} - deal {r.pipedrive_deal_id}</span>
-              <span className="ml-2 text-[11px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">{(r.status || '').replace(/_/g, ' ')}</span>
-            {(r.release_signed_at || ['ready_to_pay', 'check_needed', 'check_mailed', 'card_refunded'].includes(r.status)) && (
-              <span className="ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title={r.release_signed_at ? `Release signed ${String(r.release_signed_at).slice(0, 10)}` : 'Release signed'}>&#10003; Release signed - OK to pay</span>
-            )}
-              <p className="text-xs text-gray-500 mt-0.5">By {r.requested_by_name || r.requested_by || 'unknown'}: {r.reason}{r.rounds_started ? ' (rounds started - release required)' : ''}</p>
-            </div>
-            {isLeader && r.status === 'pending' && (
-              <div className="flex gap-2">
-                <button disabled={busy} onClick={() => decide(r.id, 'approved')} className="px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">Approve</button>
-                <button disabled={busy} onClick={() => decide(r.id, 'denied')} className="px-3 py-1 text-xs font-semibold text-white bg-red-500 rounded hover:bg-red-600 disabled:opacity-50">Deny</button>
-              </div>
-            )}
-            {isLeader && r.status === 'awaiting_signature' && (
-              <button disabled={busy} onClick={() => sendRelease(r.id)} className="px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">Send Release</button>
-            )}
-            {isLeader && r.status === 'ready_to_pay' && (
-              <div className="flex items-center gap-2">
-                <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Refund to Card</button>
-                <button disabled={busy} onClick={() => payByCheck(r)} className="px-3 py-1 text-xs font-semibold text-white bg-slate-700 rounded hover:bg-slate-800 disabled:opacity-50">Pay by Check</button>
-              </div>
-            )}
-            {isLeader && r.status === 'check_needed' && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-rose-600">Check: ${(parseFloat(r.check_amount) || 0).toFixed(2)}</span>
-                <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Retry Card</button>
-                <button disabled={busy} onClick={() => markCheckMailed(r)} className="px-3 py-1 text-xs font-semibold text-white bg-slate-700 rounded hover:bg-slate-800 disabled:opacity-50">Mark Check Mailed</button>
-              </div>
-            )}
-          </div>
-        ))}
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Refund Tracking</h1>
+          <p className="text-gray-600">Requests come in from the Invoices page. Approve, get the release signed, and pay by card or check - the client is emailed automatically at each payment step.</p>
+        </div>
+        <button onClick={() => { setLoading(true); load(); }} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+          <RefreshCw className="w-4 h-4" /> Refresh
+        </button>
       </div>
+
+      {/* ---- Open requests: the working queue ---- */}
+      <div className="bg-white rounded-xl border border-amber-200 p-5">
+        <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <Clock className="w-5 h-5 text-amber-500" /> Needs Action ({open.length})
+        </h2>
+        {open.length === 0 ? (
+          <p className="text-sm text-gray-400 py-6 text-center">No open refund requests. New requests from the team will appear here.</p>
+        ) : (
+          <div className="space-y-2">
+            {open.map(r => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-lg px-3 py-2 text-sm">
+                <div>
+                  <span className="font-semibold">{r.client_name || 'Unknown'}</span>
+                  <span className="text-gray-500"> - ${parseFloat(r.amount || 0).toFixed(2)} - deal {r.pipedrive_deal_id}</span>
+                  <span className="ml-2"><StatusPill status={r.status} /></span>
+                  {(r.release_signed_at || ['ready_to_pay', 'check_needed'].includes(r.status)) && (
+                    <span className="ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title={r.release_signed_at ? `Release signed ${String(r.release_signed_at).slice(0, 10)}` : 'Release signed'}>&#10003; Release signed - OK to pay</span>
+                  )}
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    By {r.requested_by_name || r.requested_by || 'unknown'}: {r.reason}
+                    {r.rounds_started ? ' (rounds started - release required)' : ''}
+                  </p>
+                </div>
+
+                {isLeader && r.status === 'pending' && (
+                  <div className="flex gap-2">
+                    <button disabled={busy} onClick={() => decide(r.id, 'approved')} className="px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">Approve</button>
+                    <button disabled={busy} onClick={() => decide(r.id, 'denied')} className="px-3 py-1 text-xs font-semibold text-white bg-red-500 rounded hover:bg-red-600 disabled:opacity-50">Deny</button>
+                  </div>
+                )}
+                {isLeader && r.status === 'awaiting_signature' && (
+                  <button disabled={busy} onClick={() => sendRelease(r.id)} className="px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">Send Release</button>
+                )}
+                {isLeader && r.status === 'ready_to_pay' && (
+                  <div className="flex items-center gap-2">
+                    <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Refund to Card</button>
+                    <button disabled={busy} onClick={() => payByCheck(r)} className="px-3 py-1 text-xs font-semibold text-white bg-slate-700 rounded hover:bg-slate-800 disabled:opacity-50">Pay by Check</button>
+                  </div>
+                )}
+                {isLeader && r.status === 'check_needed' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-rose-600">Check: ${(parseFloat(r.check_amount) || 0).toFixed(2)}</span>
+                    <button disabled={busy} onClick={() => payRefund(r)} className="px-3 py-1 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">Retry Card</button>
+                    <button disabled={busy} onClick={() => markCheckMailed(r)} className="px-3 py-1 text-xs font-semibold text-white bg-slate-700 rounded hover:bg-slate-800 disabled:opacity-50">Mark Check Mailed</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ---- Completed history ---- */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <CheckCircle className="w-5 h-5 text-green-500" /> Completed
+        </h2>
+        {done.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4 text-center">Nothing completed yet.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {done.map(r => {
+              const card = parseFloat(r.card_refunded_amount) || 0;
+              const check = parseFloat(r.check_amount) || 0;
+              let outcome = '';
+              if (r.status === 'denied') outcome = `Denied${r.denial_reason ? ` - ${r.denial_reason}` : ''}`;
+              else if (r.status === 'card_refunded') outcome = `$${card.toFixed(2)} refunded to card`;
+              else if (r.status === 'check_mailed') outcome = `Check #${r.check_number || '?'} for $${check.toFixed(2)} mailed ${r.check_mailed_date || ''}${card > 0 ? ` (+ $${card.toFixed(2)} to card)` : ''}`;
+              return (
+                <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-50 rounded-lg px-3 py-1.5 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-800">{r.client_name || 'Unknown'}</span>
+                    <span className="text-gray-400"> - deal {r.pipedrive_deal_id}</span>
+                    <span className="ml-2"><StatusPill status={r.status} /></span>
+                  </div>
+                  <span className={`text-xs ${r.status === 'denied' ? 'text-gray-400' : 'text-green-700 font-medium'}`}>{outcome}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-gray-400 flex items-start gap-1">
+        <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+        Card refunds are recorded automatically for consultant payroll deductions. Refunds must be requested from the client's charge on the Invoices page - there is no manual entry here.
+      </p>
     </div>
   );
 }
