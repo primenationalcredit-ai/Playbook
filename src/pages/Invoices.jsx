@@ -267,10 +267,10 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
             </>
           )}
           {isPaid && (
-            <button onClick={() => onAction({ type: 'refund_scheduled', charge_id: c.id, amount: c.amount, cardLast4: c.card_last_4 })}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700">
-              <Undo2 size={12} /> Refund {fmtMoney(c.amount)}
-            </button>
+            <RequestRefundButton
+              amount={c.amount}
+              payload={{ pipedrive_deal_id: c.pipedrive_deal_id, client_name: c.client_name, client_email: c.client_email, amount: c.amount, refund_type: 'scheduled', charge_id: c.id }}
+            />
           )}
         </div>
       )}
