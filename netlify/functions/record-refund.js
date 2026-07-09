@@ -61,8 +61,9 @@ exports.handler = async (event) => {
   }
 
   // 3. Mirror to refund_log (the single cross-source ledger).
+  let logResult = null;
   try {
-    await supa('refund_log', {
+    logResult = await supa('refund_log', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         source: 'manual', pipedrive_deal_id: dealId, client_name: b.client_name,
@@ -96,6 +97,8 @@ exports.handler = async (event) => {
     success: true, refund_id: refundId,
     matched_payment: matched ? matched.id : null,
     excluded_from_bonus: excluded,
-    deal_noted: noted
+    deal_noted: noted,
+    logged: logResult ? logResult.ok : false,
+    log_error: logResult && !logResult.ok ? (logResult.text || '').slice(0, 200) : null
   });
 };
