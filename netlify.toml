@@ -90,3 +90,9 @@
 # GOOGLE_PRIVATE_KEY = (set in Netlify)
 # GOOGLE_SHEET_ID = (set in Netlify)
 # =============================================
+
+# Reconcile the invoice mirror against live Zoho: deletes tombstones (invoices removed
+# in Zoho) and corrects stale balances (payments the page-1 sync missed). Runs 5 min
+# after each zoho-invoice-sync so the Past Due metric always reflects Zoho truth.
+[functions."zoho-invoice-reconcile"]
+  schedule = "50 12-23 * * 1-6"
