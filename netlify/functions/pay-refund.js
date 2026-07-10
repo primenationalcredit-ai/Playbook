@@ -1,5 +1,8 @@
 // pay-refund.js  (Playbook)
 // B3 proxy: leadership clicks Pay Refund on a ready-to-pay request. Verifies
+// v3: records the consultant payroll deduction ONCE per request, split-aware:
+//   commission_paid_amount x deduction_rate -> deduction row in `refunds`;
+//   the never-paid remainder is noted as removed-from-paysheet.
 // the caller and the request state, calls the processor's issue-refund engine,
 // then routes the request: fully covered -> card_refunded; remainder -> check_needed.
 
@@ -19,6 +22,40 @@ async function supa(path, opts = {}) {
   const text = await r.text();
   let json = null; try { json = JSON.parse(text); } catch (e) {}
   return { ok: r.ok, json, text };
+}
+
+async function recordDeduction(req, target, paidPortion, rate, byEmail) {
+  const paid = Math.max(0, Math.min(parseFloat(paidPortion) || 0, target));
+  const pct = Math.max(0, parseFloat(rate) || 0);
+  const deduction = Math.round(paid * pct) / 100; // pct is whole-number percent
+  const unpaid = Math.round((target - paid) * 100) / 100;
+  const today = new Date().toISOString().slice(0, 10);
+  const ins = await supa('refunds', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      client_name: req.client_name || null,
+      client_email: req.client_email || null,
+      pipedrive_deal_id: req.pipedrive_deal_id || null,
+      consultant_name: req.consultant_name || null,
+      refund_amount: target,
+      refund_reason: req.reason || null,
+      refund_date: today,
+      deduction_percentage: pct,
+      deduction_amount: deduction,
+      status: 'approved',
+      payroll_period: today.slice(0, 7),
+      notes: `From refund request #${req.id}. Commission already paid on $${paid.toFixed(2)} -> deduct $${deduction.toFixed(2)} (${pct}%).` +
+        (unpaid > 0.009 ? ` Remaining $${unpaid.toFixed(2)} never paid out - remove from paysheet, no deduction.` : ''),
+      created_by: byEmail || null
+    })
+  });
+  if (ins.ok) {
+    await supa(`refund_requests?id=eq.${req.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ commission_paid_amount: paid, deduction_rate: pct, deduction_recorded: true })
+    });
+  }
+  return { ok: ins.ok, deduction, paid, unpaid };
 }
 
 exports.handler = async (event) => {
@@ -80,8 +117,33 @@ exports.handler = async (event) => {
       body: JSON.stringify(patch)
     });
 
+    // Consultant payroll deduction - once per request, at the first pay action
+    let deduction = null;
+    if (!req.deduction_recorded && b.commission_paid_amount != null) {
+      try { deduction = await recordDeduction(req, target, b.commission_paid_amount, b.deduction_rate != null ? b.deduction_rate : 14, b.requested_by); } catch (e) {}
+    }
+
+    // Tell the client their money moved (card-only, or card + check-coming)
+    let email_sent = false;
+    if (refunded > 0.009 && req.client_email) {
+      try {
+        const okTxn = (d.results || []).find(x => x.ok) || {};
+        const last4 = String(okTxn.card || '').split('...')[1] || '';
+        const n = await fetch(`${PROCESSOR_URL}/.netlify/functions/notify-refund-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY || '' },
+          body: JSON.stringify({
+            mode: 'card', to: req.client_email, client_name: req.client_name,
+            card_amount: patch.card_refunded_amount, check_amount: checkNeeded, card_last4: last4
+          })
+        });
+        email_sent = ((await n.json()) || {}).email_sent === true;
+      } catch (e) {}
+    }
+
     return respond(200, {
-      success: true,
+      success: true, email_sent,
+      deduction: deduction ? { recorded: deduction.ok, amount: deduction.deduction, on_paid: deduction.paid, removed_from_sheet: deduction.unpaid } : null,
       refunded_to_card: refunded,
       check_needed: checkNeeded,
       new_status: patch.status,

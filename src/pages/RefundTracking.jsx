@@ -148,11 +148,13 @@ export default function RefundTracking() {
     if (bad) { window.alert(`Amount on ${bad.source} exceeds its refundable $${bad.refundable.toFixed(2)}.`); return; }
     if (toCard <= 0 && check <= 0) { window.alert('Nothing to do - enter card amounts or use Pay by Check.'); return; }
     if (!window.confirm(`Refund $${toCard.toFixed(2)} to card(s)${check > 0 ? ` and queue a $${check.toFixed(2)} check` : ''} for ${req.client_name}?`)) return;
+    const split = askCommissionSplit(req, target);
+    if (split === null) return;
     setBusy(true);
     try {
       const resp = await fetch('/.netlify/functions/pay-refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id: req.id, amount: target, allocations, requested_by: currentUser?.email })
+        body: JSON.stringify({ request_id: req.id, amount: target, allocations, requested_by: currentUser?.email, ...split })
       });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
@@ -161,6 +163,7 @@ export default function RefundTracking() {
         `Refunded to card: $${(d.refunded_to_card || 0).toFixed(2)}\n` +
         (d.check_needed > 0 ? `CHECK NEEDED: $${d.check_needed.toFixed(2)}` : 'Fully covered - request closed as card refunded') +
         (d.email_sent ? '\nClient emailed.' : '') +
+        (d.deduction ? `\nPayroll: $${(d.deduction.amount || 0).toFixed(2)} deduction on $${(d.deduction.on_paid || 0).toFixed(2)} already paid${d.deduction.removed_from_sheet > 0 ? `; $${d.deduction.removed_from_sheet.toFixed(2)} removed from paysheet` : ''}` : '') +
         (lines ? `\n\n${lines}` : '')
       );
       setPicker(null);
@@ -169,14 +172,32 @@ export default function RefundTracking() {
     setBusy(false);
   };
 
+  // Ask the payroll split once per request: how much of this refund has the
+  // consultant already been paid commission on? Returns {paid, rate} or null (cancel).
+  const askCommissionSplit = (r, target) => {
+    if (r.deduction_recorded) return {};
+    const who = r.consultant_name || 'the consultant';
+    const paidStr = window.prompt(
+      `PAYROLL: Of this $${target.toFixed(2)} refund, how much has ${who} ALREADY been paid commission on?\n` +
+      `(Full amount if their payout included it; 0 if it was never paid out.)`, target.toFixed(2));
+    if (paidStr === null) return null;
+    const paid = Math.max(0, Math.min(parseFloat(paidStr) || 0, target));
+    const rateStr = window.prompt('Deduction rate % for the paid portion:', '14');
+    if (rateStr === null) return null;
+    const rate = Math.max(0, parseFloat(rateStr) || 0);
+    return { commission_paid_amount: paid, deduction_rate: rate };
+  };
+
   const payByCheck = async (r) => {
     const remaining = Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.card_refunded_amount) || 0));
     if (!window.confirm(`Skip the card and pay ${r.client_name}'s $${remaining.toFixed(2)} refund by check?`)) return;
+    const split = askCommissionSplit(r, remaining);
+    if (split === null) return;
     setBusy(true);
     try {
       const resp = await fetch('/.netlify/functions/refund-requests', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'route_to_check', request_id: r.id, requested_by: currentUser?.email })
+        body: JSON.stringify({ action: 'route_to_check', request_id: r.id, requested_by: currentUser?.email, ...split })
       });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');

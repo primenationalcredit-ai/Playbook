@@ -168,7 +168,7 @@ exports.handler = async (event) => {
       if (!b.request_id) return respond(400, { error: 'request_id required' });
       const lead = await supa(`users?email=eq.${encodeURIComponent(String(b.requested_by || '').trim().toLowerCase())}&department=eq.leadership&select=id`);
       if (!Array.isArray(lead.json) || lead.json.length === 0) return respond(403, { error: 'Only leadership can route refunds' });
-      const rows = await supa(`refund_requests?id=eq.${b.request_id}&select=id,status,amount,card_refunded_amount,pipedrive_deal_id,client_name`);
+      const rows = await supa(`refund_requests?id=eq.${b.request_id}&select=id,status,amount,card_refunded_amount,pipedrive_deal_id,client_name,client_email,consultant_name,reason,deduction_recorded`);
       const req = (rows.json || [])[0];
       if (!req) return respond(404, { error: 'Request not found' });
       if (req.status !== 'ready_to_pay') return respond(409, { error: `Request is ${req.status} - only ready-to-pay refunds can be routed to check` });
@@ -179,6 +179,36 @@ exports.handler = async (event) => {
       });
       if (upd.ok) {
         await postNote(req.pipedrive_deal_id, `<p><b>\u{1F4B5} REFUND ROUTED TO CHECK</b></p><ul><li>Client: ${esc(req.client_name)}</li><li>Amount: <b>$${remaining.toFixed(2)}</b> by check (card refund skipped)</li><li>By: ${esc(b.requested_by || 'leadership')}</li></ul>`);
+      }
+      // Consultant payroll deduction - once per request, split-aware (mirrors pay-refund)
+      if (upd.ok && !req.deduction_recorded && b.commission_paid_amount != null) {
+        try {
+          const targetAmt = Math.max(0, Math.round(((parseFloat(req.amount) || 0)) * 100) / 100);
+          const paid = Math.max(0, Math.min(parseFloat(b.commission_paid_amount) || 0, targetAmt));
+          const pct = Math.max(0, parseFloat(b.deduction_rate != null ? b.deduction_rate : 14) || 0);
+          const ded = Math.round(paid * pct) / 100;
+          const unpaid = Math.round((targetAmt - paid) * 100) / 100;
+          const today2 = new Date().toISOString().slice(0, 10);
+          const dIns = await supa('refunds', {
+            method: 'POST', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              client_name: req.client_name || null, client_email: req.client_email || null,
+              pipedrive_deal_id: req.pipedrive_deal_id || null, consultant_name: req.consultant_name || null,
+              refund_amount: targetAmt, refund_reason: req.reason || null, refund_date: today2,
+              deduction_percentage: pct, deduction_amount: ded, status: 'approved',
+              payroll_period: today2.slice(0, 7),
+              notes: `From refund request #${req.id} (check). Commission already paid on $${paid.toFixed(2)} -> deduct $${ded.toFixed(2)} (${pct}%).` +
+                (unpaid > 0.009 ? ` Remaining $${unpaid.toFixed(2)} never paid out - remove from paysheet, no deduction.` : ''),
+              created_by: b.requested_by || null
+            })
+          });
+          if (dIns.ok) {
+            await supa(`refund_requests?id=eq.${b.request_id}`, {
+              method: 'PATCH', headers: { Prefer: 'return=minimal' },
+              body: JSON.stringify({ commission_paid_amount: paid, deduction_rate: pct, deduction_recorded: true })
+            });
+          }
+        } catch (e) {}
       }
       return respond(upd.ok ? 200 : 500, upd.ok ? { success: true, check_amount: remaining } : { error: 'update failed' });
     }
