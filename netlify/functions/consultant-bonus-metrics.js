@@ -547,18 +547,17 @@ exports.handler = async (event) => {
       // Avoid: "Rosa" in "De La Rosa" matching "Rosalia"
       const firstName = name.split(' ')[0].toLowerCase();
       const lastName = name.split(' ').slice(-1)[0].toLowerCase();
-      const myPayments = payments.filter(p => {
+      const matchesConsultant = (p) => {
         const pName = (p.consultant_name || '').toLowerCase().trim();
         // Exact first name match (word boundary): "cindy" in "cindy" or "cindy broadstreet"
         const pParts = pName.split(/\s+/);
-        // Check if consultant first name matches user first name exactly
         if (pParts[0] === firstName) return true;
-        // Check if last name appears in payment name (for "Carlos Danilo Salguera Balladares" matching "Carlos Salguera")  
+        // Last name appears in payment name ("Carlos Danilo Salguera Balladares" matches "Carlos Salguera")
         if (lastName.length > 3 && pParts.some(pp => pp === lastName)) return true;
-        // Full name exact match
         if (pName === name.toLowerCase()) return true;
         return false;
-      }).filter(p =>
+      };
+      const myPayments = payments.filter(matchesConsultant).filter(p =>
         // Consultants are credited only on new-client acquisition payments. Additional rounds ($299)
         // belong to Account Managers, never consultants, and unclassified ("unknown") rows are not
         // creditable consultant sales. Excluding both here keeps them out of sales, commission, counts,
@@ -566,6 +565,37 @@ exports.handler = async (event) => {
         p.payment_type === 'doc_fee' || p.payment_type === 'partial' ||
         p.payment_type === 'final' || p.payment_type === 'paid_in_full'
       );
+
+      // Full-window payments for this consultant. Qualified-doc month attribution
+      // (policy 7/10): a doc counts toward the month of the client's FIRST
+      // balance-side payment, so cross-month doc fee -> partial must be visible.
+      const myWindowPayments = allPayments.filter(matchesConsultant).filter(p =>
+        p.payment_type === 'doc_fee' || p.payment_type === 'partial' ||
+        p.payment_type === 'final' || p.payment_type === 'paid_in_full'
+      );
+      const windowClientMap = {};
+      for (const p of myWindowPayments) {
+        const key = p.pipedrive_deal_id || p.client_name;
+        if (!windowClientMap[key]) windowClientMap[key] = {
+          key, name: p.client_name, dealId: p.pipedrive_deal_id,
+          hasDocFee: false, hasPartial: false, hasFinal: false,
+          totalPaid: 0, orgName: p.referrer_org, isAffiliate: p.is_affiliate_deal,
+          payments: [], firstPaymentDate: p.payment_date, firstAdvanceDate: null
+        };
+        const wc = windowClientMap[key];
+        wc.totalPaid += parseFloat(p.amount) || 0;
+        wc.payments.push(p);
+        if (p.payment_type === 'doc_fee') wc.hasDocFee = true;
+        if (p.payment_type === 'partial') wc.hasPartial = true;
+        if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') wc.hasFinal = true;
+        if (p.payment_date < wc.firstPaymentDate) wc.firstPaymentDate = p.payment_date;
+        if (p.payment_type !== 'doc_fee' && (!wc.firstAdvanceDate || p.payment_date < wc.firstAdvanceDate)) {
+          wc.firstAdvanceDate = p.payment_date;
+        }
+      }
+      for (const wc of Object.values(windowClientMap)) {
+        wc.firstAdvanceMonth = wc.firstAdvanceDate ? String(wc.firstAdvanceDate).slice(0, 7) : null;
+      }
 
       // === SALES & COMMISSION (from Zoho) ===
       let totalSales = 0, affiliateSales = 0, organicSales = 0;
@@ -608,28 +638,49 @@ exports.handler = async (event) => {
 
       const clients = Object.values(clientMap);
       
-      // === QUALIFIED DOCS (invoice-amount rule) ===
+      // === QUALIFIED DOCS (invoice-amount rule; month = first balance-side payment) ===
+      // Policy (7/10, Joe): a doc counts toward the month the client's FIRST partial/
+      // final clears, regardless of the doc fee's month, with no time window between
+      // them. The balance qualification test (qualifyClient) is unchanged.
       let qualifiedDocs = 0;
       let docFeeOnlyCount = 0;
       const qualifiedClients = [];
       const notQualifiedClients = [];
+      const qualifiedKeySet = new Set();
 
-      for (const client of clients) {
-        if (!client.hasDocFee) continue; // Only clients who paid a doc fee this month
-        const q = qualifyClient(client);
+      for (const wc of Object.values(windowClientMap)) {
+        if (!wc.hasDocFee) continue;
+        if (wc.firstAdvanceMonth !== targetMonth) continue; // belongs to the first advance's month
+        const q = qualifyClient(wc);
         if (q.qualified) {
           qualifiedDocs++;
-          qualifiedClients.push(client);
+          qualifiedClients.push(wc);
+          qualifiedKeySet.add(wc.key);
+        }
+      }
+
+      // Chase list: this month's doc-fee clients not counted this month. If their first
+      // advance landed in a different month, say so instead of a balance complaint.
+      for (const client of clients) {
+        if (!client.hasDocFee) continue;
+        const key = client.dealId || client.name;
+        if (qualifiedKeySet.has(key)) continue;
+        const wc = windowClientMap[key];
+        docFeeOnlyCount++;
+        if (wc && wc.firstAdvanceMonth && wc.firstAdvanceMonth !== targetMonth) {
+          const q2 = qualifyClient(wc);
+          notQualifiedClients.push({ name: client.name, dealId: client.dealId, reason: q2.qualified ? `Counts in ${wc.firstAdvanceMonth} (first partial landed that month)` : q2.reason, paid: q2.paid, owed: q2.owed });
         } else {
-          docFeeOnlyCount++;
+          const q = qualifyClient(wc || client);
           notQualifiedClients.push({ name: client.name, dealId: client.dealId, reason: q.reason, paid: q.paid, owed: q.owed });
         }
       }
 
-      // Clients who paid partial/final this month without a doc fee this month (qualified in a prior month)
+      // Advance-this-month clients whose doc fee was in an earlier month (these now COUNT
+      // this month via the window map; kept for the response payload)
       const priorMonthQualified = clients.filter(c => !c.hasDocFee && (c.hasPartial || c.hasFinal));
 
-      const docFeeOnlyClients = clients.filter(c => c.hasDocFee && !qualifiedClients.includes(c));
+      const docFeeOnlyClients = clients.filter(c => c.hasDocFee && !qualifiedKeySet.has(c.dealId || c.name));
 
       // === ACCELERATOR ===
       const accelerator = calcAccelerator(qualifiedDocs);
@@ -667,12 +718,12 @@ exports.handler = async (event) => {
       // Affiliate clients this month, grouped by affiliate org. Only clients who paid their DOC FEE this
       // month are shown (the cohort that can qualify), each flagged qualified or not-yet, so the list
       // matches the "X of 3 qualified" count and the not-yet ones are visible to chase for a partial.
-      const qualifiedSet = new Set(qualifiedClients);
+      const qualifiedSet = qualifiedKeySet;
       const affGroupMap = {};
       for (const client of clients) {
         if (!client.isAffiliate || !client.orgName || !client.hasDocFee) continue;
         if (!affGroupMap[client.orgName]) affGroupMap[client.orgName] = [];
-        affGroupMap[client.orgName].push({ name: client.name, dealId: client.dealId || null, qualified: qualifiedSet.has(client) });
+        affGroupMap[client.orgName].push({ name: client.name, dealId: client.dealId || null, qualified: qualifiedSet.has(client.dealId || client.name) });
       }
       const affiliateGroups = Object.entries(affGroupMap).map(([org, cls]) => {
         const qualifiedCount = cls.filter(c => c.qualified).length;
