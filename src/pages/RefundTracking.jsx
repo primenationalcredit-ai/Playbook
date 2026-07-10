@@ -359,7 +359,7 @@ export default function RefundTracking() {
         const unpaid = Math.round((t - paid) * 100) / 100;
         const who = split.req.consultant_name || 'consultant not on record - check the deal owner';
         return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSplit(null)}>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => { if (e.target === e.currentTarget) setSplit(null); }}>
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="p-5 border-b">
                 <h2 className="text-lg font-bold text-gray-900">Payroll deduction - {who}</h2>
@@ -422,7 +422,7 @@ export default function RefundTracking() {
 
       {/* ---- New request form ---- */}
       {showNew && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowNew(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => { if (e.target === e.currentTarget) setShowNew(false); }}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="p-5 border-b">
               <h2 className="text-lg font-bold text-gray-900">New Refund Request</h2>
@@ -465,7 +465,7 @@ export default function RefundTracking() {
         const toCard = Math.round(picker.candidates.reduce((s, c) => s + (parseFloat(picker.allocs[c.txn]) || 0), 0) * 100) / 100;
         const check = Math.max(0, Math.round((picker.target - toCard) * 100) / 100);
         return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPicker(null)}>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={e => { if (e.target === e.currentTarget) setPicker(null); }}>
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="p-5 border-b">
                 <h2 className="text-lg font-bold text-gray-900">Refund {picker.req.client_name} - ${picker.target.toFixed(2)}</h2>
