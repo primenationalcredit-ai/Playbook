@@ -220,11 +220,11 @@ export default function RefundTracking() {
           <p className="text-gray-600">Requests come in from the Invoices page. Approve, get the release signed, and pay by card or check - the client is emailed automatically at each payment step.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => { setLoading(true); load(); }} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-            <RefreshCw className="w-4 h-4" /> Refresh
+          <button onClick={() => { setLoading(true); load(); }} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 whitespace-nowrap">
+            <RefreshCw size={16} /> Refresh
           </button>
-          <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium">
-            <DollarSign className="w-4 h-4" /> New Refund Request
+          <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm rounded-lg hover:opacity-90 font-medium whitespace-nowrap">
+            <DollarSign size={16} /> New Refund Request
           </button>
         </div>
       </div>
