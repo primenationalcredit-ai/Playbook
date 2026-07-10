@@ -148,8 +148,8 @@ export default function RefundTracking() {
     const bad = candidates.find(c => (parseFloat(allocs[c.txn]) || 0) > c.refundable + 0.009);
     if (bad) { window.alert(`Amount on ${bad.source} exceeds its refundable $${bad.refundable.toFixed(2)}.`); return; }
     if (toCard <= 0 && check <= 0) { window.alert('Nothing to do - enter card amounts or use Pay by Check.'); return; }
-    if (!window.confirm(`Refund $${toCard.toFixed(2)} to card(s)${check > 0 ? ` and queue a $${check.toFixed(2)} check` : ''} for ${req.client_name}?`)) return;
-    openSplit(req, target, (splitVals) => doExecutePicker(req, target, allocations, splitVals));
+    setPicker(null);
+    openSplit(req, target, `Refund $${toCard.toFixed(2)} to ${req.client_name}'s card(s)${check > 0 ? ` and queue a $${check.toFixed(2)} check` : ''}?`, (splitVals) => doExecutePicker(req, target, allocations, splitVals));
   };
   const doExecutePicker = async (req, target, allocations, splitVals) => {
     setBusy(true);
@@ -179,9 +179,12 @@ export default function RefundTracking() {
   const [split, setSplit] = useState(null); // { req, target, paid, rate, payments, loading, proceed }
   const currentMonth = new Date().toISOString().slice(0, 7);
 
-  const openSplit = async (req, target, proceed) => {
-    if (req.deduction_recorded) { proceed({}); return; }
-    setSplit({ req, target, paid: target.toFixed(2), rate: '14', payments: [], loading: true, proceed });
+  const openSplit = async (req, target, desc, proceed) => {
+    if (req.deduction_recorded) {
+      if (window.confirm(desc)) proceed({});
+      return;
+    }
+    setSplit({ req, target, desc, paid: target.toFixed(2), rate: '14', payments: [], loading: true, proceed });
     try {
       const { data } = await supabase
         .from('consultant_payments')
@@ -197,8 +200,7 @@ export default function RefundTracking() {
 
   const payByCheck = async (r) => {
     const remaining = Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.card_refunded_amount) || 0));
-    if (!window.confirm(`Skip the card and pay ${r.client_name}'s $${remaining.toFixed(2)} refund by check?`)) return;
-    openSplit(r, remaining, (splitVals) => doPayByCheck(r, splitVals));
+    openSplit(r, remaining, `Pay ${r.client_name}'s $${remaining.toFixed(2)} refund by check (no card attempt)?`, (splitVals) => doPayByCheck(r, splitVals));
   };
   const doPayByCheck = async (r, splitVals) => {
     setBusy(true);
@@ -361,7 +363,8 @@ export default function RefundTracking() {
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="p-5 border-b">
                 <h2 className="text-lg font-bold text-gray-900">Payroll deduction - {who}</h2>
-                <p className="text-sm text-gray-500">Refunding ${t.toFixed(2)}. How much of it was already paid out to the consultant in commission?</p>
+                {split.desc && <p className="text-sm font-medium text-gray-800 mt-1">{split.desc}</p>}
+                <p className="text-sm text-gray-500 mt-1">Before paying: how much of this ${t.toFixed(2)} was already paid out to the consultant in commission?</p>
               </div>
               <div className="p-5 space-y-3">
                 <div>
