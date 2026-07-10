@@ -96,3 +96,9 @@
 # after each zoho-invoice-sync so the Past Due metric always reflects Zoho truth.
 [functions."zoho-invoice-reconcile"]
   schedule = "50 12-23 * * 1-6"
+
+# Affiliate book sync: pulls Pipedrive filter 523931 (portal-link orgs = onboarded
+# affiliates, Zapier adds new signups automatically), refreshes contacts/stats/segments.
+# Never touches cadence state columns.
+[functions."affiliate-sync"]
+  schedule = "20 12-23 * * 1-6"
