@@ -244,11 +244,13 @@ export default function RefundTracking() {
                   <span className="font-semibold">{r.client_name || 'Unknown'}</span>
                   <span className="text-gray-500"> - ${parseFloat(r.amount || 0).toFixed(2)} - deal {r.pipedrive_deal_id}</span>
                   <span className="ml-2"><StatusPill status={r.status} /></span>
-                  {(r.release_signed_at || ['ready_to_pay', 'check_needed'].includes(r.status)) && (
-                    <span className="ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title={r.release_signed_at ? `Release signed ${String(r.release_signed_at).slice(0, 10)}` : 'Release signed'}>&#10003; Release signed - OK to pay</span>
+                  {r.release_signed_at ? (
+                    <span className="ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title={`Release signed ${String(r.release_signed_at).slice(0, 10)}`}>&#10003; Release signed - OK to pay</span>
+                  ) : ['ready_to_pay', 'check_needed'].includes(r.status) && (
+                    <span className="ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">&#10003; No release required - OK to pay</span>
                   )}
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {r.consultant_name ? `Consultant: ${r.consultant_name} - ` : ''}By {r.requested_by_name || r.requested_by || 'unknown'}: {r.reason}
+                    By {r.requested_by_name || r.requested_by || 'unknown'}: {r.reason}
                     {r.rounds_started ? ' (rounds started - release required)' : ''}
                   </p>
                 </div>
@@ -301,7 +303,7 @@ export default function RefundTracking() {
                 <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-50 rounded-lg px-3 py-1.5 text-sm">
                   <div>
                     <span className="font-medium text-gray-800">{r.client_name || 'Unknown'}</span>
-                    <span className="text-gray-400"> - deal {r.pipedrive_deal_id}{r.consultant_name ? ` - ${r.consultant_name}` : ''}</span>
+                    <span className="text-gray-400"> - deal {r.pipedrive_deal_id}</span>
                     <span className="ml-2"><StatusPill status={r.status} /></span>
                   </div>
                   <span className={`text-xs ${r.status === 'denied' ? 'text-gray-400' : 'text-green-700 font-medium'}`}>{outcome}</span>
