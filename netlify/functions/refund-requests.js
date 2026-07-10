@@ -74,13 +74,6 @@ exports.handler = async (event) => {
         return respond(400, { error: 'pipedrive_deal_id, amount, and reason are required' });
       }
       const rs = await roundsStarted(b.pipedrive_deal_id);
-      // Consultant = Pipedrive deal owner (drives display + payroll attribution)
-      let consultant_name = null;
-      try {
-        const dr = await fetch(`https://${process.env.PIPEDRIVE_COMPANY_DOMAIN || 'asapcreditrepairusa'}.pipedrive.com/api/v1/deals/${encodeURIComponent(String(b.pipedrive_deal_id))}?api_token=${process.env.PIPEDRIVE_API_TOKEN || process.env.PIPEDRIVE_API_KEY}`);
-        const dd = await dr.json();
-        consultant_name = (dd && dd.data && dd.data.owner_name) || (dd && dd.data && dd.data.user_id && dd.data.user_id.name) || null;
-      } catch (e) {}
       const ins = await supa('refund_requests', {
         method: 'POST', headers: { Prefer: 'return=representation' },
         body: JSON.stringify({
@@ -96,7 +89,6 @@ exports.handler = async (event) => {
           requested_by: b.requested_by || null,
           requested_by_name: b.requested_by_name || null,
           rounds_started: rs
-          consultant_name,
         })
       });
       if (!ins.ok) return respond(500, { error: 'insert failed: ' + (ins.text || '').slice(0, 200) });
