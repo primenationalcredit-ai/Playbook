@@ -47,10 +47,16 @@ exports.handler = async (event) => {
     const r = await fetch(`${PROCESSOR_URL}/.netlify/functions/issue-refund`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY || '' },
-      body: JSON.stringify({ refund_request_id: req.id, deal_id: req.pipedrive_deal_id, target_amount: target })
+      body: JSON.stringify({
+        refund_request_id: req.id, deal_id: req.pipedrive_deal_id, target_amount: target,
+        preview: !!b.preview, allocations: Array.isArray(b.allocations) ? b.allocations : undefined
+      })
     });
     const d = await r.json();
     if (!r.ok || d.error) return respond(502, { error: d.error || 'issue-refund failed' });
+
+    // Preview never changes the request - just relay the menu
+    if (b.preview) return respond(200, d);
 
     const refunded = parseFloat(d.refunded_to_card || 0);
     const checkNeeded = parseFloat(d.check_needed || 0);
@@ -74,26 +80,8 @@ exports.handler = async (event) => {
       body: JSON.stringify(patch)
     });
 
-    // Tell the client their money moved (card-only, or card + check-coming)
-    let email_sent = false;
-    if (refunded > 0.009 && req.client_email) {
-      try {
-        const okTxn = (d.results || []).find(x => x.ok) || {};
-        const last4 = String(okTxn.card || '').split('...')[1] || '';
-        const n = await fetch(`${PROCESSOR_URL}/.netlify/functions/notify-refund-payment`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY || '' },
-          body: JSON.stringify({
-            mode: 'card', to: req.client_email, client_name: req.client_name,
-            card_amount: patch.card_refunded_amount, check_amount: checkNeeded, card_last4: last4
-          })
-        });
-        email_sent = ((await n.json()) || {}).email_sent === true;
-      } catch (e) {}
-    }
-
     return respond(200, {
-      success: true, email_sent,
+      success: true,
       refunded_to_card: refunded,
       check_needed: checkNeeded,
       new_status: patch.status,

@@ -29,6 +29,8 @@ export default function RefundTracking() {
   const [reqs, setReqs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Card-refund picker modal: { req, target, candidates: [...], allocs: {txn: amountString} }
+  const [picker, setPicker] = useState(null);
 
   const load = async () => {
     try {
@@ -77,17 +79,47 @@ export default function RefundTracking() {
     setBusy(false);
   };
 
+  // Open the transaction picker: fetch the deal's refundable card transactions,
+  // pre-fill a newest-first allocation toward the target, let leadership edit.
   const payRefund = async (r) => {
-    const amtStr = window.prompt('Refund amount to attempt on the card(s):', String(r.amount || ''));
-    if (amtStr === null) return;
-    const amt = parseFloat(amtStr);
-    if (!amt || amt <= 0) { window.alert('Enter a positive amount.'); return; }
-    if (!window.confirm(`Attempt to refund $${amt.toFixed(2)} to ${r.client_name}'s card(s) now?`)) return;
     setBusy(true);
     try {
       const resp = await fetch('/.netlify/functions/pay-refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id: r.id, amount: amt, requested_by: currentUser?.email })
+        body: JSON.stringify({ request_id: r.id, preview: true, requested_by: currentUser?.email })
+      });
+      const d = await resp.json();
+      if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
+      const target = Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.card_refunded_amount) || 0));
+      // Pre-fill: newest first, up to the target
+      let left = target;
+      const allocs = {};
+      for (const c of (d.candidates || [])) {
+        const take = Math.max(0, Math.min(c.refundable, left));
+        allocs[c.txn] = take > 0 ? take.toFixed(2) : '';
+        left = Math.round((left - take) * 100) / 100;
+      }
+      setPicker({ req: r, target, candidates: d.candidates || [], skipped: d.skipped || [], allocs });
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
+
+  const executePicker = async () => {
+    const { req, target, candidates, allocs } = picker;
+    const allocations = candidates
+      .map(c => ({ txn: c.txn, amount: parseFloat(allocs[c.txn]) || 0 }))
+      .filter(a => a.amount > 0);
+    const toCard = Math.round(allocations.reduce((s, a) => s + a.amount, 0) * 100) / 100;
+    const check = Math.max(0, Math.round((target - toCard) * 100) / 100);
+    const bad = candidates.find(c => (parseFloat(allocs[c.txn]) || 0) > c.refundable + 0.009);
+    if (bad) { window.alert(`Amount on ${bad.source} exceeds its refundable $${bad.refundable.toFixed(2)}.`); return; }
+    if (toCard <= 0 && check <= 0) { window.alert('Nothing to do - enter card amounts or use Pay by Check.'); return; }
+    if (!window.confirm(`Refund $${toCard.toFixed(2)} to card(s)${check > 0 ? ` and queue a $${check.toFixed(2)} check` : ''} for ${req.client_name}?`)) return;
+    setBusy(true);
+    try {
+      const resp = await fetch('/.netlify/functions/pay-refund', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: req.id, amount: target, allocations, requested_by: currentUser?.email })
       });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
@@ -96,9 +128,9 @@ export default function RefundTracking() {
         `Refunded to card: $${(d.refunded_to_card || 0).toFixed(2)}\n` +
         (d.check_needed > 0 ? `CHECK NEEDED: $${d.check_needed.toFixed(2)}` : 'Fully covered - request closed as card refunded') +
         (d.email_sent ? '\nClient emailed.' : '') +
-        (lines ? `\n\n${lines}` : '') +
-        (d.no_candidates ? '\n\nNo refundable card transactions were found on this deal.' : '')
+        (lines ? `\n\n${lines}` : '')
       );
+      setPicker(null);
       await load();
     } catch (e) { window.alert(e.message); }
     setBusy(false);
@@ -246,6 +278,60 @@ export default function RefundTracking() {
         <AlertTriangle size={13} className="mt-0.5 shrink-0" />
         Card refunds are recorded automatically for consultant payroll deductions. Refunds must be requested from the client's charge on the Invoices page - there is no manual entry here.
       </p>
+
+      {/* ---- Card refund picker ---- */}
+      {picker && (() => {
+        const toCard = Math.round(picker.candidates.reduce((s, c) => s + (parseFloat(picker.allocs[c.txn]) || 0), 0) * 100) / 100;
+        const check = Math.max(0, Math.round((picker.target - toCard) * 100) / 100);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setPicker(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-5 border-b">
+                <h2 className="text-lg font-bold text-gray-900">Refund {picker.req.client_name} - ${picker.target.toFixed(2)}</h2>
+                <p className="text-sm text-gray-500">Choose how much goes back to each card. Anything left over becomes a check.</p>
+              </div>
+              <div className="p-5 space-y-2">
+                {picker.candidates.length === 0 && (
+                  <p className="text-sm text-gray-500 py-4 text-center">No refundable card transactions on this deal. Close this and use Pay by Check.</p>
+                )}
+                {picker.candidates.map(c => (
+                  <div key={c.txn} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800">{c.source}</p>
+                      <p className="text-xs text-gray-500">{c.card}{c.date ? ` - paid ${c.date}` : ''} - up to ${c.refundable.toFixed(2)}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-gray-400 text-sm">$</span>
+                      <input
+                        type="number" step="0.01" min="0" max={c.refundable}
+                        value={picker.allocs[c.txn]}
+                        onChange={e => setPicker(p => ({ ...p, allocs: { ...p.allocs, [c.txn]: e.target.value } }))}
+                        className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-right"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                ))}
+                {picker.skipped.length > 0 && (
+                  <p className="text-xs text-gray-400">Not refundable: {picker.skipped.map(s => `charge #${s.charge_id} ($${s.amount})`).join(', ')} - no card transaction on record.</p>
+                )}
+              </div>
+              <div className="p-5 border-t bg-gray-50 rounded-b-2xl">
+                <div className="flex items-center justify-between text-sm mb-3">
+                  <span className="text-gray-600">To card(s): <b className="text-emerald-700">${toCard.toFixed(2)}</b></span>
+                  <span className="text-gray-600">Check needed: <b className={check > 0 ? 'text-rose-600' : 'text-gray-400'}>${check.toFixed(2)}</b></span>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setPicker(null)} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 text-sm">Cancel</button>
+                  <button disabled={busy} onClick={executePicker} className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-semibold">
+                    {busy ? 'Working...' : `Refund $${toCard.toFixed(2)}${check > 0 ? ` + $${check.toFixed(2)} check` : ''}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
