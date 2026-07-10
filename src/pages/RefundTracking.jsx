@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { supabase } from '../lib/supabase';
 import { DollarSign, CheckCircle, Clock, RefreshCw, AlertTriangle } from 'lucide-react';
 
 // Refund Tracking - single workflow:
@@ -148,13 +149,14 @@ export default function RefundTracking() {
     if (bad) { window.alert(`Amount on ${bad.source} exceeds its refundable $${bad.refundable.toFixed(2)}.`); return; }
     if (toCard <= 0 && check <= 0) { window.alert('Nothing to do - enter card amounts or use Pay by Check.'); return; }
     if (!window.confirm(`Refund $${toCard.toFixed(2)} to card(s)${check > 0 ? ` and queue a $${check.toFixed(2)} check` : ''} for ${req.client_name}?`)) return;
-    const split = askCommissionSplit(req, target);
-    if (split === null) return;
+    openSplit(req, target, (splitVals) => doExecutePicker(req, target, allocations, splitVals));
+  };
+  const doExecutePicker = async (req, target, allocations, splitVals) => {
     setBusy(true);
     try {
       const resp = await fetch('/.netlify/functions/pay-refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id: req.id, amount: target, allocations, requested_by: currentUser?.email, ...split })
+        body: JSON.stringify({ request_id: req.id, amount: target, allocations, requested_by: currentUser?.email, ...splitVals })
       });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
@@ -172,32 +174,38 @@ export default function RefundTracking() {
     setBusy(false);
   };
 
-  // Ask the payroll split once per request: how much of this refund has the
-  // consultant already been paid commission on? Returns {paid, rate} or null (cancel).
-  const askCommissionSplit = (r, target) => {
-    if (r.deduction_recorded) return {};
-    const who = r.consultant_name || 'the consultant';
-    const paidStr = window.prompt(
-      `PAYROLL: Of this $${target.toFixed(2)} refund, how much has ${who} ALREADY been paid commission on?\n` +
-      `(Full amount if their payout included it; 0 if it was never paid out.)`, target.toFixed(2));
-    if (paidStr === null) return null;
-    const paid = Math.max(0, Math.min(parseFloat(paidStr) || 0, target));
-    const rateStr = window.prompt('Deduction rate % for the paid portion:', '14');
-    if (rateStr === null) return null;
-    const rate = Math.max(0, parseFloat(rateStr) || 0);
-    return { commission_paid_amount: paid, deduction_rate: rate };
+  // Payroll split modal: shows the deal's payments so leadership can SEE which
+  // ones the consultant was already paid commission on, then confirms the split.
+  const [split, setSplit] = useState(null); // { req, target, paid, rate, payments, loading, proceed }
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  const openSplit = async (req, target, proceed) => {
+    if (req.deduction_recorded) { proceed({}); return; }
+    setSplit({ req, target, paid: target.toFixed(2), rate: '14', payments: [], loading: true, proceed });
+    try {
+      const { data } = await supabase
+        .from('consultant_payments')
+        .select('id, amount, payment_date, payment_month')
+        .eq('pipedrive_deal_id', String(req.pipedrive_deal_id))
+        .order('payment_date', { ascending: false })
+        .limit(25);
+      setSplit(s => (s ? { ...s, payments: data || [], loading: false } : s));
+    } catch (e) {
+      setSplit(s => (s ? { ...s, loading: false } : s));
+    }
   };
 
   const payByCheck = async (r) => {
     const remaining = Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.card_refunded_amount) || 0));
     if (!window.confirm(`Skip the card and pay ${r.client_name}'s $${remaining.toFixed(2)} refund by check?`)) return;
-    const split = askCommissionSplit(r, remaining);
-    if (split === null) return;
+    openSplit(r, remaining, (splitVals) => doPayByCheck(r, splitVals));
+  };
+  const doPayByCheck = async (r, splitVals) => {
     setBusy(true);
     try {
       const resp = await fetch('/.netlify/functions/refund-requests', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'route_to_check', request_id: r.id, requested_by: currentUser?.email, ...split })
+        body: JSON.stringify({ action: 'route_to_check', request_id: r.id, requested_by: currentUser?.email, ...splitVals })
       });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
@@ -339,6 +347,75 @@ export default function RefundTracking() {
         <AlertTriangle size={13} className="mt-0.5 shrink-0" />
         Card refunds are recorded automatically for consultant payroll deductions. The team can also request refunds from the client's charge on the Invoices page.
       </p>
+
+      {/* ---- Payroll split modal ---- */}
+      {split && (() => {
+        const t = split.target;
+        const paid = Math.max(0, Math.min(parseFloat(split.paid) || 0, t));
+        const rate = Math.max(0, parseFloat(split.rate) || 0);
+        const ded = Math.round(paid * rate) / 100;
+        const unpaid = Math.round((t - paid) * 100) / 100;
+        const who = split.req.consultant_name || 'consultant not on record - check the deal owner';
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSplit(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-5 border-b">
+                <h2 className="text-lg font-bold text-gray-900">Payroll deduction - {who}</h2>
+                <p className="text-sm text-gray-500">Refunding ${t.toFixed(2)}. How much of it was already paid out to the consultant in commission?</p>
+              </div>
+              <div className="p-5 space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-gray-600 mb-1">This deal's payments (for reference):</p>
+                  {split.loading ? (
+                    <p className="text-xs text-gray-400 py-2">Loading payments...</p>
+                  ) : split.payments.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-2">No synced payments found for this deal.</p>
+                  ) : (
+                    <div className="space-y-1 max-h-44 overflow-y-auto">
+                      {split.payments.map(p => {
+                        const prior = String(p.payment_month || '') < currentMonth;
+                        return (
+                          <div key={p.id} className="flex items-center justify-between text-xs border border-gray-100 rounded px-2 py-1.5">
+                            <span className="text-gray-700">${(parseFloat(p.amount) || 0).toFixed(2)}{p.payment_date ? ` - ${String(p.payment_date).slice(0, 10)}` : ''}</span>
+                            <span className={`px-1.5 py-0.5 rounded-full font-medium ${prior ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'}`}>
+                              {prior ? 'prior month - likely already paid out' : 'this month - likely NOT paid yet'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Already paid to consultant ($)</label>
+                    <input type="number" step="0.01" min="0" max={t} value={split.paid}
+                      onChange={e => setSplit(s => ({ ...s, paid: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Deduction rate (%)</label>
+                    <input type="number" step="1" min="0" value={split.rate}
+                      onChange={e => setSplit(s => ({ ...s, rate: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                  <p><b className="text-rose-600">Deduct ${ded.toFixed(2)}</b> from {split.req.consultant_name || 'the consultant'}'s paysheet ({rate}% of ${paid.toFixed(2)} already paid)</p>
+                  {unpaid > 0.009 && <p className="text-gray-600">Remove ${unpaid.toFixed(2)} from the paysheet - never paid out, no deduction.</p>}
+                </div>
+              </div>
+              <div className="p-5 border-t bg-gray-50 rounded-b-2xl flex gap-3">
+                <button onClick={() => setSplit(null)} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 text-sm">Cancel</button>
+                <button disabled={busy} onClick={() => { const go = split.proceed; const vals = { commission_paid_amount: paid, deduction_rate: rate }; setSplit(null); go(vals); }}
+                  className="flex-1 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 disabled:opacity-50 text-sm font-semibold">
+                  Confirm & Pay
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---- New request form ---- */}
       {showNew && (
