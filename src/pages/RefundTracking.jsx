@@ -31,6 +31,9 @@ export default function RefundTracking() {
   const [busy, setBusy] = useState(false);
   // Card-refund picker modal: { req, target, candidates: [...], allocs: {txn: amountString} }
   const [picker, setPicker] = useState(null);
+  // New-request form modal
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ client_name: '', client_email: '', pipedrive_deal_id: '', amount: '', reason: '' });
 
   const load = async () => {
     try {
@@ -44,6 +47,36 @@ export default function RefundTracking() {
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  const submitRequest = async () => {
+    if (!form.client_name || !form.pipedrive_deal_id || !form.amount || !form.reason) {
+      window.alert('Client name, deal ID, amount, and reason are all required.'); return;
+    }
+    const amt = parseFloat(form.amount);
+    if (!amt || amt <= 0) { window.alert('Enter a positive amount.'); return; }
+    setBusy(true);
+    try {
+      const resp = await fetch('/.netlify/functions/refund-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submit',
+          pipedrive_deal_id: String(form.pipedrive_deal_id).trim(),
+          client_name: form.client_name.trim(),
+          client_email: form.client_email.trim() || null,
+          amount: amt,
+          reason: form.reason.trim(),
+          requested_by: currentUser?.email,
+          requested_by_name: currentUser?.name
+        })
+      });
+      const d = await resp.json();
+      if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
+      setShowNew(false);
+      setForm({ client_name: '', client_email: '', pipedrive_deal_id: '', amount: '', reason: '' });
+      await load();
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
 
   const decide = async (id, decision) => {
     let denial_reason = null;
@@ -186,9 +219,14 @@ export default function RefundTracking() {
           <h1 className="text-2xl font-bold text-gray-900">Refund Tracking</h1>
           <p className="text-gray-600">Requests come in from the Invoices page. Approve, get the release signed, and pay by card or check - the client is emailed automatically at each payment step.</p>
         </div>
-        <button onClick={() => { setLoading(true); load(); }} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-          <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setLoading(true); load(); }} className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </button>
+          <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium">
+            <DollarSign className="w-4 h-4" /> New Refund Request
+          </button>
+        </div>
       </div>
 
       {/* ---- Open requests: the working queue ---- */}
@@ -276,8 +314,48 @@ export default function RefundTracking() {
 
       <p className="text-xs text-gray-400 flex items-start gap-1">
         <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-        Card refunds are recorded automatically for consultant payroll deductions. Refunds must be requested from the client's charge on the Invoices page - there is no manual entry here.
+        Card refunds are recorded automatically for consultant payroll deductions. The team can also request refunds from the client's charge on the Invoices page.
       </p>
+
+      {/* ---- New request form ---- */}
+      {showNew && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowNew(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b">
+              <h2 className="text-lg font-bold text-gray-900">New Refund Request</h2>
+              <p className="text-sm text-gray-500">If the client has started dispute rounds, a signed release will be required automatically before payment.</p>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Client Name *</label>
+                <input type="text" value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Client Email</label>
+                <input type="email" value={form.client_email} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="for release + refund confirmation emails" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Pipedrive Deal ID *</label>
+                  <input type="text" value={form.pipedrive_deal_id} onChange={e => setForm(f => ({ ...f, pipedrive_deal_id: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="267220" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Refund Amount *</label>
+                  <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" placeholder="0.00" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reason *</label>
+                <textarea rows={2} value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+            </div>
+            <div className="p-5 border-t bg-gray-50 rounded-b-2xl flex gap-3">
+              <button onClick={() => setShowNew(false)} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-100 text-sm">Cancel</button>
+              <button disabled={busy} onClick={submitRequest} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 text-sm font-semibold">{busy ? 'Submitting...' : 'Submit Request'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Card refund picker ---- */}
       {picker && (() => {
