@@ -167,13 +167,46 @@ exports.handler = async (event) => {
     const fourthRoundRate = r4Den > 0 ? Math.round((r4Num / r4Den) * 100) : 0;
 
     // --- Day 4+ Delay (all rounds): deals in Reports Received past the 4-business-day window ---
+    // Fixes (7/10, Marycruz's ticket): (1) only deals whose CURRENT stage is actually
+    // Reports Received count - the filter can lag behind stage moves (Missing Docs etc);
+    // (2) clients with an open balance are a PAYMENT HOLD, not a team delay; (3) the clock
+    // runs from stage_change_time (update_time removed - any deal edit was resetting it).
     let day4Count = 0, queueTotal = 0;
     const day4List = [];
+    const day4PaymentHold = [];
+    const day4WrongStage = [];
     try {
       const rr = await pdGet(`/deals?filter_id=${REPORTS_RECEIVED_FILTER}&start=0&limit=500`);
-      (rr.data || []).forEach((deal) => {
+      const rrDeals = rr.data || [];
+      // Stage ids named Reports Received (any pipeline). If the lookup fails, fall back
+      // to trusting the filter rather than zeroing the metric.
+      let rrStageIds = null;
+      try {
+        const st = await pdGet('/stages');
+        const ids = (st.data || []).filter(x => /reports\s*received/i.test(x.name || '')).map(x => x.id);
+        if (ids.length > 0) rrStageIds = new Set(ids);
+      } catch (e) {}
+      // Open balances for the queue's deals (payment hold), from the hourly-reconciled mirror.
+      const holdDeals = new Set();
+      try {
+        const ids = rrDeals.map(d => d.id).filter(Boolean);
+        for (let c = 0; c < ids.length; c += 100) {
+          const chunk = ids.slice(c, c + 100);
+          const invs = await supaGet(`consultant_invoices?pipedrive_deal_id=in.(${chunk.join(',')})&balance=gt.1&select=pipedrive_deal_id`);
+          for (const inv of invs) holdDeals.add(String(inv.pipedrive_deal_id));
+        }
+      } catch (e) {}
+      rrDeals.forEach((deal) => {
+        if (rrStageIds && !rrStageIds.has(deal.stage_id)) {
+          day4WrongStage.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id });
+          return; // filter lag - deal is really in another stage (e.g. Missing Docs)
+        }
+        if (holdDeals.has(String(deal.id))) {
+          day4PaymentHold.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id });
+          return; // client owes money - hold, not a team delay
+        }
         queueTotal++;
-        const t = deal.stage_change_time || deal.update_time || deal.add_time;
+        const t = deal.stage_change_time || deal.add_time;
         const bd = t ? businessDaysDiff(new Date(t.replace(' ', 'T') + 'Z'), now) : 0;
         if (bd > 4) { day4Count++; day4List.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id, days: bd }); }
       });
@@ -220,7 +253,7 @@ exports.handler = async (event) => {
       ontime_r1: { value: ontimeR1Rate, standard: STD.ontime_r1, unit: '%', source: 'auto',
         met: ontimeR1Rate >= STD.ontime_r1, detail: { dueOrLate: r1DueCount, clients: r1List.slice(0, 300) } },
       day4_delay: { value: day4Count, standard: STD.day4_delay, unit: '', source: 'auto',
-        met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal, clients: day4List.slice(0, 300) } },
+        met: day4Count === STD.day4_delay, detail: { overdue: day4Count, queue: queueTotal, paymentHold: day4PaymentHold.length, wrongStage: day4WrongStage.length, paymentHoldClients: day4PaymentHold.slice(0, 100), wrongStageClients: day4WrongStage.slice(0, 100), clients: day4List.slice(0, 300) } },
       fourth_round: { value: fourthRoundRate, standard: STD.fourth_round, unit: '%', source: 'auto',
         met: fourthRoundRate <= STD.fourth_round, detail: { startedR4: r4Num, endedR3In90d: r4Den, clients: r4Started.slice(0, 300) } },
       round3_results: { value: manualResults, standard: STD.round3_results, unit: '%', source: resultsSource,
