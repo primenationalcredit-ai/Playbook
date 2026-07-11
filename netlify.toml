@@ -100,5 +100,5 @@
 # Affiliate book sync: pulls Pipedrive filter 523931 (portal-link orgs = onboarded
 # affiliates, Zapier adds new signups automatically), refreshes contacts/stats/segments.
 # Never touches cadence state columns.
-[functions."affiliate-sync"]
+[functions."affiliate-book-sync"]
   schedule = "20 12-23 * * 1-6"
