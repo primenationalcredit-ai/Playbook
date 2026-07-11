@@ -27,6 +27,10 @@ const K_CELL = 'a35eb5e55e56656649f6badfed4388514deb04f4';
 const K_WORK = 'cbdc53e78f78a27e0425c29150bf7d78c71d5066';
 const K_FIRST = '094f2d3ede7277b5a9c2a697ee10f3ad28b6fa82';
 const K_LAST = '2bae3cfd8aebc51a92d28a581b649305c1612524';
+const K_COMPANY = 'f411fe519779247e2ac388a6331669624be0e265';
+const K_OCCUPATION = '939b17f8624908513f9a32d2b7601478686419f3';
+const K_SUPER_PORTAL = '04acdb1de8d9e3a6f04322339e3f95de19f1aa1e';  // Super Affiliate Portal
+const K_SENIOR = 'a821f4a4053793acefdf300aa0a27ccc777afbfc';        // Senior Affiliate
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 const respond = (statusCode, body) => ({ statusCode, headers, body: JSON.stringify(body) });
@@ -111,6 +115,10 @@ exports.handler = async (event) => {
         contact_email: email,
         contact_phone: phone,
         owner_name: o.owner_name || null,
+        company: (o[K_COMPANY] || '').trim() || null,
+        occupation: (o[K_OCCUPATION] || '').trim() || null,
+        industry: (o.industry || '').trim() || null,
+        super_affiliate: !!(o[K_SUPER_PORTAL] || o[K_SENIOR]),
         org_created_at: o.add_time ? new Date(String(o.add_time).replace(' ', 'T') + 'Z').toISOString() : null,
         pipedrive_add_time: o.add_time ? new Date(String(o.add_time).replace(' ', 'T') + 'Z').toISOString() : null,
         lifetime_referrals: soldCount,
@@ -148,6 +156,7 @@ exports.handler = async (event) => {
       upserted, failedChunks,
       segments: bySegment,
       missing_contact: rows.filter(r => r.missing_contact).length,
+      super_affiliates: rows.filter(r => r.super_affiliate).length,
       note: params.debug ? rows.slice(0, 3) : undefined
     });
   } catch (e) {
