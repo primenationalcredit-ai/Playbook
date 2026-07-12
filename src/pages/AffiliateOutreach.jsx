@@ -36,6 +36,17 @@ function mergePreview(text, aff) {
     .replace(/\{result_story\}/g, 'a client whose bankruptcy was removed and came out 94 points higher');
 }
 
+function daysAgo(d) {
+  if (!d) return null;
+  const n = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+  return n < 0 ? 0 : n;
+}
+function fmtDate(d) {
+  if (!d) return '-';
+  const dt = new Date(d);
+  return isNaN(dt) ? '-' : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 const SEGMENTS = [
   { id: 'new_never', label: 'New, never sent', color: 'bg-blue-100 text-blue-800', ring: 'ring-blue-400' },
   { id: 'producing', label: 'Producing', color: 'bg-green-100 text-green-800', ring: 'ring-green-400' },
@@ -236,10 +247,11 @@ export default function AffiliateOutreach() {
                   <tr>
                     <th className="px-4 py-2">Affiliate</th>
                     <th className="px-4 py-2">Segment</th>
+                    <th className="px-4 py-2">Created</th>
                     <th className="px-4 py-2">Referred</th>
                     <th className="px-4 py-2">Won</th>
                     <th className="px-4 py-2">Sold</th>
-                    <th className="px-4 py-2">Last referral</th>
+                    <th className="px-4 py-2">Last sold</th>
                     <th className="px-4 py-2">Cadence</th>
                     <th className="px-4 py-2">Owner</th>
                     <th className="px-4 py-2"></th>
@@ -258,10 +270,17 @@ export default function AffiliateOutreach() {
                           {a.super_affiliate && <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">SUPER</span>}
                           {a.opted_out && <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">opted out</span>}
                         </td>
+                        <td className="px-4 py-2 text-xs">
+                          {fmtDate(a.pipedrive_add_time)}
+                          <div className="text-gray-400">{daysAgo(a.pipedrive_add_time) != null ? `${daysAgo(a.pipedrive_add_time)}d ago` : ''}</div>
+                        </td>
                         <td className="px-4 py-2">{a.referred_deals}</td>
                         <td className="px-4 py-2">{a.won_deals ?? 0}</td>
                         <td className="px-4 py-2 font-semibold">{a.sold_clients}</td>
-                        <td className="px-4 py-2 text-xs">{a.last_referral_date || '-'}</td>
+                        <td className="px-4 py-2 text-xs">
+                          {fmtDate(a.last_referral_date)}
+                          <div className="text-gray-400">{a.last_referral_date ? `${daysAgo(a.last_referral_date)}d ago` : ''}</div>
+                        </td>
                         <td className="px-4 py-2 text-xs">
                           step {a.cadence_step || 0}{a.next_touch_due ? ` · next ${a.next_touch_due}` : ''}
                         </td>
@@ -278,11 +297,28 @@ export default function AffiliateOutreach() {
                       </tr>
                       {expanded === a.id && (
                         <tr className="border-t bg-gray-50">
-                          <td colSpan={9} className="px-6 py-3">
-                            <div className="text-xs text-gray-500 mb-2">
-                              {a.company ? `Company: ${a.company} · ` : ''}{a.occupation ? `Occupation: ${a.occupation} · ` : ''}
-                              {a.recruited_by_super ? `Recruited by: ${a.recruited_by_super} · ` : ''}
-                              Conversion: {a.conversion_pct}%
+                          <td colSpan={10} className="px-6 py-3">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                              <div className="bg-white border rounded-lg p-2">
+                                <div className="text-[10px] uppercase text-gray-400">Became an affiliate</div>
+                                <div className="text-sm font-semibold">{fmtDate(a.pipedrive_add_time)}</div>
+                                <div className="text-xs text-gray-400">{daysAgo(a.pipedrive_add_time) != null ? `${daysAgo(a.pipedrive_add_time)} days ago` : ''}</div>
+                              </div>
+                              <div className="bg-white border rounded-lg p-2">
+                                <div className="text-[10px] uppercase text-gray-400">Referral funnel</div>
+                                <div className="text-sm font-semibold">{a.referred_deals} referred → {a.won_deals ?? 0} won → {a.sold_clients} sold</div>
+                                <div className="text-xs text-gray-400">{a.conversion_pct}% referred-to-sold</div>
+                              </div>
+                              <div className="bg-white border rounded-lg p-2">
+                                <div className="text-[10px] uppercase text-gray-400">Last client sold</div>
+                                <div className="text-sm font-semibold">{fmtDate(a.last_referral_date)}</div>
+                                <div className="text-xs text-gray-400">{a.last_referral_date ? `${daysAgo(a.last_referral_date)} days ago` : 'never'}</div>
+                              </div>
+                              <div className="bg-white border rounded-lg p-2">
+                                <div className="text-[10px] uppercase text-gray-400">Relationship</div>
+                                <div className="text-sm font-semibold">{a.owner_name || 'unassigned'}</div>
+                                <div className="text-xs text-gray-400">{a.recruited_by_super ? `via ${a.recruited_by_super}` : 'direct signup'}{a.company ? ` · ${a.company}` : ''}{a.occupation ? ` · ${a.occupation}` : ''}</div>
+                              </div>
                             </div>
                             {(() => {
                               const seg = a.cadence_segment && a.cadence_segment !== a.segment ? a.segment : (a.cadence_segment || a.segment);
