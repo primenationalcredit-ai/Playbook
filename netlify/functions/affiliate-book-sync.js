@@ -29,7 +29,8 @@ const K_FIRST = '094f2d3ede7277b5a9c2a697ee10f3ad28b6fa82';
 const K_LAST = '2bae3cfd8aebc51a92d28a581b649305c1612524';
 const K_COMPANY = 'f411fe519779247e2ac388a6331669624be0e265';
 const K_OCCUPATION = '939b17f8624908513f9a32d2b7601478686419f3';
-const K_PORTAL_LINK = '15a30013a673b3412f9add0430cd3686f8228d8e';    // Portal Link (the filter field)
+const K_PORTAL_LINK = '15a30013a673b3412f9add0430cd3686f8228d8e';    // Portal Link (GENERIC url - filter field only)
+const K_CLIENT_LINK = 'f5f38f128aadb798f04f3d9c6f9fffa53cf517a8';    // Client Referral Link (UNIQUE /self-signup/CODE - the one messages use)
 const K_SUPER_PORTAL = '04acdb1de8d9e3a6f04322339e3f95de19f1aa1e';  // Super Affiliate Portal
 const K_SENIOR = 'a821f4a4053793acefdf300aa0a27ccc777afbfc';        // Senior Affiliate
 
@@ -135,7 +136,8 @@ exports.handler = async (event) => {
         company: (o[K_COMPANY] == null ? '' : String(o[K_COMPANY])).trim() || null,
         occupation: (o[K_OCCUPATION] == null ? '' : String(o[K_OCCUPATION])).trim() || null,
         industry: (o.industry == null ? '' : String(o.industry)).trim() || null,
-        portal_link: (o[K_PORTAL_LINK] == null ? '' : String(o[K_PORTAL_LINK])).trim() || null,
+        portal_link: ((o[K_CLIENT_LINK] == null ? '' : String(o[K_CLIENT_LINK])).trim()
+          || (o[K_PORTAL_LINK] == null ? '' : String(o[K_PORTAL_LINK])).trim()) || null,
         super_affiliate: superNameSet.has(norm(o.name)),
         recruited_by_super: (() => {
           const sp = o[K_SUPER_PORTAL];
