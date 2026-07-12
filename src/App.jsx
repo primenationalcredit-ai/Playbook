@@ -39,6 +39,7 @@ import Onboarding from './pages/Onboarding';
 import Scorecards from './pages/Scorecards';
 import Affiliates from './pages/Affiliates';
 import AffiliateOutreach from './pages/AffiliateOutreach';
+import AffiliateOutreach from './pages/AffiliateOutreach';
 import FinancialDashboard from './pages/FinancialDashboard';
 import Settings from './pages/Settings';
 import LeadershipProjects from './pages/LeadershipProjects';
@@ -144,6 +145,7 @@ function App() {
         <Route path="bonus-tracker" element={<BonusTracker />} />
         <Route path="am-bonus-tracker" element={<BonusTracker />} />
         <Route path="affiliates" element={<Affiliates />} />
+        <Route path="affiliate-outreach" element={<AffiliateOutreach />} />
         <Route path="affiliate-outreach" element={<AffiliateOutreach />} />
         <Route path="settings" element={<Settings />} />
         <Route path="projects" element={<LeadershipProjects />} />
