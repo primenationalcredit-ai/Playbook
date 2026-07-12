@@ -22,83 +22,118 @@ const T = [];
 const add = (segment, step, channel, day, subject, body) =>
   T.push({ segment, step_number: step, channel, day_offset: day, subject, body, active: true });
 
-// ============ NEW_NEVER ============
-add('new_never', 1, 'email', 0, 'Your referral link works. Here is the 60 second version.',
+// ============ NEW_NEVER (signed up recently, no clients yet) ============
+add('new_never', 1, 'email', 0, 'Now that your portal is set up',
 `Hey {first_name},
 
-You are set up on our end. Before anything else, here is the one thing most new partners ask for: what do I actually say to someone?
+Now that your portal is set up, I wanted to check in and share a couple things that may be valuable for you.
 
-Steal this word for word:
+The biggest one is the referral handoff. Every month we see two partners send us the same number of clients. One converts 60 to 70 percent. The other barely breaks 15. Same leads, same program, completely different results.
 
-"I know a team that gets people approval ready, usually in 60 to 90 days. They only charge for results and they will tell you for free if they can help. Want me to send you the link?"
+The difference is never luck. It is how the client gets introduced. A warm intro with a little context converts several times better than a link dropped in a text.
 
-That is it. Then send them here: {portal_link}
+I will send you the exact playbook for that in a couple days. For now, just know this: when you run into someone struggling with credit, you do not need a pitch. You need one sentence and your portal link, and we take it from there: {portal_link}
 
-Every client you send gets a free consultation whether they sign up or not, so you are never putting your name on something that costs them anything to check out.
-
-One question so I can actually be useful to you: how often are you running into clients with credit issues? Weekly? Every day? Reply with a number and I will send you the exact talk track for the situation you see most.
+Quick question so I can actually be useful to you: how often are you running into clients with credit issues? Weekly? Every day? Reply and let me know, and if there is anything you need from us to get going, I am right here.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-add('new_never', 2, 'sms', 3, null,
-`Hey {first_name}, it is {consultant_name} with ASAP. Your referral link is live. If a client ever gets declined or told to come back when their credit is better, that is the moment. Send them your link and we take it from there: {portal_link} (Reply STOP to opt out)`);
-
-add('new_never', 3, 'call', 7, null,
-`Their company and occupation are on the affiliate card. Review BEFORE dialing, never ask what they do.
-- Thank them for signing up, reference their business: "I saw you are over at {company}"
-- Ask: "How often are you running into people with credit problems in your line of work?"
-- Give the play for their answer: lender = declined apps, realtor = pre-approval falls through, dealer = turned down at the desk, tax or insurance pro = clients who mention debt
-- Offer to send the word for word script for that situation
-- Do NOT ask them to commit to anything. End with "the first one is the hardest, after that it is muscle memory"`);
-
-add('new_never', 4, 'email', 14, 'The 40 point client',
+add('new_never', 2, 'email', 4, 'The handoff that doubles your conversions',
 `{first_name},
 
-Quick story because it is the fastest way to show you what happens after you send someone.
+I promised you the handoff playbook. Here it is, and it is simpler than you think.
 
-A partner sent us a client who had been declined for a business loan. Mid 500s score, two collections he did not even know were his, and a maxed card that was 90 percent of the damage. We disputed the collections with documentation, coached him on the card, and 74 days later he was 40 plus points higher and back at the same lender with an approval.
+Picture two partners. Referrer A tells their client "you could try these guys, here is their website." Referrer B says "I know a team I personally trust. They work fast, I have seen them change lives. Can I introduce you?"
 
-The partner did exactly one thing: sent a link.
+Referrer B converts three to four times more clients. Every single month.
 
-That is the whole job on your side. We do the work, the client gets results, and you get paid on every one who signs up. And the ceiling is higher than most partners expect: some of our top producing partners earn over $10,000 a month from referrals alone.
+Here is what our top partners do when they submit someone through the portal:
 
-Your link: {portal_link}
+They tell us the client's goal. Buying a house? Business loan? Car?
+They tell us the deadline. Closing in 60 days changes how we work the file.
+They tell us anything personal. Scared, embarrassed, burned by another company before. That context lets us build real rapport on the first call.
 
-Who is the last person that came to mind while you read that? Send them the link today.
+Then they follow up with their client: "Did you talk to the ASAP team yet? You are going to love them." That one text closes more deals than anything else.
+
+The more you give us in the portal notes, the better your client's first call goes, and the better you look for sending them.
+
+That is the whole system. Your portal: {portal_link}
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-add('new_never', 5, 'sms', 21, null,
-`{first_name}, one question: have you run into anyone yet who got declined or needs a better score to qualify? If yes, your link does all the work: {portal_link}. If you have not, no stress, they will show up. When they do you are ready. {consultant_name}`);
+add('new_never', 3, 'call', 8, null,
+`Their company and occupation are on the affiliate card. Review BEFORE dialing, never ask what they do.
+- Warm intro: "I saw you are over at {company}, wanted to put a voice to the name"
+- Ask: "How often do you run into people with credit problems in your line of work?"
+- Give the play for their world: lender = declined apps, realtor = pre-approval falls through, dealer = turned down at the desk, tax or insurance pro = clients who mention debt
+- Ask where they feel stuck: not sure who fits? Awkward to bring it up? Never crossed their mind since signup?
+- Offer to send the word for word talk track for their situation
+- Zero pressure close: "the first one is the hardest, after that it is muscle memory"`);
 
-add('new_never', 6, 'call', 30, null,
-`Honest check in, uncover the blocker, offer a done for you assist.
-- "Not calling to push, calling to make this easier"
-- Ask what has gotten in the way: no candidates yet? Not sure who fits? Awkward to bring up?
-- Offer the assist: "If you have someone in mind but the conversation feels weird, intro us by text or email and we take the whole conversation from there. You literally just make the intro."
-- Confirm their preferred channel going forward`);
+add('new_never', 4, 'sms', 12, null,
+`Hey {first_name}, it is {consultant_name} with ASAP. Just checking in since your portal went live. Any questions I can knock out for you? And if anyone in your world gets a no because of their credit, that is our lane. (Reply STOP to opt out)`);
 
-// ============ DORMANT ============
+add('new_never', 5, 'email', 18, 'Deleted in 14 days: the story behind our process',
+`{first_name},
+
+I want to show you what actually happens after you send someone our way, because it is the reason partners trust us with their name.
+
+A client came to us with three collection accounts dragging their file down. Instead of sending basic disputes and hoping, we demanded full documentation from all three companies. Signed applications. Payment ledgers. Proof they were reporting legally.
+
+Within 14 days, all three accounts were deleted. Not one of those companies even responded. They know who we are. We send over 100,000 dispute letters every single month, and the furnishers know we do not play games.
+
+That is our credit accelerator program in one story. We do not guess. We demand proof, and what cannot be proven comes off.
+
+Thirteen years. Over 67,000 clients. More than 2.3 million inaccurate records removed. More than 3,000 five star reviews.
+
+When you put your name on a referral, that is the machine standing behind you.
+
+{consultant_name}
+ASAP Credit & Financial Services`);
+
+add('new_never', 6, 'email', 30, 'How can we help you grow?',
+`{first_name},
+
+Honest check in, no agenda.
+
+You have been set up with us for about a month now, and I would rather hear the truth than silence: what is getting in the way?
+
+Some partners tell us they have not run into the right person yet. Some say bringing up credit feels awkward. Some just forgot the portal exists because life is busy. All normal, all fixable.
+
+Whatever yours is, reply and tell me. If you need a talk track, I will write you one for your exact situation. If you have someone in mind but the conversation feels weird, intro us by text and we will take the whole thing from there. If it is something else, I want to know that too.
+
+We are here to make you look good. That only works if I know where you are stuck.
+
+{consultant_name}
+ASAP Credit & Financial Services`);
+
+add('new_never', 7, 'call', 42, null,
+`Second call. Goal: find the real blocker and remove it.
+- Reference anything learned from call 1 or their replies (check the touch timeline and notes)
+- If they never sent anyone: "totally normal, most partners take a couple months to send their first. What would make it easier?"
+- Offer the done for you assist: they make a text intro, we handle the entire conversation
+- If they show any interest in growing this: mention top partners earn over $10,000 a month and offer to map what that path looks like for their business
+- Log what you learn, it drives everything after`);
+
+// ============ DORMANT (sold before, quiet 90+ days) ============
 add('dormant', 1, 'email', 0, 'It has been a while, and that is on us',
 `Hey {first_name},
 
 I was going through our partner list and realized your last client with us was back in {last_referral_month}. You have sent us {sold_clients} over time, and I do not want the silence since then to be because we dropped the ball somewhere.
 
-So, honest question, no pitch attached: did something change on your end, or did we do something that made you stop sending people our way? If it is the second one I genuinely want to know.
+So, honest question, no pitch attached: did something change on your end, or did we do something that made you stop sending people our way? If it is the second one, I genuinely want to know.
 
-Two things that are new since {last_referral_month}, in case they matter to your clients:
-1. Progress Reports now go out to clients on a set schedule, so the people you refer are never in the dark about where things stand.
-2. Turnaround on first round results is tighter than it was, most clients see first movement inside 45 days.
+A couple things have gotten better since {last_referral_month}, in case they matter to your clients. Progress Reports now go out on a set schedule, so the people you refer are never in the dark. And first round results are coming back faster, most clients see movement inside 45 days.
 
-Either way, good to reconnect. Reply to this and it comes straight to me.
+Either way, it is good to reconnect. Reply to this and it comes straight to me.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
 add('dormant', 2, 'sms', 4, null,
-`Hey {first_name}, {consultant_name} from ASAP. Sent you an email but texts are easier. You sent us {sold_clients} great clients and then things went quiet on our side of the fence too. Anything we could be doing better for you or your clients? Straight answers welcome. (Reply STOP to opt out)`);
+`Hey {first_name}, {consultant_name} from ASAP. Sent you an email but texts are easier. You sent us {sold_clients} great clients and then things went quiet on both sides. Anything we could be doing better for you or your clients? Straight answers welcome. (Reply STOP to opt out)`);
 
 add('dormant', 3, 'call', 10, null,
 `This is the important handoff conversation. Listen 80 percent.
@@ -107,33 +142,54 @@ add('dormant', 3, 'call', 10, null,
 - Listen for: bad client experience, payout confusion, they changed roles, a competitor
 - If bad experience: get the client name, promise to run it down personally, then actually do it
 - If payout: confirm their payout method on file, fix anything stale
-- Give before leaving: offer the partner one pager or a co branded piece they can hand clients`);
+- Give before leaving: offer the Handoff and Referral Guide or a co branded piece they can hand clients`);
 
-// ============ SLOWING ============
+add('dormant', 4, 'email', 20, 'The foreclosure nobody thought would come off',
+`{first_name},
+
+I want to share a story that shows what your referrals get when they work with us, because it is the kind of thing that reminded me of partners like you.
+
+A client came in with a foreclosure from a major bank. Well documented, already disputed once by another company, already lost. Most programs would not touch it.
+
+Round one, we demanded everything. The signed application, the promissory note, every statement, the default notices. To our surprise, the bank produced it all.
+
+Round two, we went through every page and found the cracks. Inconsistent payment reporting. Ledger discrepancies. Even a misspelled legal name. We built the case and filed. They refused to delete.
+
+Round three, we escalated to all three bureaus with the violations laid out. All three removed the foreclosure. Just under 120 days start to finish.
+
+That is what thirteen years of doing this looks like. Your people are in good hands here, same as they always were.
+
+Whenever the next one shows up: {portal_link}
+
+{consultant_name}
+ASAP Credit & Financial Services`);
+
+// ============ SLOWING (31 to 90 days since last client) ============
 add('slowing', 1, 'email', 0, 'Checking in on your people',
 `{first_name},
 
 Your last client came through in {last_referral_month} and I wanted to check two boxes with you.
 
-One, if you ever want a status update on anyone you have sent us, ask me directly. You put your name on them, you should never wonder how it is going.
+One, if you ever want a status update on anyone you have sent us, ask me directly. You put your name on them, and you should never have to wonder how it is going.
 
-Two, a small thing that helps your future referrals convert: the clients who sign up fastest are the ones told one sentence up front, "they only charge per item fixed, and the consultation costs nothing." When people hear that before they click, they show up ready instead of skeptical.
+Two, a small thing that helps your future referrals convert. The clients who sign up fastest are the ones told one sentence up front: "the consultation is free and they only bill for actual results." When people hear that before they click, they show up ready instead of skeptical.
 
-Nothing needed from you. Door is open.
+Nothing needed from you. The door is open, and so am I. How is business on your end?
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
 add('slowing', 2, 'sms', 10, null,
-`{first_name}, it is {consultant_name}. If anyone in your world got a no this month because of their credit, that is our lane. Send them your link and I will personally keep you posted on how they do: {portal_link} (Reply STOP to opt out)`);
+`{first_name}, it is {consultant_name}. If anyone in your world got a no this month because of their credit, that is our lane. Send them through your portal and I will personally keep you posted on how they do. (Reply STOP to opt out)`);
 
 add('slowing', 3, 'call', 21, null,
 `Relationship maintenance plus one conversion idea.
 - Check in on their business first, actually listen
 - Ask if any referrals they sent did NOT sign up, offer to look into why and take another run at them
-- Share their conversion picture if useful: "{sold_clients} of your {referred_deals} referrals became clients, want to talk about what happened with the rest?"`);
+- Share their conversion picture if useful: "{sold_clients} of your {referred_deals} referrals became clients, want to talk about what happened with the rest?"
+- Offer the Handoff and Referral Guide if they have never gotten it`);
 
-// ============ PRODUCING (monthly appreciation only) ============
+// ============ PRODUCING (client in last 30 days) ============
 add('producing', 1, 'email', 0, 'Your clients this month',
 `{first_name},
 
@@ -142,25 +198,27 @@ Quick partner update, then I will get out of your way.
 You have {sold_clients} clients with us all time, and your most recent came through in {last_referral_month}. Thank you. Referrals are trust, and we do not take yours lightly.
 
 Two standing offers, every month, always true:
-1. Want a status rundown on anyone you have sent? Reply with their name and you will have it same day.
-2. Anything making referrals harder than it should be? Payout questions, a client experience that bugged you, a tool you wish existed? Tell me and I will fix what I can and be straight about what I cannot.
+
+One, want a status rundown on anyone you have sent? Reply with their name and you will have it same day.
+
+Two, anything making referrals harder than it should be? Payout questions, a client experience that bugged you, a tool you wish existed? Tell me and I will fix what I can and be straight about what I cannot.
 
 That is it. No ask. Keep sending people who need to get approval ready and we will keep making you look good for it.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-// ============ COLD (email only, monthly) ============
-add('cold', 1, 'email', 0, 'You signed up with us a while back',
+// ============ COLD (signed up long ago, never sent) ============
+add('cold', 1, 'email', 0, 'Just checking in',
 `Hey {first_name},
 
-You created a referral account with us at some point and never sent anyone, which usually means one of three things: you forgot, you never ran into the right person, or you were never sure what we actually do for people.
+Just checking in to see how you are doing. You set up a referral account with us a while back, and I wanted you to know it still works and we are still here.
 
-The 15 second version: when someone gets declined for a loan, a mortgage, a car, or an apartment because of their credit, we get them approval ready. Free consultation, work billed per item fixed, most people see first movement inside 45 days, usually fully approval ready in 60 to 90 days.
+No pitch. I am genuinely curious what happened on your end. Never ran into the right person? Forgot we existed? Were never quite sure what we actually do?
 
-You get paid on every person you send who signs up. Your link still works: {portal_link}
+The short version, in case it helps: when someone gets declined for a loan, a mortgage, a car, or an apartment because of their credit, our credit accelerator program gets them approval ready. Free consultation, billing only for actual results, most people see first movement inside 45 days.
 
-If this is not for you, the unsubscribe link below removes you and we will not take it personally.
+You get paid on every person you send who signs up. And if there is anything we could do to make referring easier for you, reply and tell me. I read every one.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
@@ -170,11 +228,11 @@ add('cold', 2, 'email', 30, 'The moment to remember us',
 
 One idea, then I am gone.
 
-You do not need to go find people with credit problems. You need to remember one sentence for the moment someone mentions one. That moment sounds like: "I got turned down," "my score tanked," "we have to wait until my credit is better."
+You do not need to go find people with credit problems. You just need to remember one sentence for the moment someone mentions one. That moment sounds like: "I got turned down." "My score tanked." "We have to wait until my credit is better."
 
 The sentence: "I know a team that fixes exactly that, want the link?"
 
-Then you send: {portal_link}
+Then you send your portal link, and we take the whole conversation from there.
 
 That is the entire business of being our partner. One remembered sentence.
 
@@ -184,102 +242,112 @@ ASAP Credit & Financial Services`);
 add('cold', 3, 'email', 60, 'What partners actually earn',
 `{first_name},
 
-Real talk about the money since we have never discussed it.
+Real talk about the money, since we have never discussed it.
 
-Some of our top producing partners earn over $10,000 a month from referrals alone. That is the ceiling, not the average, but it is real and it is paid monthly. Partners get paid on every referred client who signs up. Our most active partners are not marketers, they are lenders, realtors, dealers, and tax pros who simply route the people they were already turning away. The clients they could not help become clients they got paid on, and those same clients come BACK to them approval ready, which means deals that closed instead of dying.
+Some of our top producing partners earn over $10,000 a month from referrals alone. That is the ceiling, not the average, but it is real and it is paid monthly.
+
+Our most active partners are not marketers. They are lenders, realtors, dealers, and tax pros who simply route the people they were already turning away. The clients they could not help become clients they got paid on. And those same clients come back to them approval ready, which means deals that closed instead of dying.
 
 That last part is the piece most people miss. You are not sending business away. You are recycling your own declines into future closings.
 
-Your link: {portal_link}
+Whenever you are ready: {portal_link}
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-// ============ ROTATION (monthly value pieces, all segments after their sequence) ============
-add('rotation', 1, 'email', 30, 'The three fastest score killers',
+// ============ ROTATION (monthly knowledge + check-in emails, all segments) ============
+add('rotation', 1, 'email', 30, 'How our process actually works',
 `{first_name},
 
-Three things do most of the damage on the credit reports we see, and knowing them helps you spot the people worth sending our way.
+One of the most common questions new clients ask us is "how does your process actually work?" It is a great question, because what we do is very different from what most people picture.
 
-1. Maxed out revolving cards. Utilization is a third of the score. Someone carrying a card at its limit is often 40 or more points below where they could be.
-2. Small collections people ignore. A $87 medical collection drags a file the same way a big one does. People assume small = harmless. It is not.
-3. Late payments inside the last 24 months. Recency matters more than count. One recent late outweighs three old ones.
+Here is a real example. A client came to us with a charge off on an auto loan. Instead of just disputing it, we demanded full documentation from the lender. The original loan agreement. The payment ledger. The signed application. Proof of legal compliance.
 
-When someone mentions any of these, that is your moment: "I know a team that fixes exactly that, want the link?" {portal_link}
+The lender replied, but their documentation was missing key pieces. They could not fully validate the account. Under federal reporting law, that failure triggers deletion rights. We filed on those grounds, and the account came off.
 
-Forward this to anyone it would help.
+That is the difference between hoping and proving. Our credit accelerator program is built on accountability, and it is why the people you refer get real results.
+
+If you ever want to walk through how this would play out for one of your clients, just reply. I love this stuff.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-add('rotation', 2, 'email', 30, 'What to tell someone who says credit repair is a scam',
+add('rotation', 2, 'email', 30, 'The CEO Method: late payments, gone fast',
 `{first_name},
 
-Sooner or later someone you refer will say it: "is that not a scam?"
+One of the biggest advantages your referrals get with us is speed, and I want to show you one of the tools behind it. We call it the CEO Method, and we use it on late payments.
 
-The honest answer: a lot of the industry is. Here is what you can say about us, because every word is verifiable.
+C is Challenge. We open with a formal dispute demanding documentation that proves the late payment is valid.
 
-We have been doing this for 13 years and served over 67,000 clients at a 4.9 star average. The consultation is free and we tell people straight up if we cannot help. Billing is per item actually resolved, not a monthly fee that rewards slowness. And clients get Progress Reports on a schedule, so they always know what is happening.
+E is Escalate. If the response is incomplete or inaccurate, we take it straight to the top, forwarding the issue to executive leadership and flagging the compliance problems.
 
-Skeptics make great clients once they see documentation instead of promises. Send them anyway: {portal_link}
+O is Overturn. Those escalations trigger internal reviews, and companies would usually rather remove the item than carry the liability.
+
+One client had a misreported late payment costing them their mortgage pre approval. Three weeks with this method and it was deleted. Their score jumped over 50 points and the loan was approved.
+
+If you have a client sitting on a late payment right now, this is what is waiting for them on the other side of your portal link: {portal_link}
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-add('rotation', 3, 'email', 30, 'The 60 to 90 day timeline, explained',
+add('rotation', 3, 'email', 30, 'The three mistakes that keep people stuck',
 `{first_name},
 
-The number one question referred clients ask: how long does this take? Here is the honest timeline so you can set expectations that we will actually meet.
+We see it constantly. People come to us frustrated and stuck, not because of what is on their credit report, but because of the advice they followed first. Here are the three big ones, so you can catch them in your world before they cost someone.
 
-First 45 days: analysis, dispute round one, and usually the first visible movement.
-Days 45 to 90: second round, responses come back, scores step up as items resolve.
-By 60 to 90 days: most clients are approval ready for what they were originally declined for.
+Mistake one: paying off negative debt. It sounds responsible, but paying a collection does not remove it. It can actually LOWER the score by resetting the activity date. We check the legal standing of the debt first.
 
-Some files run faster, complicated ones run longer, and we tell each client which they are after the free consultation.
+Mistake two: debt consolidation. It closes accounts, drops the average account age, and most people pay more over time. We work to remove what cannot be legally verified instead.
 
-Accurate expectations make you look good twice: when you refer, and when it plays out exactly like you said. {portal_link}
+Mistake three: disputing online. The online forms lock people into preset options and can waive important rights. And they rarely work.
+
+If you ever hear someone about to make one of these moves, that is your moment. One sentence: "before you do that, let me connect you with a team I trust." You might save them thousands.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-add('rotation', 4, 'email', 30, 'Your declined clients are worth more than you think',
+add('rotation', 4, 'email', 30, 'Two referrers, one client each',
 `{first_name},
 
-The partners who earn the most with us all figured out the same thing: a decline is not the end of a deal, it is a 60 to 90 day pause.
+A quick story about the moment that matters most in this partnership.
 
-The loop works like this. A client gets declined because of their credit. Instead of losing them forever, you send them one text: "I know a team that can get you approval ready, want the link?" They work with us, and in 60 to 90 days they come back to you qualified. You get paid on the referral AND you close the deal that was dead.
+Two clients got referred to us in the same week. The first came in as just a name and a number. No intro, no context. We reached out, but it felt cold to them, and they never responded.
 
-You are not sending business away. You are recycling your own declines into future closings.
+The second came with a warm introduction. Their referrer told us she was trying to get a mortgage, scared about her score, and tired of being lied to by other companies. When we called, she said "I have been waiting to hear from you." She signed up that same day. Three weeks later her biggest negative account was deleted and she was in underwriting for her new home.
 
-Your link, whenever the moment shows up: {portal_link}
+Same program. Same team. The only difference was the handoff.
+
+When you submit someone through your portal, tell us their goal, their deadline, and anything personal we should know. Those notes are the difference between a cold call and a conversation they were waiting for.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-add('rotation', 5, 'email', 30, 'One question that opens the conversation',
+add('rotation', 5, 'email', 30, 'Where are you stuck?',
 `{first_name},
 
-Here is the softest referral opener we know, and it works because it is genuinely useful:
+No lesson this month. Just a question.
 
-"Out of curiosity, do you know what is actually on your credit report?"
+What is the hardest part of referring for you right now?
 
-Most people do not. And the gap between what they think is there and what is actually there is where every referral comes from. Collections they never knew existed, a late payment from a bill that went to an old address, a balance reporting wrong.
+For some partners it is spotting the moment. For some it is bringing credit up without it feeling awkward. For some it is that their industry does not surface these conversations often. And for some, honestly, it is that we have not given them the right tools yet.
 
-You are not selling anything by asking. You are being the person who helped them look. And when they find something: {portal_link}
+Whatever yours is, reply and tell me in one sentence. I will send you something built for your exact situation: a talk track, a script for your team, a piece you can hand to clients. That is not a form response, it is me, and I answer every reply.
+
+We are here to make you look good. Help me do my job.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
-add('rotation', 6, 'email', 30, 'We answer to you, not just the client',
+add('rotation', 6, 'email', 30, 'Why we are trusted with your name',
 `{first_name},
 
-One standing offer worth repeating, because partners forget it exists.
+There are thousands of companies in this space. Very few get lasting results, because most send generic letters to the bureaus and hope.
 
-Any client you have EVER sent us: reply with their name and you get a real status rundown the same day. Not a portal login, not a canned update. The actual picture.
+We do not hope. We demand documentation directly from the creditors and data furnishers. Signed applications, payment ledgers, billing statements, original contracts. We find the errors and the violations, and we use federal law to force off what cannot be proven.
 
-You put your name on these people. Partners who check in on their referrals convert more future ones, because the people they refer can tell someone is actually watching out for them.
+The track record behind that approach: thirteen years in business. More than 67,000 clients. Over 2.3 million inaccurate records removed. More than 3,000 five star reviews across Google, Facebook, and the BBB.
 
-That is the whole email. The offer never expires.
+When you put your name on a referral, that is what stands behind it. Your people deserve more than letters and hope, and that is exactly why they are in the right hands with us.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
@@ -290,12 +358,12 @@ add('rotation', 7, 'email', 30, 'What the top of the partner board looks like',
 We looked at what our highest earning partners do differently, and it is less impressive than you would hope. That is good news.
 
 They mention us IN the decline conversation, not weeks later. The moment someone hears no, they hear "and here is what you can do about it" in the same breath.
-They send the link in the same text. No "I will connect you later." Later never comes.
-They check on their people afterward, which makes the next referral easier because the last one felt taken care of.
 
-That is the entire playbook. Our top partners earn over $10,000 a month and there is no trick to it. They simply send the most people.
+They send the portal link in the same text. Not "I will connect you later." Later never comes.
 
-Your link: {portal_link}
+And they check on their people afterward. "Did you talk to the ASAP team yet? You are going to love them." That one follow up text closes more clients than anything else we have measured.
+
+That is the entire playbook. Our top partners earn over $10,000 a month, and there is no trick to it. They simply send the most people and hand them off warm.
 
 {consultant_name}
 ASAP Credit & Financial Services`);
