@@ -85,6 +85,18 @@ exports.handler = async (event) => {
       }
     } catch (e) {}
 
+    // ---- 2b. Derive the real super affiliates: orgs REFERENCED as a parent by the
+    // Super Affiliate Portal field (that field points at the recruiting super's org,
+    // so the supers are the referenced orgs, not the orgs carrying the field).
+    // The Senior Affiliate enum names which super recruited the org (1730 = "NULL").
+    const superParentIds = new Set();
+    const seniorLabels = { 1731: 'Oguz', 2629: 'Olivia', 3603: 'Shawn', 3614: 'Leo 7Figures', 3604: 'Ramon', 3615: 'Marycruz', 3659: 'MO2V8', 3669: 'Walters Insurance Services & TFA', 3690: 'NRD', 3616: 'Dennis' };
+    for (const o of orgs) {
+      const sp = o[K_SUPER_PORTAL];
+      if (sp && typeof sp === 'object' && sp.value) superParentIds.add(Number(sp.value));
+      else if (sp && (typeof sp === 'number' || /^\d+$/.test(String(sp)))) superParentIds.add(Number(sp));
+    }
+
     // ---- 3. Build rows + upsert (data fields only - cadence state untouched) ----
     const today = new Date();
     const daysSince = (d) => d ? Math.floor((today - new Date(String(d).replace(' ', 'T') + (String(d).includes('Z') ? '' : 'Z'))) / 86400000) : null;
@@ -118,7 +130,14 @@ exports.handler = async (event) => {
         company: (o[K_COMPANY] == null ? '' : String(o[K_COMPANY])).trim() || null,
         occupation: (o[K_OCCUPATION] == null ? '' : String(o[K_OCCUPATION])).trim() || null,
         industry: (o.industry == null ? '' : String(o.industry)).trim() || null,
-        super_affiliate: !!(o[K_SUPER_PORTAL] || o[K_SENIOR]),
+        super_affiliate: superParentIds.has(Number(o.id)),
+        recruited_by_super: (() => {
+          const sp = o[K_SUPER_PORTAL];
+          if (sp && typeof sp === 'object' && sp.name) return sp.name;
+          const sen = o[K_SENIOR];
+          if (sen && seniorLabels[Number(sen)]) return seniorLabels[Number(sen)];
+          return null;
+        })(),
         org_created_at: o.add_time ? new Date(String(o.add_time).replace(' ', 'T') + 'Z').toISOString() : null,
         pipedrive_add_time: o.add_time ? new Date(String(o.add_time).replace(' ', 'T') + 'Z').toISOString() : null,
         lifetime_referrals: soldCount,
@@ -157,6 +176,7 @@ exports.handler = async (event) => {
       segments: bySegment,
       missing_contact: rows.filter(r => r.missing_contact).length,
       super_affiliates: rows.filter(r => r.super_affiliate).length,
+      recruited_by_supers: rows.filter(r => r.recruited_by_super).length,
       note: params.debug ? rows.slice(0, 3) : undefined
     });
   } catch (e) {
