@@ -89,13 +89,17 @@ exports.handler = async (event) => {
     // Super Affiliate Portal field (that field points at the recruiting super's org,
     // so the supers are the referenced orgs, not the orgs carrying the field).
     // The Senior Affiliate enum names which super recruited the org (1730 = "NULL").
-    const superParentIds = new Set();
+    // SUPER AFFILIATE ALLOWLIST (Joe, 7/10): the super OWNERS are managed relationships
+    // and get NO cadences. Their recruits/downlines are normal affiliates and DO get
+    // cadences. Edit this list by normalized org name to add/remove supers.
+    const SUPER_ALLOWLIST = [
+      'oguz konar',            // Oz Konar - BLB
+      '7 figures funding',     // Leo Kanell
+      'norisk digitals',       // house recruiting operation
+      'kevin walters sr',      // Walters Insurance / TFA
+    ];
     const seniorLabels = { 1731: 'Oguz', 2629: 'Olivia', 3603: 'Shawn', 3614: 'Leo 7Figures', 3604: 'Ramon', 3615: 'Marycruz', 3659: 'MO2V8', 3669: 'Walters Insurance Services & TFA', 3690: 'NRD', 3616: 'Dennis' };
-    for (const o of orgs) {
-      const sp = o[K_SUPER_PORTAL];
-      if (sp && typeof sp === 'object' && sp.value) superParentIds.add(Number(sp.value));
-      else if (sp && (typeof sp === 'number' || /^\d+$/.test(String(sp)))) superParentIds.add(Number(sp));
-    }
+    const superNameSet = new Set(SUPER_ALLOWLIST.map((n) => norm(n)));
 
     // ---- 3. Build rows + upsert (data fields only - cadence state untouched) ----
     const today = new Date();
@@ -130,7 +134,7 @@ exports.handler = async (event) => {
         company: (o[K_COMPANY] == null ? '' : String(o[K_COMPANY])).trim() || null,
         occupation: (o[K_OCCUPATION] == null ? '' : String(o[K_OCCUPATION])).trim() || null,
         industry: (o.industry == null ? '' : String(o.industry)).trim() || null,
-        super_affiliate: superParentIds.has(Number(o.id)),
+        super_affiliate: superNameSet.has(norm(o.name)),
         recruited_by_super: (() => {
           const sp = o[K_SUPER_PORTAL];
           if (sp && typeof sp === 'object' && sp.name) return sp.name;
