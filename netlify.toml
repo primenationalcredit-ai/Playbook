@@ -102,3 +102,8 @@
 # Never touches cadence state columns.
 [functions."affiliate-book-sync"]
   schedule = "20 12-23 * * 1-6"
+
+# Affiliate cadence engine: every 30 min business hours. Gated by
+# app_config.affiliate_engine_enabled - ships disabled, nothing sends until flipped.
+[functions."affiliate-cadence-runner"]
+  schedule = "*/30 12-23 * * 1-6"
