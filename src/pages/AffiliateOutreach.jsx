@@ -16,6 +16,26 @@ const sbUpsertConfig = async (key, value) => fetch(`${SUPABASE_URL}/rest/v1/app_
   body: JSON.stringify([{ key, value: String(value) }])
 });
 
+// Client-side mirror of the engine's merge logic so previews match sends exactly
+function firstNameOf(name) { return String(name || '').trim().split(/\s+/)[0] || 'there'; }
+function monthNameOf(dateStr) {
+  if (!dateStr) return 'a while back';
+  const d = new Date(dateStr + 'T12:00:00Z');
+  return isNaN(d) ? 'a while back' : d.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+}
+function mergePreview(text, aff) {
+  const consultantName = firstNameOf(aff.owner_name || '') || 'Your ASAP team';
+  return String(text || '')
+    .replace(/\{first_name\}/g, firstNameOf(aff.contact_name || aff.org_name))
+    .replace(/\{consultant_name\}/g, consultantName)
+    .replace(/\{company\}/g, aff.company || aff.org_name || 'your company')
+    .replace(/\{sold_clients\}/g, String(aff.sold_clients || 0))
+    .replace(/\{referred_deals\}/g, String(aff.referred_deals || 0))
+    .replace(/\{last_referral_month\}/g, monthNameOf(aff.last_referral_date))
+    .replace(/\{portal_link\}/g, aff.portal_link || 'https://affiliates.asapcreditrepairusa.com')
+    .replace(/\{result_story\}/g, 'a client whose bankruptcy was removed and came out 94 points higher');
+}
+
 const SEGMENTS = [
   { id: 'new_never', label: 'New, never sent', color: 'bg-blue-100 text-blue-800', ring: 'ring-blue-400' },
   { id: 'producing', label: 'Producing', color: 'bg-green-100 text-green-800', ring: 'ring-green-400' },
@@ -42,6 +62,7 @@ export default function AffiliateOutreach() {
   const [expanded, setExpanded] = useState(null);
   const [touches, setTouches] = useState({});
   const [callTasks, setCallTasks] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [callView, setCallView] = useState('open');
   const [completingTask, setCompletingTask] = useState(null);
   const [outcome, setOutcome] = useState('');
@@ -90,6 +111,9 @@ export default function AffiliateOutreach() {
   }, [callView]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
+  useEffect(() => {
+    sbGet('affiliate_templates?active=eq.true&select=*&order=segment,step_number').then((t) => setTemplates(Array.isArray(t) ? t : []));
+  }, []);
   useEffect(() => { if (tab === 'book') loadBook(); }, [tab, loadBook]);
   useEffect(() => { if (tab === 'calls') loadCalls(); }, [tab, loadCalls]);
 
@@ -191,6 +215,9 @@ export default function AffiliateOutreach() {
         <button onClick={() => setTab('calls')} className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'calls' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>
           Call Queue
         </button>
+        <button onClick={() => setTab('messages')} className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'messages' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>
+          Messages ({templates.length})
+        </button>
       </div>
 
       {tab === 'book' && (
@@ -209,8 +236,9 @@ export default function AffiliateOutreach() {
                   <tr>
                     <th className="px-4 py-2">Affiliate</th>
                     <th className="px-4 py-2">Segment</th>
-                    <th className="px-4 py-2">Sold</th>
                     <th className="px-4 py-2">Referred</th>
+                    <th className="px-4 py-2">Won</th>
+                    <th className="px-4 py-2">Sold</th>
                     <th className="px-4 py-2">Last referral</th>
                     <th className="px-4 py-2">Cadence</th>
                     <th className="px-4 py-2">Owner</th>
@@ -230,8 +258,9 @@ export default function AffiliateOutreach() {
                           {a.super_affiliate && <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">SUPER</span>}
                           {a.opted_out && <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">opted out</span>}
                         </td>
-                        <td className="px-4 py-2">{a.sold_clients}</td>
                         <td className="px-4 py-2">{a.referred_deals}</td>
+                        <td className="px-4 py-2">{a.won_deals ?? 0}</td>
+                        <td className="px-4 py-2 font-semibold">{a.sold_clients}</td>
                         <td className="px-4 py-2 text-xs">{a.last_referral_date || '-'}</td>
                         <td className="px-4 py-2 text-xs">
                           step {a.cadence_step || 0}{a.next_touch_due ? ` · next ${a.next_touch_due}` : ''}
@@ -249,12 +278,51 @@ export default function AffiliateOutreach() {
                       </tr>
                       {expanded === a.id && (
                         <tr className="border-t bg-gray-50">
-                          <td colSpan={8} className="px-6 py-3">
+                          <td colSpan={9} className="px-6 py-3">
                             <div className="text-xs text-gray-500 mb-2">
                               {a.company ? `Company: ${a.company} · ` : ''}{a.occupation ? `Occupation: ${a.occupation} · ` : ''}
                               {a.recruited_by_super ? `Recruited by: ${a.recruited_by_super} · ` : ''}
                               Conversion: {a.conversion_pct}%
                             </div>
+                            {(() => {
+                              const seg = a.cadence_segment && a.cadence_segment !== a.segment ? a.segment : (a.cadence_segment || a.segment);
+                              const step = (a.cadence_segment && a.cadence_segment !== a.segment) ? 0 : (a.cadence_step || 0);
+                              const seq = templates.filter((t) => t.segment === seg);
+                              const rot = templates.filter((t) => t.segment === 'rotation');
+                              let next = null, rotationMode = false;
+                              if (step < 100) {
+                                next = seq.find((t) => t.step_number === step + 1) || null;
+                                if (!next && rot.length) { next = rot[0]; rotationMode = true; }
+                              } else if (rot.length) { next = rot[(step - 100 + 1) % rot.length]; rotationMode = true; }
+                              const upcoming = step < 100 ? seq.filter((t) => t.step_number > step + 1) : [];
+                              const blocked = a.paused ? 'PAUSED' : a.opted_out ? 'OPTED OUT' : a.super_affiliate ? 'SUPER AFFILIATE (never contacted)' : a.missing_contact ? 'MISSING CONTACT INFO' : null;
+                              return (
+                                <div className="mb-3 bg-white border rounded-lg p-3">
+                                  <div className="text-xs font-semibold text-gray-700 mb-1">
+                                    Next message this affiliate will receive{rotationMode ? ' (monthly value rotation)' : ''}:
+                                  </div>
+                                  {blocked ? (
+                                    <div className="text-xs text-red-600 font-medium">{blocked} - the engine skips this affiliate entirely.</div>
+                                  ) : !next ? (
+                                    <div className="text-xs text-gray-400">No template found for segment "{seg}".</div>
+                                  ) : (
+                                    <>
+                                      <div className="text-xs text-gray-500 mb-2">
+                                        Channel: <span className="font-medium uppercase">{next.channel}</span>
+                                        {a.next_touch_due ? ` · scheduled ${a.next_touch_due}` : ' · would send on the next engine run'}
+                                      </div>
+                                      {next.subject && <div className="text-sm font-semibold mb-1">Subject: {mergePreview(next.subject, a)}</div>}
+                                      <pre className="text-xs bg-gray-50 rounded p-3 whitespace-pre-wrap font-sans text-gray-800 max-h-64 overflow-y-auto">{mergePreview(next.body, a)}</pre>
+                                      {upcoming.length > 0 && (
+                                        <div className="text-xs text-gray-500 mt-2">
+                                          Then: {upcoming.map((u) => `${u.channel.toUpperCase()} day ${u.day_offset}${u.subject ? ` (${u.subject})` : ''}`).join(' then ')}, then monthly value emails
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             {(touches[a.id] || []).length === 0 ? (
                               <div className="text-xs text-gray-400">No touches yet.</div>
                             ) : (
@@ -345,6 +413,43 @@ export default function AffiliateOutreach() {
             </div>
           )}
         </>
+      )}
+
+      {tab === 'messages' && (
+        <div className="space-y-6">
+          <div className="text-sm text-gray-500">
+            Every message the engine can ever send, grouped by segment. Fields in curly braces fill with each affiliate's real data. Expand any affiliate on The Book tab to see their exact merged copy.
+          </div>
+          {['new_never', 'dormant', 'slowing', 'producing', 'cold', 'rotation'].map((seg) => {
+            const ts = templates.filter((t) => t.segment === seg);
+            if (!ts.length) return null;
+            const label = seg === 'rotation' ? 'Monthly value rotation (all segments after their sequence)' : (segMeta(seg).label || seg);
+            return (
+              <div key={seg}>
+                <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
+                  {seg !== 'rotation' && <span className={`text-xs px-2 py-0.5 rounded-full ${segMeta(seg).color}`}>{segMeta(seg).label}</span>}
+                  {seg === 'rotation' && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Monthly rotation</span>}
+                  <span className="text-sm text-gray-400 font-normal">{ts.length} steps</span>
+                </h3>
+                <div className="space-y-3">
+                  {ts.map((t) => {
+                    const Icon = chIcon(t.channel);
+                    return (
+                      <div key={t.id} className="bg-white border rounded-xl p-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold mb-1">
+                          <Icon className="w-4 h-4 text-gray-400" />
+                          Step {t.step_number} · {t.channel.toUpperCase()} · day {t.day_offset}
+                          {t.subject && <span className="text-gray-600 font-normal">· {t.subject}</span>}
+                        </div>
+                        <pre className="text-xs bg-gray-50 rounded p-3 whitespace-pre-wrap font-sans text-gray-700 max-h-56 overflow-y-auto">{t.body}</pre>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {!isLeadership && (
