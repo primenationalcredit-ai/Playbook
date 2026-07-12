@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useApp } from './context/AppContext';
 import Layout from './components/Layout';
@@ -38,7 +38,6 @@ import AdminOnboarding from './pages/AdminOnboarding';
 import Onboarding from './pages/Onboarding';
 import Scorecards from './pages/Scorecards';
 import Affiliates from './pages/Affiliates';
-import AffiliateOutreach from './pages/AffiliateOutreach';
 import AffiliateOutreach from './pages/AffiliateOutreach';
 import FinancialDashboard from './pages/FinancialDashboard';
 import Settings from './pages/Settings';
@@ -145,7 +144,6 @@ function App() {
         <Route path="bonus-tracker" element={<BonusTracker />} />
         <Route path="am-bonus-tracker" element={<BonusTracker />} />
         <Route path="affiliates" element={<Affiliates />} />
-        <Route path="affiliate-outreach" element={<AffiliateOutreach />} />
         <Route path="affiliate-outreach" element={<AffiliateOutreach />} />
         <Route path="settings" element={<Settings />} />
         <Route path="projects" element={<LeadershipProjects />} />
