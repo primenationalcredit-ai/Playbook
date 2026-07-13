@@ -31,6 +31,7 @@ function mergePreview(text, aff) {
     .replace(/\{company\}/g, aff.company || aff.org_name || 'your company')
     .replace(/\{sold_clients\}/g, String(aff.sold_clients || 0))
     .replace(/\{client_word\}/g, (aff.sold_clients || 0) === 1 ? 'client' : 'clients')
+    .replace(/\{referral_word\}/g, (aff.referred_deals || 0) === 1 ? 'referral' : 'referrals')
     .replace(/\{referred_deals\}/g, String(aff.referred_deals || 0))
     .replace(/\{last_referral_month\}/g, monthNameOf(aff.last_referral_date))
     .replace(/\{portal_link\}/g, aff.portal_link || 'https://affiliates.asapcreditrepairusa.com')
@@ -134,6 +135,7 @@ export default function AffiliateOutreach() {
   const toggleExpand = async (aff) => {
     if (expanded === aff.id) { setExpanded(null); return; }
     setExpanded(aff.id);
+    if (!aiPreviews[aff.id]) loadAiPreview(aff); // the AI version IS what sends - fetch it up front
     if (!touches[aff.id]) {
       const t = await sbGet(`affiliate_touches?affiliate_org_id=eq.${aff.id}&select=*&order=created_at.desc&limit=30`);
       setTouches((prev) => ({ ...prev, [aff.id]: Array.isArray(t) ? t : [] }));
@@ -356,7 +358,7 @@ export default function AffiliateOutreach() {
                               return (
                                 <div className="mb-3 bg-white border rounded-lg p-3">
                                   <div className="text-xs font-semibold text-gray-700 mb-1">
-                                    Next message this affiliate will receive{rotationMode ? ' (monthly value rotation)' : ''}:
+                                    Next message this affiliate will receive{rotationMode ? ' (monthly value rotation)' : ''}{next && next.channel === 'email' ? ' - personalized to their history' : ''}:
                                   </div>
                                   {blocked ? (
                                     <div className="text-xs text-red-600 font-medium">{blocked} - the engine skips this affiliate entirely.</div>
@@ -369,33 +371,38 @@ export default function AffiliateOutreach() {
                                         {a.next_touch_due ? ` · scheduled ${a.next_touch_due}` : ' · would send on the next engine run'}
                                       </div>
                                       {next.subject && <div className="text-sm font-semibold mb-1">Subject: {mergePreview(next.subject, a)}</div>}
-                                      <pre className="text-xs bg-gray-50 rounded p-3 whitespace-pre-wrap font-sans text-gray-800 max-h-64 overflow-y-auto">{mergePreview(next.body, a)}</pre>
+                                      {next.channel === 'email' ? (
+                                        aiLoading === a.id && !aiPreviews[a.id] ? (
+                                          <div className="text-xs text-gray-400 py-6 text-center">Writing this affiliate's personalized email…</div>
+                                        ) : aiPreviews[a.id] && aiPreviews[a.id].personalized ? (
+                                          <pre className="text-xs bg-indigo-50 border border-indigo-200 rounded p-3 whitespace-pre-wrap font-sans text-gray-800 max-h-72 overflow-y-auto">{aiPreviews[a.id].personalized}</pre>
+                                        ) : (
+                                          <>
+                                            {aiPreviews[a.id] && !aiPreviews[a.id].personalized && (
+                                              <div className="text-xs text-red-600 mb-1">AI personalization unavailable right now{aiPreviews[a.id].ai_error ? `: ${aiPreviews[a.id].ai_error}` : ''} - the version below would send instead.</div>
+                                            )}
+                                            <pre className="text-xs bg-gray-50 rounded p-3 whitespace-pre-wrap font-sans text-gray-800 max-h-64 overflow-y-auto">{mergePreview(next.body, a)}</pre>
+                                          </>
+                                        )
+                                      ) : (
+                                        <pre className="text-xs bg-gray-50 rounded p-3 whitespace-pre-wrap font-sans text-gray-800 max-h-64 overflow-y-auto">{mergePreview(next.body, a)}</pre>
+                                      )}
+                                      {next.channel === 'email' && aiPreviews[a.id] && aiPreviews[a.id].personalized && (
+                                        <details className="mt-2">
+                                          <summary className="text-xs text-gray-400 cursor-pointer">Show raw template (before personalization)</summary>
+                                          <pre className="text-xs bg-gray-50 rounded p-3 whitespace-pre-wrap font-sans text-gray-600 max-h-48 overflow-y-auto mt-1">{mergePreview(next.body, a)}</pre>
+                                        </details>
+                                      )}
                                       {upcoming.length > 0 && (
                                         <div className="text-xs text-gray-500 mt-2">
                                           Then: {upcoming.map((u) => `${u.channel.toUpperCase()} day ${u.day_offset}${u.subject ? ` (${u.subject})` : ''}`).join(' then ')}, then monthly value emails
                                         </div>
                                       )}
                                       {next.channel === 'email' && (
-                                        <div className="mt-3">
-                                          <button onClick={() => loadAiPreview(a)} disabled={aiLoading === a.id}
-                                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium disabled:opacity-50">
-                                            {aiLoading === a.id ? 'Personalizing…' : (aiPreviews[a.id] ? 'Regenerate AI version' : 'Preview AI-personalized version')}
-                                          </button>
-                                          {aiPreviews[a.id] && (
-                                            aiPreviews[a.id].personalized ? (
-                                              <div className="mt-2">
-                                                <div className="text-xs font-semibold text-indigo-700 mb-1">
-                                                  AI-personalized (this is what actually sends):
-                                                </div>
-                                                <pre className="text-xs bg-indigo-50 border border-indigo-200 rounded p-3 whitespace-pre-wrap font-sans text-gray-800 max-h-72 overflow-y-auto">{aiPreviews[a.id].personalized}</pre>
-                                              </div>
-                                            ) : (
-                                              <div className="mt-2 text-xs text-red-600">
-                                                AI preview unavailable{aiPreviews[a.id].ai_error ? `: ${aiPreviews[a.id].ai_error}` : ''} (the plain version above would send instead)
-                                              </div>
-                                            )
-                                          )}
-                                        </div>
+                                        <button onClick={() => loadAiPreview(a)} disabled={aiLoading === a.id}
+                                          className="mt-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium disabled:opacity-50">
+                                          {aiLoading === a.id ? 'Personalizing…' : 'Regenerate personalized email'}
+                                        </button>
                                       )}
                                     </>
                                   )}
