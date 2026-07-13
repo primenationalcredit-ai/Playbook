@@ -60,7 +60,7 @@ function Layout() {
   // requests (Playbook db). Built generic so more approval types can be added.
   const [approvalCounts, setApprovalCounts] = useState({ payments: 0, timeOff: 0, unread: 0 });
   // Leadership: badge = things to act on (pending payments + pending time-off).
-  // AMs: badge = unread only (replies/decisions on their own requests) — they don't
+  // AMs: badge = unread only (replies/decisions on their own requests) â€” they don't
   // act on the pending queue, so a pending count would be noise.
   const approvalsBadge = approvalCounts.payments + approvalCounts.timeOff;
   const approvalsUnread = approvalCounts.unread || 0;
@@ -230,14 +230,14 @@ function Layout() {
   // Additional department items (hidden in "More" for leadership only - NOT shown to employees)
   // PRESERVED FOR FUTURE USE - can be re-enabled one at a time
   const additionalDepartmentItems = [
-    ...(isConsultant ? [{ path: '/affiliates', icon: Users2, label: 'Affiliates' }] : []),
+    ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates' }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
   ];
 
   // Full department items for Joe
   const departmentItems = isJoe ? [
-    ...(isConsultant ? [{ path: '/affiliates', icon: Users2, label: 'Affiliates' }] : []),
+    ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates' }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     { path: '/invoices', icon: FileText, label: 'Invoices' },
     { path: '/agreements', icon: FileText, label: 'Agreements' },
