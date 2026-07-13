@@ -124,6 +124,7 @@ exports.handler = async (event) => {
       if (soldCount > 0 && refDays != null && refDays <= 30) segment = 'producing';
       else if (soldCount > 0 && refDays != null && refDays <= 90) segment = 'slowing';
       else if (soldCount > 0) segment = 'dormant';
+      else if (referred > 0) segment = 'referred_pending'; // they sent people, nobody sold yet - help them convert
       else if (ageDays <= 60) segment = 'new_never';
       else segment = 'cold';
 

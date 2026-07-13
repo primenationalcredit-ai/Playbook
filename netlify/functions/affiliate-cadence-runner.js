@@ -111,6 +111,7 @@ ${JSON.stringify(facts, null, 2)}
 HARD RULES:
 - Keep the same core message, roughly the same length, and the same sign-off exactly as written.
 - If referrals_sent is greater than 0, acknowledge it warmly near the top (for example thank them for already sending someone over). Never scold anyone for not referring.
+- If clients_sold is 0, never write words that claim this partner has personally seen our results or watched us change lives. Their honest script uses our verifiable credentials (67,000 clients, 13 years, results based billing) instead of personal testimony.
 - Never invent facts, client names, numbers, or events not in the FACTS or the original email.
 - Say "credit accelerator program" if referring to the program. NEVER use the phrase "credit repair".
 - Exactly one URL may appear in the email: the portal_link. Keep it where the original put it, or omit if the original had none.

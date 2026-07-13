@@ -51,6 +51,7 @@ function fmtDate(d) {
 
 const SEGMENTS = [
   { id: 'new_never', label: 'New, never sent', color: 'bg-blue-100 text-blue-800', ring: 'ring-blue-400' },
+  { id: 'referred_pending', label: 'Referred, not sold yet', color: 'bg-purple-100 text-purple-800', ring: 'ring-purple-400' },
   { id: 'producing', label: 'Producing', color: 'bg-green-100 text-green-800', ring: 'ring-green-400' },
   { id: 'slowing', label: 'Slowing', color: 'bg-yellow-100 text-yellow-800', ring: 'ring-yellow-400' },
   { id: 'dormant', label: 'Dormant', color: 'bg-orange-100 text-orange-800', ring: 'ring-orange-400' },
@@ -208,7 +209,7 @@ export default function AffiliateOutreach() {
       </div>
 
       {/* Segment cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
         {SEGMENTS.map((s) => (
           <button key={s.id} onClick={() => { setSegFilter(segFilter === s.id ? '' : s.id); setPage(0); setTab('book'); }}
             className={`rounded-xl border p-4 text-left hover:shadow ${segFilter === s.id ? `ring-2 ${s.ring}` : ''}`}>
