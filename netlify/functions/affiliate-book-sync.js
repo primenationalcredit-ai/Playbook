@@ -32,7 +32,8 @@ const K_OCCUPATION = '939b17f8624908513f9a32d2b7601478686419f3';
 const K_PORTAL_LINK = '15a30013a673b3412f9add0430cd3686f8228d8e';    // Portal Link (GENERIC url - filter field only)
 const K_CLIENT_LINK = 'f5f38f128aadb798f04f3d9c6f9fffa53cf517a8';    // Client Referral Link (/self-signup/CODE - new Zapier-era signups)
 const K_SEND_LINK = '15a8608561864a51c527a8ba78fa6c48b9081574';
-const K_FU_NOTES = '17c6fcd0a8bcc21bbba680a8fe82697d9f996df9';   // Additional F/U Notes (two-way: engine appends, sync pulls)      // Affiliate Send Client Link (client-signup.php?afcode= - the master field, 3,148 filled)
+const K_FU_NOTES = '17c6fcd0a8bcc21bbba680a8fe82697d9f996df9';   // Additional F/U Notes (two-way: engine appends, sync pulls)
+const K_PAYOUT = 'fa804c13990a023d6b5c3f10a89969b1694c392f';     // Affiliate Pay out (monetary) - money talk allowed ONLY when filled      // Affiliate Send Client Link (client-signup.php?afcode= - the master field, 3,148 filled)
 const K_SUPER_PORTAL = '04acdb1de8d9e3a6f04322339e3f95de19f1aa1e';  // Super Affiliate Portal
 const K_SENIOR = 'a821f4a4053793acefdf300aa0a27ccc777afbfc';        // Senior Affiliate
 
@@ -139,6 +140,7 @@ exports.handler = async (event) => {
         company: (o[K_COMPANY] == null ? '' : String(o[K_COMPANY])).trim() || null,
         occupation: (o[K_OCCUPATION] == null ? '' : String(o[K_OCCUPATION])).trim() || null,
         pipedrive_fu_notes: (o[K_FU_NOTES] == null ? '' : String(o[K_FU_NOTES])).trim() || null,
+        payout_amount: (() => { const v = parseFloat(o[K_PAYOUT]); return isNaN(v) || v <= 0 ? null : v; })(),
         industry: (o.industry == null ? '' : String(o.industry)).trim() || null,
         ...(() => {
           // The unique give-this-to-your-client link, merged across eras:

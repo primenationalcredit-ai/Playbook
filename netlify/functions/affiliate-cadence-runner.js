@@ -122,7 +122,8 @@ async function aiPersonalize(subject, mergedBody, aff, consultantName) {
     last_client_month: aff.last_referral_date ? monthName(aff.last_referral_date) : null,
     segment: aff.segment,
     consultant_name: consultantName,
-    portal_link: aff.portal_link || null
+    portal_link: aff.portal_link || null,
+    payout_amount: aff.payout_amount || null
   };
   const prompt = `You personalize partner outreach emails for ASAP Credit & Financial Services. Rewrite the email below so it fits this exact partner, using only the facts provided.
 
@@ -133,6 +134,7 @@ HARD RULES:
 - Keep the same core message, roughly the same length, and the same sign-off exactly as written.
 - If referrals_sent is greater than 0, acknowledge it warmly near the top (for example thank them for already sending someone over). Never scold anyone for not referring.
 - If clients_sold is 0, never write words that claim this partner has personally seen our results or watched us change lives. Their honest script uses our verifiable credentials (67,000 clients, 13 years, results based billing) instead of personal testimony.
+- If payout_amount is null, this partner has no payout arrangement on file: NEVER mention payouts, commissions, earnings, getting paid, or any dollar amounts the partner could make. Remove any such lines from the original entirely and keep the focus on client outcomes and the partnership. If payout_amount has a value, payout mentions are allowed.
 - Never invent facts, client names, numbers, or events not in the FACTS or the original email.
 - Say "credit accelerator program" if referring to the program. NEVER use the phrase "credit repair".
 - Exactly one URL may appear in the email: the portal_link. Keep it where the original put it, or omit if the original had none.
