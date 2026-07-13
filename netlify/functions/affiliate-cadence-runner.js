@@ -202,7 +202,11 @@ exports.handler = async (event) => {
   const dryRun = params.dry === '1';
   try {
     const cfg = await getConfig();
-    if (cfg.affiliate_engine_enabled !== 'true' && !dryRun) {
+    // TEST MODE: ?only={id} targets a single affiliate for a REAL send (engine gate, due-date,
+    // and SMS window bypassed). Everything else - AI personalization, logging, Pipedrive
+    // write-back, cadence advance - behaves exactly like production.
+    const onlyId = parseInt((event.queryStringParameters || {}).only, 10) || null;
+    if (cfg.affiliate_engine_enabled !== 'true' && !dryRun && !onlyId) {
       return { statusCode: 200, headers, body: JSON.stringify({ skipped: 'engine disabled (app_config.affiliate_engine_enabled)' }) };
     }
 
@@ -219,7 +223,7 @@ exports.handler = async (event) => {
     let smsSent = parseInt(cfg.affiliate_sms_sent_today || '0', 10);
     const emailCap = parseInt(cfg.affiliate_daily_email_cap || '150', 10);
     const smsCap = parseInt(cfg.affiliate_daily_sms_cap || '100', 10);
-    const smsWindowOpen = hourCT >= 9 && hourCT < 18;
+    const smsWindowOpen = onlyId ? true : (hourCT >= 9 && hourCT < 18);
 
     // templates
     const tRes = await supa('affiliate_templates?active=eq.true&select=*&order=segment,step_number');
@@ -240,11 +244,13 @@ exports.handler = async (event) => {
 
     // due affiliates: never touched (next_touch_due null) or due today/earlier
     const segPriority = ['new_never', 'dormant', 'slowing', 'producing', 'cold'];
-    const dueRes = await supa(
-      `affiliate_orgs?paused=eq.false&opted_out=eq.false&super_affiliate=eq.false&missing_contact=eq.false` +
-      `&or=(next_touch_due.is.null,next_touch_due.lte.${todayCT})` +
-      `&select=*&order=pipedrive_add_time.desc&limit=600`
-    );
+    const dueRes = onlyId
+      ? await supa(`affiliate_orgs?id=eq.${onlyId}&select=*`)
+      : await supa(
+          `affiliate_orgs?paused=eq.false&opted_out=eq.false&super_affiliate=eq.false&missing_contact=eq.false` +
+          `&or=(next_touch_due.is.null,next_touch_due.lte.${todayCT})` +
+          `&select=*&order=pipedrive_add_time.desc&limit=600`
+        );
     let due = (dueRes.json || []).filter((a) => !openCallOrgIds.has(a.id));
     due.sort((a, b) => segPriority.indexOf(a.segment) - segPriority.indexOf(b.segment));
 
