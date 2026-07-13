@@ -52,8 +52,9 @@ let RC_FROM = process.env.RINGCENTRAL_FROM_NUMBER || process.env.RC_FROM_NUMBER;
 async function loadRcSecrets() {
   if (RC_CLIENT_ID && RC_CLIENT_SECRET && RC_JWT && RC_FROM) return;
   try {
-    const rows = await supa(`app_secrets?key=in.(rc_client_id,rc_client_secret,rc_jwt,rc_from_number)&select=key,value`);
-    const m = {}; (rows || []).forEach((r) => { m[r.key] = r.value; });
+    const res = await supa(`app_secrets?key=in.(rc_client_id,rc_client_secret,rc_jwt,rc_from_number)&select=key,value`);
+    const rows = (res && res.json) || [];
+    const m = {}; rows.forEach((r) => { m[r.key] = r.value; });
     RC_CLIENT_ID = RC_CLIENT_ID || m.rc_client_id;
     RC_CLIENT_SECRET = RC_CLIENT_SECRET || m.rc_client_secret;
     RC_JWT = RC_JWT || m.rc_jwt;
