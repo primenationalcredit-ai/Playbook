@@ -544,6 +544,16 @@ If any of that raises a question, or if you have a story about someone you sent 
 {consultant_name}
 ASAP Credit & Financial Services`);
 
+add('rotation_call', 1, 'call', 30, null,
+`Monthly relationship call (every 3rd monthly touch is human, forever). No agenda, no pitch.
+- Review the card first: their numbers, their industry, the Pipedrive follow-up notes, their replies
+- Open warm and specific: reference something real (their last client, their industry season, a reply they sent)
+- Ask how business is going, and actually listen for referral moments in their answer
+- One idea for their world: lenders = declined apps, realtors = failed pre-approvals, dealers = desk turndowns, tax = refund season debt talk, insurance = rated-up clients
+- If they have unconverted referrals: offer to have our team take a fresh run at them this week
+- Close with: "anything you need from us? A talk track, case files, anything, I will send it today"
+- Log the outcome, it feeds every message after this one`);
+
 add('rotation', 7, 'email', 30, 'What the top of the partner board looks like',
 `{first_name},
 

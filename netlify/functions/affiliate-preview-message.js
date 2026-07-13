@@ -104,7 +104,9 @@ exports.handler = async (event) => {
     } else if (step < 100) {
       tmpl = seq.find((t) => t.step_number === step + 1) || (rot.length ? rot[0] : null);
     } else if (rot.length) {
-      tmpl = rot[(step - 100 + 1) % rot.length];
+      const rotTouch = step - 100 + 1;
+      const rotCall = templates.filter((t) => t.segment === 'rotation_call')[0];
+      tmpl = (rotTouch % 3 === 0 && rotCall) ? rotCall : rot[rotTouch % rot.length];
     }
     if (!tmpl) return { statusCode: 200, headers, body: JSON.stringify({ error: 'no template for this affiliate' }) };
 

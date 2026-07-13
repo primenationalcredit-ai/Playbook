@@ -18,6 +18,27 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SENDGRID_KEY = process.env.SENDGRID_API_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY;
+const PIPEDRIVE_TOKEN = process.env.PIPEDRIVE_API_KEY;
+const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepairusa';
+const PD_FU_NOTES_KEY = '17c6fcd0a8bcc21bbba680a8fe82697d9f996df9'; // Additional F/U Notes org field
+
+// Write every touch back to Pipedrive so the whole company sees the nurture happening.
+// Appends a dated line, keeps the newest ~3500 chars, never blocks a send on failure.
+async function appendPipedriveFollowUp(aff, line) {
+  if (!PIPEDRIVE_TOKEN || !aff.pipedrive_org_id) return;
+  try {
+    const base = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/organizations/${aff.pipedrive_org_id}`;
+    const g = await fetch(`${base}?api_token=${PIPEDRIVE_TOKEN}`);
+    const gd = await g.json();
+    const existing = (gd && gd.data && gd.data[PD_FU_NOTES_KEY]) ? String(gd.data[PD_FU_NOTES_KEY]) : '';
+    let combined = (existing ? existing + '\n' : '') + line;
+    if (combined.length > 3500) combined = combined.slice(combined.length - 3500);
+    await fetch(`${base}?api_token=${PIPEDRIVE_TOKEN}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [PD_FU_NOTES_KEY]: combined })
+    });
+  } catch (e) { /* never block outreach on Pipedrive */ }
+}
 const FROM_EMAIL = process.env.AFFILIATE_FROM_EMAIL || 'teamelite@asapcreditrepairusa.com';
 const SITE_BASE = process.env.URL || 'https://cute-cat-d9631c.netlify.app';
 
@@ -250,8 +271,14 @@ exports.handler = async (event) => {
         if (!tmpl && rotation.length > 0) { rotationMode = true; tmpl = rotation[0]; step = 100 - 1; } // first rotation
       } else {
         rotationMode = true;
-        const idx = (step - 100 + 1) % rotation.length;
-        tmpl = rotation[idx] || rotation[0];
+        const rotTouch = step - 100 + 1; // 1st, 2nd, 3rd... monthly touch
+        const rotCall = (bySegment['rotation_call'] || [])[0];
+        if (rotTouch % 3 === 0 && rotCall) {
+          tmpl = rotCall; // every 3rd monthly touch is a human call, forever
+        } else {
+          const idx = rotTouch % rotation.length;
+          tmpl = rotation[idx] || rotation[0];
+        }
       }
       if (!tmpl) { results.skipped.push({ org: aff.org_name, why: 'no template' }); continue; }
 
@@ -323,6 +350,12 @@ exports.handler = async (event) => {
             detail: aff.__ai ? 'ai_personalized' : null
           }])
         });
+        const fuLine = tmpl.channel === 'call'
+          ? `${todayCT}: Call task created for ${aff.owner_name || 'team'} (ASAP outreach)`
+          : tmpl.channel === 'sms'
+            ? `${todayCT}: SMS sent (ASAP outreach)`
+            : `${todayCT}: Email sent: ${tmpl.subject || 'value email'}${aff.__ai ? ' (personalized)' : ''} (ASAP outreach)`;
+        await appendPipedriveFollowUp(aff, fuLine);
         await supa(`affiliate_orgs?id=eq.${aff.id}`, {
           method: 'PATCH', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify({

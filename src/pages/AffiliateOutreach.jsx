@@ -341,6 +341,12 @@ export default function AffiliateOutreach() {
                                 <div className="text-xs text-gray-400">{a.recruited_by_super ? `via ${a.recruited_by_super}` : 'direct signup'}{a.company ? ` · ${a.company}` : ''}{a.occupation ? ` · ${a.occupation}` : ''}</div>
                               </div>
                             </div>
+                            {a.pipedrive_fu_notes && (
+                              <details className="mb-3">
+                                <summary className="text-xs font-semibold text-gray-600 cursor-pointer">Pipedrive follow-up notes (two-way with the org record)</summary>
+                                <pre className="text-xs bg-yellow-50 border border-yellow-200 rounded p-3 whitespace-pre-wrap font-sans text-gray-700 max-h-40 overflow-y-auto mt-1">{a.pipedrive_fu_notes}</pre>
+                              </details>
+                            )}
                             {(() => {
                               const seg = a.cadence_segment && a.cadence_segment !== a.segment ? a.segment : (a.cadence_segment || a.segment);
                               const step = (a.cadence_segment && a.cadence_segment !== a.segment) ? 0 : (a.cadence_step || 0);
@@ -353,7 +359,12 @@ export default function AffiliateOutreach() {
                               } else if (step < 100) {
                                 next = seq.find((t) => t.step_number === step + 1) || null;
                                 if (!next && rot.length) { next = rot[0]; rotationMode = true; }
-                              } else if (rot.length) { next = rot[(step - 100 + 1) % rot.length]; rotationMode = true; }
+                              } else if (rot.length) {
+                                const rotTouch = step - 100 + 1;
+                                const rotCall = templates.filter((t) => t.segment === 'rotation_call')[0];
+                                next = (rotTouch % 3 === 0 && rotCall) ? rotCall : rot[rotTouch % rot.length];
+                                rotationMode = true;
+                              }
                               const upcoming = step < 100 ? seq.filter((t) => t.step_number > step + 1) : [];
                               const blocked = a.paused ? 'PAUSED' : a.opted_out ? 'OPTED OUT' : a.super_affiliate ? 'SUPER AFFILIATE (never contacted)' : a.missing_contact ? 'MISSING CONTACT INFO' : null;
                               return (
