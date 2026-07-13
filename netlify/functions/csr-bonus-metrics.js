@@ -266,8 +266,8 @@ exports.handler = async (event) => {
       const stageKey = `${r.pipeline_name || '(none)'} | ${r.stage_name || '(none)'}`;
       stageSeen[stageKey] = (stageSeen[stageKey] || 0) + 1;
 
-      // Every deal in the CS filter counts as a report for its rep. A deal with a recognized
-      // monitoring site is split into idiq/smart; a deal with no/blank site still counts, as "other".
+      // A deal counts as a report ONLY if it has a monitoring site (enforced below before the
+      // tally). Recognized sites split into idiq/smart; filled-but-unrecognized sites count as "other".
       const cls = classify(ms) || 'other';
       const rep = resolveRep(r.call_center_rep_name);
 
@@ -307,6 +307,12 @@ exports.handler = async (event) => {
         continue;
       }
 
+      // NO MONITORING SITE = NO REPORT (the credit rule's precondition). A deal with a blank
+      // site never counts toward report totals, the conversion denominator, or any report
+      // drill list - it already appeared above in the stage distribution and the operational
+      // funnel, which is where lead-stage deals belong. (Reni's ticket: NEW-AUTOPILOT leads
+      // were being credited as "other" reports via the classify() fallback.)
+      if (!ms) continue;
       if (monthOf(r) !== month) { tally[rep].outOfMonth++; continue; }
 
       // Conversion tracking runs for ALL of the rep's report deals this month, BEFORE the
