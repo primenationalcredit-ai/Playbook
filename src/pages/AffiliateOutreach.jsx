@@ -11,6 +11,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sbHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
 const sbGet = async (q) => { const r = await fetch(`${SUPABASE_URL}/rest/v1/${q}`, { headers: sbHeaders }); return r.ok ? r.json() : []; };
 const sbPatch = async (q, body) => fetch(`${SUPABASE_URL}/rest/v1/${q}`, { method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
+const sbPost = async (q, body) => fetch(`${SUPABASE_URL}/rest/v1/${q}`, { method: 'POST', headers: { ...sbHeaders, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
 const sbUpsertConfig = async (key, value) => fetch(`${SUPABASE_URL}/rest/v1/app_config?on_conflict=key`, {
   method: 'POST', headers: { ...sbHeaders, Prefer: 'resolution=merge-duplicates,return=minimal' },
   body: JSON.stringify([{ key, value: String(value) }])
@@ -86,6 +87,7 @@ export default function AffiliateOutreach() {
   const [aiLoading, setAiLoading] = useState(null);
   const [outcome, setOutcome] = useState('');
   const [notes, setNotes] = useState('');
+  const [sendVmText, setSendVmText] = useState(true);
   const PAGE_SIZE = 50;
 
   const loadSummary = useCallback(async () => {
@@ -126,8 +128,11 @@ export default function AffiliateOutreach() {
   const loadCalls = useCallback(async () => {
     const status = callView === 'open' ? 'eq.open' : 'neq.open';
     const data = await sbGet(`affiliate_call_tasks?status=${status}&select=*&order=created_at.${callView === 'open' ? 'asc' : 'desc'}&limit=200`);
-    setCallTasks(Array.isArray(data) ? data : []);
-  }, [callView]);
+    const all = Array.isArray(data) ? data : [];
+    // Consultants see their own calls (matched on first name of the deal owner); leadership sees everything
+    const myFirst = String(currentUser?.name || '').trim().toLowerCase().split(/\s+/)[0];
+    setCallTasks(isLeadership || !myFirst ? all : all.filter((t) => String(t.assigned_to || '').trim().toLowerCase().startsWith(myFirst)));
+  }, [callView, isLeadership, currentUser]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
   useEffect(() => {
@@ -158,7 +163,27 @@ export default function AffiliateOutreach() {
     });
     // resume the cadence: next run advances to the step after the call
     await sbPatch(`affiliate_orgs?id=eq.${task.affiliate_org_id}`, { next_touch_due: new Date().toISOString().slice(0, 10) });
-    setCompletingTask(null); setOutcome(''); setNotes('');
+    const caller = String(currentUser?.name || task.assigned_to || 'team').split(/\s+/)[0];
+    // the call lands on the affiliate's timeline
+    await sbPost('affiliate_touches', [{
+      affiliate_org_id: task.affiliate_org_id, pipedrive_org_id: task.pipedrive_org_id, channel: 'call',
+      segment: task.segment, step_number: task.step_number, subject: outcome || status,
+      status: 'completed', detail: notes || null
+    }]);
+    // ...and on the Pipedrive org record
+    const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago' });
+    fetch('/.netlify/functions/affiliate-update-fu-notes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: task.affiliate_org_id, append: `${today}: Call by ${caller} - ${outcome || status}${notes ? `: ${notes}` : ''}` })
+    }).catch(() => {});
+    // voicemail? offer went out as a text
+    if (status === 'done' && outcome === 'Left voicemail' && sendVmText) {
+      fetch('/.netlify/functions/affiliate-checkin-sms', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.affiliate_org_id, consultant: currentUser?.name || task.assigned_to })
+      }).catch(() => {});
+    }
+    setCompletingTask(null); setOutcome(''); setNotes(''); setSendVmText(true);
     loadCalls();
   };
 
@@ -533,8 +558,14 @@ export default function AffiliateOutreach() {
                         <option>No answer</option>
                         <option>Bad number</option>
                       </select>
-                      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (what did you learn?)"
+                      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (what did you learn?) - saves to the timeline AND the Pipedrive org record"
                         className="border rounded-lg px-2 py-1.5 text-sm w-full" rows={2} />
+                      {outcome === 'Left voicemail' && (
+                        <label className="flex items-center gap-2 text-xs text-gray-600">
+                          <input type="checkbox" checked={sendVmText} onChange={(e) => setSendVmText(e.target.checked)} />
+                          Also text them: "Just left you a voicemail, was calling to check in..." (from your name)
+                        </label>
+                      )}
                       <div className="flex gap-2">
                         <button onClick={() => completeTask(t, 'done')} className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium">Mark done, resume cadence</button>
                         <button onClick={() => completeTask(t, 'skipped')} className="px-3 py-1.5 rounded-lg bg-gray-200 text-xs font-medium">Skip call, resume cadence</button>
