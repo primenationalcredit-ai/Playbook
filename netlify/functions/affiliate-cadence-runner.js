@@ -75,6 +75,7 @@ function mergeFields(text, aff, consultantName) {
     .replace(/\{consultant_name\}/g, consultantName)
     .replace(/\{company\}/g, aff.company || aff.org_name || 'your company')
     .replace(/\{sold_clients\}/g, String(aff.sold_clients || 0))
+    .replace(/\{client_word\}/g, (aff.sold_clients || 0) === 1 ? 'client' : 'clients')
     .replace(/\{referred_deals\}/g, String(aff.referred_deals || 0))
     .replace(/\{last_referral_month\}/g, monthName(aff.last_referral_date))
     .replace(/\{months_quiet\}/g, monthsQuiet == null ? 'a few' : String(monthsQuiet))
@@ -238,7 +239,11 @@ exports.handler = async (event) => {
       // pick next template: sequence step, else rotation cycle
       const seq = bySegment[cadSeg] || [];
       let tmpl = null, rotationMode = false;
-      if (step < 100) {
+      // Milestone: their very FIRST client just sold (producing = sale within 30 days,
+      // so this can never fire stale) and this is the first producing touch -> congrats.
+      if (cadSeg === 'producing' && (aff.sold_clients || 0) === 1 && step === 0 && (bySegment['producing_first'] || [])[0]) {
+        tmpl = bySegment['producing_first'][0];
+      } else if (step < 100) {
         tmpl = seq.find((t) => t.step_number === step + 1) || null;
         if (!tmpl && rotation.length > 0) { rotationMode = true; tmpl = rotation[0]; step = 100 - 1; } // first rotation
       } else {

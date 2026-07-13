@@ -29,6 +29,7 @@ function mergeFields(text, aff, consultantName) {
     .replace(/\{consultant_name\}/g, consultantName)
     .replace(/\{company\}/g, aff.company || aff.org_name || 'your company')
     .replace(/\{sold_clients\}/g, String(aff.sold_clients || 0))
+    .replace(/\{client_word\}/g, (aff.sold_clients || 0) === 1 ? 'client' : 'clients')
     .replace(/\{referred_deals\}/g, String(aff.referred_deals || 0))
     .replace(/\{last_referral_month\}/g, monthName(aff.last_referral_date))
     .replace(/\{portal_link\}/g, aff.portal_link || 'https://portal.asapcreditrepairusa.com')
@@ -95,7 +96,10 @@ exports.handler = async (event) => {
     const seq = templates.filter((t) => t.segment === seg);
     const rot = templates.filter((t) => t.segment === 'rotation');
     let tmpl = null;
-    if (step < 100) {
+    const pfirst = templates.filter((t) => t.segment === 'producing_first');
+    if (seg === 'producing' && (aff.sold_clients || 0) === 1 && step === 0 && pfirst[0]) {
+      tmpl = pfirst[0];
+    } else if (step < 100) {
       tmpl = seq.find((t) => t.step_number === step + 1) || (rot.length ? rot[0] : null);
     } else if (rot.length) {
       tmpl = rot[(step - 100 + 1) % rot.length];

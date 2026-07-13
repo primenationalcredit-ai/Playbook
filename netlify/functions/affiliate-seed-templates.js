@@ -195,7 +195,7 @@ add('producing', 1, 'email', 0, 'Your clients this month',
 
 Quick partner update, then I will get out of your way.
 
-You have {sold_clients} clients with us all time, and your most recent came through in {last_referral_month}. Thank you. Referrals are trust, and we do not take yours lightly.
+You have {sold_clients} {client_word} with us all time, and your most recent came through in {last_referral_month}. Thank you. Referrals are trust, and we do not take yours lightly.
 
 Two standing offers, every month, always true:
 
@@ -204,6 +204,23 @@ One, want a status rundown on anyone you have sent? Reply with their name and yo
 Two, anything making referrals harder than it should be? Payout questions, a client experience that bugged you, a tool you wish existed? Tell me and I will fix what I can and be straight about what I cannot.
 
 That is it. No ask. Keep sending people who need to get approval ready and we will keep making you look good for it.
+
+{consultant_name}
+ASAP Credit & Financial Services`);
+
+// ============ PRODUCING_FIRST (their very first client just sold - fires once, only while fresh) ============
+add('producing_first', 1, 'email', 0, 'Congrats on your first client with us',
+`{first_name},
+
+Congrats on your first client with us! Genuinely. Most people who sign up as a partner never send anyone, so the fact that you already did puts you ahead of the pack.
+
+Here is what happens now. We get your client moving, and most people see their first results inside 45 days. And you get paid: payouts go out on the 15th of the month after the client signs up, so yours is already in motion.
+
+How are you feeling about everything so far? If anything about the process was confusing, or if there is anything we could have done better on that first one, reply and tell me. I read every one of these.
+
+And when the next person in your world mentions credit trouble, same play as last time: {portal_link}
+
+Proud to have you as a partner.
 
 {consultant_name}
 ASAP Credit & Financial Services`);

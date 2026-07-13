@@ -30,6 +30,7 @@ function mergePreview(text, aff) {
     .replace(/\{consultant_name\}/g, consultantName)
     .replace(/\{company\}/g, aff.company || aff.org_name || 'your company')
     .replace(/\{sold_clients\}/g, String(aff.sold_clients || 0))
+    .replace(/\{client_word\}/g, (aff.sold_clients || 0) === 1 ? 'client' : 'clients')
     .replace(/\{referred_deals\}/g, String(aff.referred_deals || 0))
     .replace(/\{last_referral_month\}/g, monthNameOf(aff.last_referral_date))
     .replace(/\{portal_link\}/g, aff.portal_link || 'https://affiliates.asapcreditrepairusa.com')
@@ -298,7 +299,10 @@ export default function AffiliateOutreach() {
                         <td className="px-4 py-2 text-xs">
                           step {a.cadence_step || 0}{a.next_touch_due ? ` · next ${a.next_touch_due}` : ''}
                         </td>
-                        <td className="px-4 py-2 text-xs">{a.owner_name || '-'}</td>
+                        <td className="px-4 py-2 text-xs">
+                          {a.owner_name || '-'}
+                          {a.recruited_by_super && <div className="text-gray-400">via {a.recruited_by_super}</div>}
+                        </td>
                         <td className="px-4 py-2 text-right whitespace-nowrap">
                           <button onClick={() => togglePause(a)} title={a.paused ? 'Resume cadence' : 'Pause cadence'}
                             className="p-1.5 rounded hover:bg-gray-200 mr-1">
@@ -339,8 +343,11 @@ export default function AffiliateOutreach() {
                               const step = (a.cadence_segment && a.cadence_segment !== a.segment) ? 0 : (a.cadence_step || 0);
                               const seq = templates.filter((t) => t.segment === seg);
                               const rot = templates.filter((t) => t.segment === 'rotation');
+                              const pfirst = templates.filter((t) => t.segment === 'producing_first');
                               let next = null, rotationMode = false;
-                              if (step < 100) {
+                              if (seg === 'producing' && (a.sold_clients || 0) === 1 && step === 0 && pfirst[0]) {
+                                next = pfirst[0];
+                              } else if (step < 100) {
                                 next = seq.find((t) => t.step_number === step + 1) || null;
                                 if (!next && rot.length) { next = rot[0]; rotationMode = true; }
                               } else if (rot.length) { next = rot[(step - 100 + 1) % rot.length]; rotationMode = true; }
