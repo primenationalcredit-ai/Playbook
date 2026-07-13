@@ -30,7 +30,8 @@ const K_LAST = '2bae3cfd8aebc51a92d28a581b649305c1612524';
 const K_COMPANY = 'f411fe519779247e2ac388a6331669624be0e265';
 const K_OCCUPATION = '939b17f8624908513f9a32d2b7601478686419f3';
 const K_PORTAL_LINK = '15a30013a673b3412f9add0430cd3686f8228d8e';    // Portal Link (GENERIC url - filter field only)
-const K_CLIENT_LINK = 'f5f38f128aadb798f04f3d9c6f9fffa53cf517a8';    // Client Referral Link (UNIQUE /self-signup/CODE - the one messages use)
+const K_CLIENT_LINK = 'f5f38f128aadb798f04f3d9c6f9fffa53cf517a8';    // Client Referral Link (/self-signup/CODE - new Zapier-era signups)
+const K_SEND_LINK = '15a8608561864a51c527a8ba78fa6c48b9081574';      // Affiliate Send Client Link (client-signup.php?afcode= - the master field, 3,148 filled)
 const K_SUPER_PORTAL = '04acdb1de8d9e3a6f04322339e3f95de19f1aa1e';  // Super Affiliate Portal
 const K_SENIOR = 'a821f4a4053793acefdf300aa0a27ccc777afbfc';        // Senior Affiliate
 
@@ -136,8 +137,26 @@ exports.handler = async (event) => {
         company: (o[K_COMPANY] == null ? '' : String(o[K_COMPANY])).trim() || null,
         occupation: (o[K_OCCUPATION] == null ? '' : String(o[K_OCCUPATION])).trim() || null,
         industry: (o.industry == null ? '' : String(o.industry)).trim() || null,
-        portal_link: ((o[K_CLIENT_LINK] == null ? '' : String(o[K_CLIENT_LINK])).trim()
-          || (o[K_PORTAL_LINK] == null ? '' : String(o[K_PORTAL_LINK])).trim()) || null,
+        ...(() => {
+          // The unique give-this-to-your-client link, merged across eras:
+          //   1. Affiliate Send Client Link (client-signup.php?afcode=) - normalized to https
+          //   2. Client Referral Link when it's a real signup link (/self-signup/, /direct-signup/)
+          //   3. neither -> generic portal + needs_unique_link flag for regeneration
+          const clean = (v) => (v == null ? '' : String(v)).trim();
+          let link = clean(o[K_SEND_LINK]);
+          if (link && /clients\.php|affiliates-leads|affiliate-payments/i.test(link)) link = ''; // dashboard junk, not a client link
+          if (link) {
+            if (!/^https?:\/\//i.test(link)) link = 'https://' + link;
+            link = link.replace(/^http:\/\//i, 'https://');
+          }
+          if (!link) {
+            const cl = clean(o[K_CLIENT_LINK]);
+            if (/self-signup|direct-signup/i.test(cl)) link = cl.replace(/^http:\/\//i, 'https://');
+          }
+          const needsLink = !link;
+          if (!link) link = clean(o[K_PORTAL_LINK]) || null;
+          return { portal_link: link, needs_unique_link: needsLink };
+        })(),
         super_affiliate: superNameSet.has(norm(o.name)),
         recruited_by_super: (() => {
           const sp = o[K_SUPER_PORTAL];
@@ -184,6 +203,7 @@ exports.handler = async (event) => {
       segments: bySegment,
       missing_contact: rows.filter(r => r.missing_contact).length,
       super_affiliates: rows.filter(r => r.super_affiliate).length,
+      needs_unique_link: rows.filter(r => r.needs_unique_link).length,
       recruited_by_supers: rows.filter(r => r.recruited_by_super).length,
       note: params.debug ? rows.slice(0, 3) : undefined
     });
