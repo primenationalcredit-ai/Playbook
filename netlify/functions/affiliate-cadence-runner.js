@@ -42,10 +42,24 @@ async function appendPipedriveFollowUp(aff, line) {
 const FROM_EMAIL = process.env.AFFILIATE_FROM_EMAIL || 'teamelite@asapcreditrepairusa.com';
 const SITE_BASE = process.env.URL || 'https://cute-cat-d9631c.netlify.app';
 
-const RC_CLIENT_ID = process.env.RINGCENTRAL_CLIENT_ID || process.env.RC_CLIENT_ID;
-const RC_CLIENT_SECRET = process.env.RINGCENTRAL_CLIENT_SECRET || process.env.RC_CLIENT_SECRET;
-const RC_JWT = process.env.RINGCENTRAL_JWT || process.env.RC_JWT;
-const RC_FROM = process.env.RINGCENTRAL_FROM_NUMBER || process.env.RC_FROM_NUMBER;
+let RC_CLIENT_ID = process.env.RINGCENTRAL_CLIENT_ID || process.env.RC_CLIENT_ID;
+let RC_CLIENT_SECRET = process.env.RINGCENTRAL_CLIENT_SECRET || process.env.RC_CLIENT_SECRET;
+let RC_JWT = process.env.RINGCENTRAL_JWT || process.env.RC_JWT;
+let RC_FROM = process.env.RINGCENTRAL_FROM_NUMBER || process.env.RC_FROM_NUMBER;
+
+// Netlify's 4KB Lambda env cap can't hold the RC JWT - credentials live in Supabase
+// app_secrets (RLS on, zero policies = service-role reads only). Env vars win if present.
+async function loadRcSecrets() {
+  if (RC_CLIENT_ID && RC_CLIENT_SECRET && RC_JWT && RC_FROM) return;
+  try {
+    const rows = await supa(`app_secrets?key=like.rc_*&select=key,value`);
+    const m = {}; (rows || []).forEach((r) => { m[r.key] = r.value; });
+    RC_CLIENT_ID = RC_CLIENT_ID || m.rc_client_id;
+    RC_CLIENT_SECRET = RC_CLIENT_SECRET || m.rc_client_secret;
+    RC_JWT = RC_JWT || m.rc_jwt;
+    RC_FROM = RC_FROM || m.rc_from_number;
+  } catch (e) { /* SMS attempts will surface the miss */ }
+}
 const RC_SERVER = process.env.RINGCENTRAL_SERVER || 'https://platform.ringcentral.com';
 
 const PER_RUN_LIMIT = 25;
@@ -226,6 +240,7 @@ exports.handler = async (event) => {
     const emailCap = parseInt(cfg.affiliate_daily_email_cap || '150', 10);
     const smsCap = parseInt(cfg.affiliate_daily_sms_cap || '100', 10);
     const smsWindowOpen = onlyId ? true : (hourCT >= 9 && hourCT < 18);
+    await loadRcSecrets();
 
     // templates
     const tRes = await supa('affiliate_templates?active=eq.true&select=*&order=segment,step_number');

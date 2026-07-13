@@ -5,10 +5,25 @@
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const RC_CLIENT_ID = process.env.RINGCENTRAL_CLIENT_ID || process.env.RC_CLIENT_ID;
-const RC_CLIENT_SECRET = process.env.RINGCENTRAL_CLIENT_SECRET || process.env.RC_CLIENT_SECRET;
-const RC_JWT = process.env.RINGCENTRAL_JWT || process.env.RC_JWT;
-const RC_FROM = process.env.RINGCENTRAL_FROM_NUMBER || process.env.RC_FROM_NUMBER;
+let RC_CLIENT_ID = process.env.RINGCENTRAL_CLIENT_ID || process.env.RC_CLIENT_ID;
+let RC_CLIENT_SECRET = process.env.RINGCENTRAL_CLIENT_SECRET || process.env.RC_CLIENT_SECRET;
+let RC_JWT = process.env.RINGCENTRAL_JWT || process.env.RC_JWT;
+let RC_FROM = process.env.RINGCENTRAL_FROM_NUMBER || process.env.RC_FROM_NUMBER;
+
+async function loadRcSecrets() {
+  if (RC_CLIENT_ID && RC_CLIENT_SECRET && RC_JWT && RC_FROM) return;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/app_secrets?key=like.rc_*&select=key,value`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+    });
+    const rows = r.ok ? await r.json() : [];
+    const m = {}; rows.forEach((x) => { m[x.key] = x.value; });
+    RC_CLIENT_ID = RC_CLIENT_ID || m.rc_client_id;
+    RC_CLIENT_SECRET = RC_CLIENT_SECRET || m.rc_client_secret;
+    RC_JWT = RC_JWT || m.rc_jwt;
+    RC_FROM = RC_FROM || m.rc_from_number;
+  } catch (e) { /* surfaced by the send attempt */ }
+}
 const PIPEDRIVE_TOKEN = process.env.PIPEDRIVE_API_KEY;
 const PIPEDRIVE_DOMAIN = process.env.PIPEDRIVE_DOMAIN || 'asapcreditrepairusa';
 const PD_FU_NOTES_KEY = '17c6fcd0a8bcc21bbba680a8fe82697d9f996df9';
@@ -67,6 +82,7 @@ exports.handler = async (event) => {
     if (!aff.contact_phone) return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: 'no phone on file' }) };
     if (aff.opted_out) return { statusCode: 200, headers, body: JSON.stringify({ success: false, error: 'opted out' }) };
 
+    await loadRcSecrets();
     const who = firstName(consultant || aff.owner_name || '') || 'your ASAP team';
     const msg = `Hey ${firstName(aff.contact_name || aff.org_name)}, it is ${who} with ASAP Credit & Financial Services. Just left you a voicemail, was calling to check in and see how things are going on your end. Nothing urgent, feel free to reply here anytime. (Reply STOP to opt out)`;
 
