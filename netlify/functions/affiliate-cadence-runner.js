@@ -302,7 +302,8 @@ exports.handler = async (event) => {
       // compute next due date from the FOLLOWING step's offset
       const nextStepNumber = rotationMode ? null : step + 2;
       const nextTmpl = rotationMode ? null : seq.find((t) => t.step_number === nextStepNumber);
-      const gapDays = rotationMode ? 30 : (nextTmpl ? Math.max(1, nextTmpl.day_offset - tmpl.day_offset) : 30);
+      const rotationGap = Math.max(7, parseInt(cfg.affiliate_rotation_gap_days || '30', 10) || 30);
+      const gapDays = rotationMode ? rotationGap : (nextTmpl ? Math.max(1, nextTmpl.day_offset - tmpl.day_offset) : rotationGap);
       const nextDue = new Date(Date.now() + gapDays * 86400000).toISOString().slice(0, 10);
       const newStep = rotationMode ? (step < 100 ? 100 : step + 1) : step + 1;
 
