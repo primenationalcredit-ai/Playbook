@@ -192,7 +192,15 @@ exports.handler = async (event) => {
     // credited deal keeps its original date (Marcel does not move); and the early-pipeline gate keeps
     // old SOLD/CRS deals from being stamped when they are edited.
     const createdThisMonth = String(current.add_time || '').slice(0,7) === new Date().toISOString().slice(0,7);
-    const shouldCredit = !!monitoringSite && inCreditPipeline && !monitoringSiteSetAt && createdThisMonth;
+    // Path B (the OR-branch of the credit rule): a deal WITH a monitoring site and WITHOUT a
+    // set-date that is in Ready to Quote gets credited now - this is how legacy deals (synced
+    // with the site already filled, so no stamp) earn their report the moment they re-enter
+    // the funnel. The null-stamp guard keeps already-credited deals from ever re-dating.
+    const stageLower = (stageName || '').trim().toLowerCase();
+    const inReadyToQuote = /ready\s*to\s*quote/.test(stageLower);
+    const shouldCredit = !!monitoringSite && !monitoringSiteSetAt && (
+      (inCreditPipeline && createdThisMonth) || inReadyToQuote
+    );
 
     if (shouldCredit) {
       monitoringSiteSetAt = new Date().toISOString();
