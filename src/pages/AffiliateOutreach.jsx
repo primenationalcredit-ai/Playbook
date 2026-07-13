@@ -80,6 +80,9 @@ export default function AffiliateOutreach() {
   const [callView, setCallView] = useState('open');
   const [completingTask, setCompletingTask] = useState(null);
   const [aiPreviews, setAiPreviews] = useState({});
+  const [fuDrafts, setFuDrafts] = useState({});
+  const [fuSaving, setFuSaving] = useState(null);
+  const [fuMsg, setFuMsg] = useState({});
   const [aiLoading, setAiLoading] = useState(null);
   const [outcome, setOutcome] = useState('');
   const [notes, setNotes] = useState('');
@@ -157,6 +160,27 @@ export default function AffiliateOutreach() {
     await sbPatch(`affiliate_orgs?id=eq.${task.affiliate_org_id}`, { next_touch_due: new Date().toISOString().slice(0, 10) });
     setCompletingTask(null); setOutcome(''); setNotes('');
     loadCalls();
+  };
+
+  const saveFuNotes = async (aff) => {
+    setFuSaving(aff.id);
+    setFuMsg((m) => ({ ...m, [aff.id]: null }));
+    try {
+      const r = await fetch('/.netlify/functions/affiliate-update-fu-notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: aff.id, notes: fuDrafts[aff.id] ?? aff.pipedrive_fu_notes ?? '' })
+      });
+      const d = await r.json();
+      if (d.success) {
+        setRows((rs) => rs.map((x) => x.id === aff.id ? { ...x, pipedrive_fu_notes: (fuDrafts[aff.id] ?? aff.pipedrive_fu_notes ?? '') || null } : x));
+        setFuMsg((m) => ({ ...m, [aff.id]: 'Saved to Pipedrive' }));
+      } else {
+        setFuMsg((m) => ({ ...m, [aff.id]: `Save failed: ${d.error || 'unknown'}` }));
+      }
+    } catch (e) {
+      setFuMsg((m) => ({ ...m, [aff.id]: 'Save failed' }));
+    }
+    setFuSaving(null);
   };
 
   const loadAiPreview = async (aff) => {
@@ -341,12 +365,23 @@ export default function AffiliateOutreach() {
                                 <div className="text-xs text-gray-400">{a.recruited_by_super ? `via ${a.recruited_by_super}` : 'direct signup'}{a.company ? ` · ${a.company}` : ''}{a.occupation ? ` · ${a.occupation}` : ''}</div>
                               </div>
                             </div>
-                            {a.pipedrive_fu_notes && (
-                              <details className="mb-3">
-                                <summary className="text-xs font-semibold text-gray-600 cursor-pointer">Pipedrive follow-up notes (two-way with the org record)</summary>
-                                <pre className="text-xs bg-yellow-50 border border-yellow-200 rounded p-3 whitespace-pre-wrap font-sans text-gray-700 max-h-40 overflow-y-auto mt-1">{a.pipedrive_fu_notes}</pre>
-                              </details>
-                            )}
+                            <details className="mb-3" open={!!a.pipedrive_fu_notes}>
+                              <summary className="text-xs font-semibold text-gray-600 cursor-pointer">Follow-up notes (edits save to the Pipedrive org record)</summary>
+                              <textarea
+                                className="w-full text-xs bg-yellow-50 border border-yellow-200 rounded p-3 font-sans text-gray-700 mt-1"
+                                rows={5}
+                                value={fuDrafts[a.id] ?? a.pipedrive_fu_notes ?? ''}
+                                onChange={(e) => setFuDrafts((d) => ({ ...d, [a.id]: e.target.value }))}
+                                placeholder="Notes from calls, context, history - lives on the Pipedrive organization"
+                              />
+                              <div className="flex items-center gap-2 mt-1">
+                                <button onClick={() => saveFuNotes(a)} disabled={fuSaving === a.id}
+                                  className="px-3 py-1 rounded bg-yellow-600 text-white text-xs font-medium disabled:opacity-50">
+                                  {fuSaving === a.id ? 'Saving…' : 'Save to Pipedrive'}
+                                </button>
+                                {fuMsg[a.id] && <span className={`text-xs ${String(fuMsg[a.id]).startsWith('Saved') ? 'text-green-600' : 'text-red-600'}`}>{fuMsg[a.id]}</span>}
+                              </div>
+                            </details>
                             {(() => {
                               const seg = a.cadence_segment && a.cadence_segment !== a.segment ? a.segment : (a.cadence_segment || a.segment);
                               const step = (a.cadence_segment && a.cadence_segment !== a.segment) ? 0 : (a.cadence_step || 0);
