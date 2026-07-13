@@ -52,7 +52,7 @@ let RC_FROM = process.env.RINGCENTRAL_FROM_NUMBER || process.env.RC_FROM_NUMBER;
 async function loadRcSecrets() {
   if (RC_CLIENT_ID && RC_CLIENT_SECRET && RC_JWT && RC_FROM) return;
   try {
-    const rows = await supa(`app_secrets?key=like.rc_*&select=key,value`);
+    const rows = await supa(`app_secrets?key=in.(rc_client_id,rc_client_secret,rc_jwt,rc_from_number)&select=key,value`);
     const m = {}; (rows || []).forEach((r) => { m[r.key] = r.value; });
     RC_CLIENT_ID = RC_CLIENT_ID || m.rc_client_id;
     RC_CLIENT_SECRET = RC_CLIENT_SECRET || m.rc_client_secret;
@@ -398,7 +398,8 @@ exports.handler = async (event) => {
     await setConfig('affiliate_emails_sent_today', emailsSent);
     await setConfig('affiliate_sms_sent_today', smsSent);
 
-    return { statusCode: 200, headers, body: JSON.stringify({ success: true, due_count: due.length, ...results, caps: { emailsSent, emailCap, smsSent, smsCap, smsWindowOpen } }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ success: true, due_count: due.length, ...results, caps: { emailsSent, emailCap, smsSent, smsCap, smsWindowOpen },
+      ...(onlyId ? { rc_diag: { client_id: !!RC_CLIENT_ID, client_secret: !!RC_CLIENT_SECRET, jwt_chars: RC_JWT ? String(RC_JWT).length : 0, from_number: RC_FROM || null } } : {}) }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: String(e.message || e).slice(0, 300) }) };
   }

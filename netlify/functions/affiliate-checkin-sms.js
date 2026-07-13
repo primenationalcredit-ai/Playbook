@@ -13,7 +13,7 @@ let RC_FROM = process.env.RINGCENTRAL_FROM_NUMBER || process.env.RC_FROM_NUMBER;
 async function loadRcSecrets() {
   if (RC_CLIENT_ID && RC_CLIENT_SECRET && RC_JWT && RC_FROM) return;
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/app_secrets?key=like.rc_*&select=key,value`, {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/app_secrets?key=in.(rc_client_id,rc_client_secret,rc_jwt,rc_from_number)&select=key,value`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
     const rows = r.ok ? await r.json() : [];
