@@ -76,6 +76,8 @@ export default function AffiliateOutreach() {
   const [templates, setTemplates] = useState([]);
   const [callView, setCallView] = useState('open');
   const [completingTask, setCompletingTask] = useState(null);
+  const [aiPreviews, setAiPreviews] = useState({});
+  const [aiLoading, setAiLoading] = useState(null);
   const [outcome, setOutcome] = useState('');
   const [notes, setNotes] = useState('');
   const PAGE_SIZE = 50;
@@ -151,6 +153,18 @@ export default function AffiliateOutreach() {
     await sbPatch(`affiliate_orgs?id=eq.${task.affiliate_org_id}`, { next_touch_due: new Date().toISOString().slice(0, 10) });
     setCompletingTask(null); setOutcome(''); setNotes('');
     loadCalls();
+  };
+
+  const loadAiPreview = async (aff) => {
+    setAiLoading(aff.id);
+    try {
+      const r = await fetch(`/.netlify/functions/affiliate-preview-message?id=${aff.id}`);
+      const d = await r.json();
+      setAiPreviews((p) => ({ ...p, [aff.id]: d }));
+    } catch (e) {
+      setAiPreviews((p) => ({ ...p, [aff.id]: { error: 'preview failed' } }));
+    }
+    setAiLoading(null);
   };
 
   const setEngine = async (on) => {
@@ -352,6 +366,28 @@ export default function AffiliateOutreach() {
                                       {upcoming.length > 0 && (
                                         <div className="text-xs text-gray-500 mt-2">
                                           Then: {upcoming.map((u) => `${u.channel.toUpperCase()} day ${u.day_offset}${u.subject ? ` (${u.subject})` : ''}`).join(' then ')}, then monthly value emails
+                                        </div>
+                                      )}
+                                      {next.channel === 'email' && (
+                                        <div className="mt-3">
+                                          <button onClick={() => loadAiPreview(a)} disabled={aiLoading === a.id}
+                                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium disabled:opacity-50">
+                                            {aiLoading === a.id ? 'Personalizing…' : (aiPreviews[a.id] ? 'Regenerate AI version' : 'Preview AI-personalized version')}
+                                          </button>
+                                          {aiPreviews[a.id] && (
+                                            aiPreviews[a.id].personalized ? (
+                                              <div className="mt-2">
+                                                <div className="text-xs font-semibold text-indigo-700 mb-1">
+                                                  AI-personalized (this is what actually sends):
+                                                </div>
+                                                <pre className="text-xs bg-indigo-50 border border-indigo-200 rounded p-3 whitespace-pre-wrap font-sans text-gray-800 max-h-72 overflow-y-auto">{aiPreviews[a.id].personalized}</pre>
+                                              </div>
+                                            ) : (
+                                              <div className="mt-2 text-xs text-red-600">
+                                                AI preview unavailable{aiPreviews[a.id].ai_error ? `: ${aiPreviews[a.id].ai_error}` : ''} (the plain version above would send instead)
+                                              </div>
+                                            )
+                                          )}
                                         </div>
                                       )}
                                     </>
