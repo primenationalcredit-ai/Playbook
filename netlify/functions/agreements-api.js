@@ -48,6 +48,15 @@ async function applyZohoEdits(targets) {
   const zh = { Authorization: `Zoho-oauthtoken ${token}`, 'Content-Type': 'application/json' };
   for (const t of targets) {
     if (!t || !t.invoice_id) continue;
+    if (t.action === 'void') {
+      try {
+        const vRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${t.invoice_id}/status/void?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh, body: JSON.stringify({ reason: 'Agreement changed to a plan without this payment' }) });
+        const vData = await vRes.json().catch(() => ({}));
+        if (vRes.ok && vData.code === 0) out.updated++;
+        else out.warnings.push(`Zoho ${t.role} invoice ${t.invoice_id} VOID failed: ${vData.message || vRes.status} - void it manually.`);
+      } catch (e) { out.warnings.push(`Zoho ${t.role} invoice VOID error: ${e.message}`); }
+      continue;
+    }
     try {
       const gRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${t.invoice_id}?organization_id=${ZOHO_ORG_ID}`, { headers: zh });
       const gData = await gRes.json().catch(() => ({}));
