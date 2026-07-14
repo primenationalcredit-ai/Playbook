@@ -65,7 +65,7 @@ async function applyZohoEdits(targets) {
         const created = cData.invoice;
         if (!cRes.ok || cData.code !== 0 || !created) { out.warnings.push(`Partial invoice creation failed: ${cData.message || cRes.status} - create it manually.`); continue; }
         try { await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${created.invoice_id}/status/sent?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh }); } catch (e) {}
-        if (created.invoice_url) out.links.partial = created.invoice_url;
+        out.links.partial = created.invoice_url || `https://invoice.zoho.com/app#/invoices/${created.invoice_id}`;
         out.updated++;
         // Link the new invoice to the deal's first scheduled charge (processor endpoint).
         try {
@@ -93,7 +93,7 @@ async function applyZohoEdits(targets) {
       const gData = await gRes.json().catch(() => ({}));
       const inv = gData.invoice;
       if (!inv) { out.warnings.push(`Zoho ${t.role} invoice ${t.invoice_id} not found - not updated.`); continue; }
-      if (inv.invoice_url) out.links[t.role] = inv.invoice_url;
+      out.links[t.role] = inv.invoice_url || `https://invoice.zoho.com/app#/invoices/${t.invoice_id}`;
       if (String(inv.status).toLowerCase() === 'paid') {
         out.warnings.push(`Zoho ${t.role} invoice ${inv.invoice_number || t.invoice_id} is PAID - not changed, review manually.`);
         continue;
@@ -209,14 +209,17 @@ exports.handler = async (event) => {
         try {
           const PD_TOKEN = process.env.PIPEDRIVE_API_TOKEN;
           const links = (z && z.links) || {};
+          data.zoho_links = links;
           if (PD_TOKEN && (links.partial || links.final)) {
             const fieldBody = {};
             if (links.partial) fieldBody['ed2c007dde61323d25626bdd851867534a6324fc'] = links.partial; // Partial Invoice
             if (links.final) fieldBody['6390f0804b8be3b2469f3a175f5a2956d1be88da'] = links.final;     // Final Invoice
-            await fetch(`https://asapcredit.pipedrive.com/api/v1/deals/${encodeURIComponent(body.deal_id)}?api_token=${PD_TOKEN}`, {
+            const pdRes = await fetch(`https://asapcredit.pipedrive.com/api/v1/deals/${encodeURIComponent(body.deal_id)}?api_token=${PD_TOKEN}`, {
               method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fieldBody)
             });
-          } else if (!PD_TOKEN && (links.partial || links.final)) {
+            if (!pdRes.ok) z.warnings.push(`Invoice links NOT written to the deal (Pipedrive ${pdRes.status}).`);
+            else data.message = (data.message || '') + ' Invoice links updated on the deal.';
+          } else if (!PD_TOKEN) {
             z.warnings.push('PIPEDRIVE_API_TOKEN not set on this site - invoice link fields not written to the deal.');
           }
         } catch (e) { z.warnings.push('Deal invoice-link update failed: ' + e.message); }
