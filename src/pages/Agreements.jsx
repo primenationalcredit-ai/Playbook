@@ -70,24 +70,51 @@ export default function Agreements() {
     setEditResend(true);
     setEditModal(a);
   };
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [approvalChecked, setApprovalChecked] = useState(false);
+  const numv = (v) => (v == null || v === '' ? 0 : parseFloat(v) || 0);
+  const editDiffs = () => {
+    if (!editModal) return [];
+    const fields = [
+      ['Client name', 'client_name', editModal.client_name],
+      ['Email', 'client_email', editModal.client_email],
+      ['Phone', 'client_phone', editModal.client_phone],
+      ['Address', 'client_address', editModal.client_address],
+      ['Payment type', 'payment_type', editModal.payment_type_text],
+      ['Partial amount', 'partial_amount', editModal.partial_amount],
+      ['Partial date', 'partial_date', editModal.partial_date],
+      ['Final amount', 'final_amount', editModal.final_amount],
+      ['Final date', 'final_date', editModal.final_date]
+    ];
+    return fields
+      .map(([label, key, oldVal]) => ({ label, key, oldVal: oldVal == null ? '' : String(oldVal), newVal: editForm[key] == null ? '' : String(editForm[key]) }))
+      .filter((d) => d.oldVal !== d.newVal && !(d.oldVal === '' && d.newVal === ''));
+  };
+  const totalsChanged = () => {
+    if (!editModal) return false;
+    return Math.abs((numv(editModal.partial_amount) + numv(editModal.final_amount)) - (numv(editForm.partial_amount) + numv(editForm.final_amount))) > 0.009;
+  };
+  const typeChanged = () => editModal && editForm.payment_type && String(editForm.payment_type) !== String(editModal.payment_type_text || '');
+  const openReview = () => {
+    setError('');
+    // 45-day rule: the final payment can never sit more than 45 days out.
+    if (editForm.final_date) {
+      const max = new Date(); max.setDate(max.getDate() + 45);
+      if (new Date(editForm.final_date + 'T00:00:00') > max) {
+        setError('The final payment date cannot be more than 45 days from today (latest allowed: ' + max.toISOString().slice(0, 10) + ').');
+        return;
+      }
+    }
+    if (editDiffs().length === 0) { setError('No changes to save.'); return; }
+    setApprovalChecked(false);
+    setReviewOpen(true);
+  };
   const doEditSave = async () => {
     if (!editModal) return;
-    // Amount-change guard: edits that change what the client pays need management approval.
-    const n = (v) => (v == null || v === '' ? 0 : parseFloat(v) || 0);
-    const oldTotal = n(editModal.partial_amount) + n(editModal.final_amount);
-    const newTotal = n(editForm.partial_amount) + n(editForm.final_amount);
-    if (Math.abs(oldTotal - newTotal) > 0.009) {
-      const ok = window.confirm(
-        'PRICE CHANGE: this agreement was for $' + oldTotal.toFixed(2) + ' and you are changing it to $' + newTotal.toFixed(2) + '.\n\n' +
-        'Do you have management approval for this price change?\n\n' +
-        'OK = yes, proceed (leadership will be notified by email). Cancel = go back.'
-      );
-      if (!ok) return;
-    }
     setEditBusy(true);
     setError('');
     try {
-      const mustResend = String(editModal.status || '').toLowerCase() === 'signed';
+      const mustResend = String(editModal.status || '').toLowerCase() === 'signed' || typeChanged();
       const d = await callAgreementsApi('edit_resend', {
         deal_id: editModal.pipedrive_deal_id,
         edits: editForm,
@@ -95,6 +122,7 @@ export default function Agreements() {
       });
       const warn = (d.warnings && d.warnings.length) ? ' \u26A0 ' + d.warnings.join(' ') : '';
       setToast((d.message || 'Agreement updated.') + warn);
+      setReviewOpen(false);
       setEditModal(null);
       await runSearch();
       setTimeout(() => setToast(''), 9000);
@@ -288,7 +316,7 @@ export default function Agreements() {
 
       {/* Edit agreement modal */}
       {editModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !editBusy && setEditModal(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-asap-blue flex items-center gap-2"><Pencil size={18} /> Edit agreement</h3>
             <p className="text-xs text-slate-500 mt-1">Deal #{editModal.pipedrive_deal_id} - contact changes also update the Pipedrive person, so future documents come out right.</p>
@@ -345,11 +373,56 @@ export default function Agreements() {
                 Resend corrected agreement to the client now (voids the current one, new signing link)
               </label>
             )}
+            {reviewOpen && (
+              <div className="mt-4 border-t border-slate-200 pt-4">
+                <h4 className="text-sm font-bold text-slate-800 mb-2">Review your changes before saving</h4>
+                <table className="w-full text-xs border border-slate-200 rounded overflow-hidden">
+                  <thead className="bg-slate-50"><tr>
+                    <th className="text-left px-2 py-1.5 font-semibold text-slate-500">Field</th>
+                    <th className="text-left px-2 py-1.5 font-semibold text-slate-500">Current</th>
+                    <th className="text-left px-2 py-1.5 font-semibold text-slate-500">New</th>
+                  </tr></thead>
+                  <tbody>
+                    {editDiffs().map((d) => (
+                      <tr key={d.key} className="border-t border-slate-100">
+                        <td className="px-2 py-1.5 font-medium text-slate-700">{d.label}</td>
+                        <td className="px-2 py-1.5 text-slate-500">{d.oldVal || '-'}</td>
+                        <td className="px-2 py-1.5 font-semibold text-slate-900">{d.newVal || '-'}</td>
+                      </tr>
+                    ))}
+                    {totalsChanged() && (
+                      <tr className="border-t-2 border-amber-300 bg-amber-50">
+                        <td className="px-2 py-1.5 font-bold text-amber-900">TOTAL (partial + final)</td>
+                        <td className="px-2 py-1.5 font-bold text-amber-900">${(numv(editModal.partial_amount) + numv(editModal.final_amount)).toFixed(2)}</td>
+                        <td className="px-2 py-1.5 font-bold text-amber-900">${(numv(editForm.partial_amount) + numv(editForm.final_amount)).toFixed(2)}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                {typeChanged() && (
+                  <div className="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                    Payment type is changing - the corrected agreement will be RESENT for a new signature (required for a structural change).
+                  </div>
+                )}
+                {totalsChanged() && (
+                  <label className="mt-3 flex items-start gap-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    <input type="checkbox" checked={approvalChecked} onChange={e => setApprovalChecked(e.target.checked)} className="mt-0.5" />
+                    <span><b>Price change:</b> I have management approval to change this client's total. Leadership will be notified by email.</span>
+                  </label>
+                )}
+              </div>
+            )}
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setEditModal(null)} disabled={editBusy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50">Cancel</button>
-              <button onClick={doEditSave} disabled={editBusy} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-50">
-                {editBusy ? <RefreshCw size={15} className="animate-spin" /> : <Pencil size={15} />} Save changes
-              </button>
+              <button onClick={() => (reviewOpen ? setReviewOpen(false) : setEditModal(null))} disabled={editBusy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50">{reviewOpen ? 'Back to edit' : 'Cancel'}</button>
+              {reviewOpen ? (
+                <button onClick={doEditSave} disabled={editBusy || (totalsChanged() && !approvalChecked)} className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded hover:bg-green-700 disabled:opacity-50">
+                  {editBusy ? <RefreshCw size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Confirm and save
+                </button>
+              ) : (
+                <button onClick={openReview} disabled={editBusy} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-50">
+                  <Pencil size={15} /> Review changes
+                </button>
+              )}
             </div>
           </div>
         </div>
