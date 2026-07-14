@@ -37,7 +37,7 @@ async function zohoToken() {
 }
 
 async function applyZohoEdits(targets) {
-  const out = { updated: 0, warnings: [] };
+  const out = { updated: 0, warnings: [], links: {} };
   if (!Array.isArray(targets) || !targets.length) return out;
   if (!ZOHO_CLIENT_ID || !ZOHO_CLIENT_SECRET || !ZOHO_REFRESH_TOKEN || !ZOHO_ORG_ID) {
     out.warnings.push('Zoho credentials not configured on this site - Zoho invoices were NOT updated.');
@@ -62,6 +62,7 @@ async function applyZohoEdits(targets) {
       const gData = await gRes.json().catch(() => ({}));
       const inv = gData.invoice;
       if (!inv) { out.warnings.push(`Zoho ${t.role} invoice ${t.invoice_id} not found - not updated.`); continue; }
+      if (inv.invoice_url) out.links[t.role] = inv.invoice_url;
       if (String(inv.status).toLowerCase() === 'paid') {
         out.warnings.push(`Zoho ${t.role} invoice ${inv.invoice_number || t.invoice_id} is PAID - not changed, review manually.`);
         continue;
@@ -167,12 +168,27 @@ exports.handler = async (event) => {
         const targets = data.zoho_targets || [];
         const credsPresent = !!(ZOHO_CLIENT_ID && ZOHO_CLIENT_SECRET && ZOHO_REFRESH_TOKEN && ZOHO_ORG_ID);
         console.log('ZOHO LEG: targets=', JSON.stringify(targets), 'creds=', credsPresent);
-        let z = { updated: 0, warnings: [] };
+        let z = { updated: 0, warnings: [], links: {} };
         try {
           z = await applyZohoEdits(targets);
         } catch (e) {
           z.warnings.push('Zoho edit crashed: ' + (e && e.message));
         }
+        // Keep the deal's invoice-link fields current (Partial Invoice / Final Invoice).
+        try {
+          const PD_TOKEN = process.env.PIPEDRIVE_API_TOKEN;
+          const links = (z && z.links) || {};
+          if (PD_TOKEN && (links.partial || links.final)) {
+            const fieldBody = {};
+            if (links.partial) fieldBody['ed2c007dde61323d25626bdd851867534a6324fc'] = links.partial; // Partial Invoice
+            if (links.final) fieldBody['6390f0804b8be3b2469f3a175f5a2956d1be88da'] = links.final;     // Final Invoice
+            await fetch(`https://asapcredit.pipedrive.com/api/v1/deals/${encodeURIComponent(body.deal_id)}?api_token=${PD_TOKEN}`, {
+              method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fieldBody)
+            });
+          } else if (!PD_TOKEN && (links.partial || links.final)) {
+            z.warnings.push('PIPEDRIVE_API_TOKEN not set on this site - invoice link fields not written to the deal.');
+          }
+        } catch (e) { z.warnings.push('Deal invoice-link update failed: ' + e.message); }
         data.zoho_updated = z.updated;
         data.zoho_debug = { targets_received: targets.length, creds_present: credsPresent };
         data.warnings = [...(data.warnings || []), ...z.warnings];
