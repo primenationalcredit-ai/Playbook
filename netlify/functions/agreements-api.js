@@ -146,17 +146,26 @@ exports.handler = async (event) => {
     const text = await upstream.text();
     // On a successful edit, carry the changes into the EXISTING Zoho invoices.
     if (action === 'edit_resend' && upstream.ok) {
-      try {
-        const data = JSON.parse(text);
-        if (data && data.success) {
-          const z = await applyZohoEdits(data.zoho_targets || []);
-          data.zoho_updated = z.updated;
-          data.warnings = [...(data.warnings || []), ...z.warnings];
-          if (z.updated > 0) data.message = (data.message || '') + ` Zoho: ${z.updated} invoice(s) updated in place.`;
-          delete data.zoho_targets;
-          return { statusCode: 200, headers, body: JSON.stringify(data) };
+      let data = null;
+      try { data = JSON.parse(text); } catch (e) { /* raw below */ }
+      if (data && data.success) {
+        const targets = data.zoho_targets || [];
+        const credsPresent = !!(ZOHO_CLIENT_ID && ZOHO_CLIENT_SECRET && ZOHO_REFRESH_TOKEN && ZOHO_ORG_ID);
+        console.log('ZOHO LEG: targets=', JSON.stringify(targets), 'creds=', credsPresent);
+        let z = { updated: 0, warnings: [] };
+        try {
+          z = await applyZohoEdits(targets);
+        } catch (e) {
+          z.warnings.push('Zoho edit crashed: ' + (e && e.message));
         }
-      } catch (e) { /* fall through to raw upstream response */ }
+        data.zoho_updated = z.updated;
+        data.zoho_debug = { targets_received: targets.length, creds_present: credsPresent };
+        data.warnings = [...(data.warnings || []), ...z.warnings];
+        if (z.updated > 0) data.message = (data.message || '') + ` Zoho: ${z.updated} invoice(s) updated in place.`;
+        else data.message = (data.message || '') + ` Zoho: 0 invoices updated (targets: ${targets.length}, creds: ${credsPresent ? 'yes' : 'NO'}).`;
+        delete data.zoho_targets;
+        return { statusCode: 200, headers, body: JSON.stringify(data) };
+      }
     }
     return { statusCode: upstream.status, headers, body: text };
   } catch (err) {

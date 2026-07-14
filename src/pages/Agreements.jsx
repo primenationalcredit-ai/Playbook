@@ -382,6 +382,11 @@ export default function Agreements() {
                 Resend corrected agreement to the client now (voids the current one, new signing link)
               </label>
             )}
+            {error && (
+              <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 text-red-800 text-xs rounded">
+                <AlertTriangle size={13} /> {error}
+              </div>
+            )}
             {reviewOpen && (
               <div className="mt-4 border-t border-slate-200 pt-4">
                 <h4 className="text-sm font-bold text-slate-800 mb-2">Review your changes before saving</h4>
