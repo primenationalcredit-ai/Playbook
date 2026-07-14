@@ -342,7 +342,7 @@ export default function Agreements() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Payment type</label>
-                <select value={editForm.payment_type || ''} onChange={e => setEditForm({ ...editForm, payment_type: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue">
+                <select value={editForm.payment_type || ''} onChange={e => { const v = e.target.value; setEditForm(v === 'PARTIAL' ? { ...editForm, payment_type: v } : { ...editForm, payment_type: v, partial_amount: '', partial_date: '' }); }} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue">
                   <option value="FULL">FULL</option>
                   <option value="PARTIAL">PARTIAL</option>
                   <option value="PIF">PIF</option>
@@ -355,6 +355,7 @@ export default function Agreements() {
                   <option value="NO GUARANTEE">No Guarantee</option>
                 </select>
               </div>
+              {(editForm.payment_type || '') === 'PARTIAL' && (<>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Partial amount</label>
                 <input type="text" value={editForm.partial_amount || ''} onChange={e => setEditForm({ ...editForm, partial_amount: e.target.value })} placeholder="e.g. 275.00" className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
@@ -363,6 +364,7 @@ export default function Agreements() {
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Partial date</label>
                 <input type="date" value={editForm.partial_date || ''} onChange={e => setEditForm({ ...editForm, partial_date: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
               </div>
+              </>)}
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Final amount</label>
                 <input type="text" value={editForm.final_amount || ''} onChange={e => setEditForm({ ...editForm, final_amount: e.target.value })} placeholder="e.g. 275.00" className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
@@ -371,6 +373,13 @@ export default function Agreements() {
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Final date</label>
                 <input type="date" value={editForm.final_date || ''} onChange={e => setEditForm({ ...editForm, final_date: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
               </div>
+            </div>
+            <div className={`mt-4 flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm font-semibold ${totalsChanged() ? 'bg-red-50 border-red-300 text-red-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+              <span>Agreement total (partial + final)</span>
+              <span>
+                ${(numv(editForm.partial_amount) + numv(editForm.final_amount)).toFixed(2)}
+                {totalsChanged() && <span className="ml-2 font-normal">was ${(numv(editModal.partial_amount) + numv(editModal.final_amount)).toFixed(2)} - price change, management approval required</span>}
+              </span>
             </div>
             {String(editModal.status || '').toLowerCase() === 'signed' ? (
               <div className="mt-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-start gap-2">
