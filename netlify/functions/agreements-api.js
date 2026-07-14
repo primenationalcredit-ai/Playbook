@@ -47,7 +47,8 @@ async function applyZohoEdits(targets, dealId) {
   if (!token) { out.warnings.push('Zoho auth failed - Zoho invoices were NOT updated.'); return out; }
   const zh = { Authorization: `Zoho-oauthtoken ${token}`, 'Content-Type': 'application/json' };
   for (const t of targets) {
-    if (!t || !t.invoice_id) continue;
+    if (!t) continue;
+    if (!t.invoice_id && t.action !== 'create') continue;
     if (t.action === 'create') {
       try {
         const srcRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${t.copy_from}?organization_id=${ZOHO_ORG_ID}`, { headers: zh });
