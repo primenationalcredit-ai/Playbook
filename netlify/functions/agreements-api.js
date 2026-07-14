@@ -110,12 +110,18 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: `action '${action}' not allowed` }) };
   }
 
-  // Both actions require a signed-in Playbook user.
-  const playbookUser = await verifyPlaybookUser(event.headers.authorization || event.headers.Authorization);
-  if (!playbookUser) {
-    return { statusCode: 401, headers, body: JSON.stringify({ error: 'Playbook sign-in required' }) };
+  // Auth: signed-in Playbook user, OR the internal API key (server-to-server / diagnostics).
+  let actingAs = null;
+  const inKey = event.headers['x-api-key'] || event.headers['X-API-Key'];
+  if (inKey && inKey === PAYMENT_API_KEY) {
+    actingAs = (event.headers['x-acting-as'] || event.headers['X-Acting-As'] || 'system@asapcreditrepairusa.com');
+  } else {
+    const playbookUser = await verifyPlaybookUser(event.headers.authorization || event.headers.Authorization);
+    if (!playbookUser) {
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Playbook sign-in required' }) };
+    }
+    actingAs = playbookUser?.email || null;
   }
-  const actingAs = playbookUser?.email || null;
 
   try {
     if (action === 'search') {
