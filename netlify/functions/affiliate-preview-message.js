@@ -101,6 +101,16 @@ exports.handler = async (event) => {
 
     const rows = await supa(`affiliate_orgs?id=eq.${id}&select=*`);
     const aff = rows && rows[0];
+    // consultant direct line (users.phone), first-name match - same rule as the runner
+    try {
+      const uRows = await supa('users?select=*');
+      const phones = {};
+      for (const u of (uRows || [])) {
+        const fw = String(u.name || '').toLowerCase().split(/\s+/)[0];
+        if (fw && u.phone) phones[fw] = u.phone;
+      }
+      if (aff) aff.__consultant_phone = phones[String(aff.owner_name || '').toLowerCase().split(/\s+/)[0]] || null;
+    } catch (e) {}
     if (!aff) return { statusCode: 404, headers, body: JSON.stringify({ error: 'affiliate not found' }) };
 
     const templates = await supa('affiliate_templates?active=eq.true&select=*&order=segment,step_number');
