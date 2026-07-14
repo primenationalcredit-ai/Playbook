@@ -62,6 +62,7 @@ export default function Agreements() {
       client_phone: a.client_phone || '',
       client_address: a.client_address || '',
       payment_type: a.payment_type_text || '',
+      guarantee: a.has_guarantee === false ? 'NO GUARANTEE' : 'GUARANTEE',
       partial_amount: a.partial_amount || '',
       partial_date: a.partial_date || '',
       final_amount: a.final_amount || '',
@@ -81,6 +82,7 @@ export default function Agreements() {
       ['Phone', 'client_phone', editModal.client_phone],
       ['Address', 'client_address', editModal.client_address],
       ['Payment type', 'payment_type', editModal.payment_type_text],
+      ['Guarantee', 'guarantee', editModal.has_guarantee === false ? 'NO GUARANTEE' : 'GUARANTEE'],
       ['Partial amount', 'partial_amount', editModal.partial_amount],
       ['Partial date', 'partial_date', editModal.partial_date],
       ['Final amount', 'final_amount', editModal.final_amount],
@@ -95,6 +97,7 @@ export default function Agreements() {
     return Math.abs((numv(editModal.partial_amount) + numv(editModal.final_amount)) - (numv(editForm.partial_amount) + numv(editForm.final_amount))) > 0.009;
   };
   const typeChanged = () => editModal && editForm.payment_type && String(editForm.payment_type) !== String(editModal.payment_type_text || '');
+  const guaranteeChanged = () => editModal && editForm.guarantee && editForm.guarantee !== (editModal.has_guarantee === false ? 'NO GUARANTEE' : 'GUARANTEE');
   const openReview = () => {
     setError('');
     // 45-day rule: the final payment can never sit more than 45 days out.
@@ -114,7 +117,7 @@ export default function Agreements() {
     setEditBusy(true);
     setError('');
     try {
-      const mustResend = String(editModal.status || '').toLowerCase() === 'signed' || typeChanged();
+      const mustResend = String(editModal.status || '').toLowerCase() === 'signed' || typeChanged() || guaranteeChanged();
       const d = await callAgreementsApi('edit_resend', {
         deal_id: editModal.pipedrive_deal_id,
         edits: editForm,
@@ -345,7 +348,13 @@ export default function Agreements() {
                   <option value="PIF">PIF</option>
                 </select>
               </div>
-              <div></div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Guarantee</label>
+                <select value={editForm.guarantee || 'GUARANTEE'} onChange={e => setEditForm({ ...editForm, guarantee: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue">
+                  <option value="GUARANTEE">Guarantee</option>
+                  <option value="NO GUARANTEE">No Guarantee</option>
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Partial amount</label>
                 <input type="text" value={editForm.partial_amount || ''} onChange={e => setEditForm({ ...editForm, partial_amount: e.target.value })} placeholder="e.g. 275.00" className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
@@ -399,9 +408,9 @@ export default function Agreements() {
                     )}
                   </tbody>
                 </table>
-                {typeChanged() && (
+                {(typeChanged() || guaranteeChanged()) && (
                   <div className="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
-                    Payment type is changing - the corrected agreement will be RESENT for a new signature (required for a structural change).
+                    {typeChanged() ? 'Payment type' : 'The guarantee'} is changing - the corrected agreement will be RESENT for a new signature (required for a structural change).
                   </div>
                 )}
                 {totalsChanged() && (

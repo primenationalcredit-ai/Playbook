@@ -24,6 +24,62 @@ const headers = {
   'Content-Type': 'application/json'
 };
 
+// ---- Zoho: edit EXISTING invoices in place (amounts + due dates). Never creates invoices.
+const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
+const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
+const ZOHO_REFRESH_TOKEN = process.env.ZOHO_REFRESH_TOKEN;
+const ZOHO_ORG_ID = process.env.ZOHO_ORG_ID;
+
+async function zohoToken() {
+  const res = await fetch(`https://accounts.zoho.com/oauth/v2/token?refresh_token=${ZOHO_REFRESH_TOKEN}&client_id=${ZOHO_CLIENT_ID}&client_secret=${ZOHO_CLIENT_SECRET}&grant_type=refresh_token`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  return data.access_token || null;
+}
+
+async function applyZohoEdits(targets) {
+  const out = { updated: 0, warnings: [] };
+  if (!Array.isArray(targets) || !targets.length) return out;
+  if (!ZOHO_CLIENT_ID || !ZOHO_CLIENT_SECRET || !ZOHO_REFRESH_TOKEN || !ZOHO_ORG_ID) {
+    out.warnings.push('Zoho credentials not configured on this site - Zoho invoices were NOT updated.');
+    return out;
+  }
+  const token = await zohoToken();
+  if (!token) { out.warnings.push('Zoho auth failed - Zoho invoices were NOT updated.'); return out; }
+  const zh = { Authorization: `Zoho-oauthtoken ${token}`, 'Content-Type': 'application/json' };
+  for (const t of targets) {
+    if (!t || !t.invoice_id) continue;
+    try {
+      const gRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${t.invoice_id}?organization_id=${ZOHO_ORG_ID}`, { headers: zh });
+      const gData = await gRes.json().catch(() => ({}));
+      const inv = gData.invoice;
+      if (!inv) { out.warnings.push(`Zoho ${t.role} invoice ${t.invoice_id} not found - not updated.`); continue; }
+      if (String(inv.status).toLowerCase() === 'paid') {
+        out.warnings.push(`Zoho ${t.role} invoice ${inv.invoice_number || t.invoice_id} is PAID - not changed, review manually.`);
+        continue;
+      }
+      const body = {};
+      if (t.due_date) body.due_date = t.due_date;
+      const amt = parseFloat(t.amount);
+      if (!isNaN(amt) && amt > 0 && Array.isArray(inv.line_items) && inv.line_items.length) {
+        const items = inv.line_items.map((li, i) => (i === 0
+          ? { line_item_id: li.line_item_id, rate: amt, quantity: li.quantity || 1 }
+          : { line_item_id: li.line_item_id }));
+        body.line_items = items;
+      }
+      if (!Object.keys(body).length) continue;
+      const pRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${t.invoice_id}?organization_id=${ZOHO_ORG_ID}`, {
+        method: 'PUT', headers: zh, body: JSON.stringify(body)
+      });
+      const pData = await pRes.json().catch(() => ({}));
+      if (pRes.ok && pData.code === 0) out.updated++;
+      else out.warnings.push(`Zoho ${t.role} invoice ${inv.invoice_number || t.invoice_id} update failed: ${pData.message || pRes.status}`);
+    } catch (e) {
+      out.warnings.push(`Zoho ${t.role} invoice update error: ${e.message}`);
+    }
+  }
+  return out;
+}
+
 async function verifyPlaybookUser(authHeader) {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.substring(7);
@@ -88,6 +144,20 @@ exports.handler = async (event) => {
       body: JSON.stringify(upstreamBody)
     });
     const text = await upstream.text();
+    // On a successful edit, carry the changes into the EXISTING Zoho invoices.
+    if (action === 'edit_resend' && upstream.ok) {
+      try {
+        const data = JSON.parse(text);
+        if (data && data.success) {
+          const z = await applyZohoEdits(data.zoho_targets || []);
+          data.zoho_updated = z.updated;
+          data.warnings = [...(data.warnings || []), ...z.warnings];
+          if (z.updated > 0) data.message = (data.message || '') + ` Zoho: ${z.updated} invoice(s) updated in place.`;
+          delete data.zoho_targets;
+          return { statusCode: 200, headers, body: JSON.stringify(data) };
+        }
+      } catch (e) { /* fall through to raw upstream response */ }
+    }
     return { statusCode: upstream.status, headers, body: text };
   } catch (err) {
     return { statusCode: 502, headers, body: JSON.stringify({ error: 'upstream call failed', detail: String(err && err.message || err) }) };
