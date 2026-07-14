@@ -36,7 +36,7 @@ async function zohoToken() {
   return data.access_token || null;
 }
 
-async function applyZohoEdits(targets) {
+async function applyZohoEdits(targets, dealId) {
   const out = { updated: 0, warnings: [], links: {} };
   if (!Array.isArray(targets) || !targets.length) return out;
   if (!ZOHO_CLIENT_ID || !ZOHO_CLIENT_SECRET || !ZOHO_REFRESH_TOKEN || !ZOHO_ORG_ID) {
@@ -93,6 +93,20 @@ async function applyZohoEdits(targets) {
       const gData = await gRes.json().catch(() => ({}));
       const inv = gData.invoice;
       if (!inv) { out.warnings.push(`Zoho ${t.role} invoice ${t.invoice_id} not found - not updated.`); continue; }
+      if (String(inv.status).toLowerCase() === 'void') {
+        if (t.role === 'partial') {
+          const fin = targets.find((x) => x.role === 'final' && x.invoice_id && !x.action);
+          if (fin) {
+            out.warnings.push('Old partial invoice was VOID - creating a replacement invoice.');
+            targets.push({ action: 'create', role: 'partial', amount: t.amount, due_date: t.due_date, copy_from: fin.invoice_id, deal_id: dealId });
+          } else {
+            out.warnings.push('Partial invoice is VOID and no final invoice found to model a replacement - create it manually.');
+          }
+        } else {
+          out.warnings.push(`Zoho ${t.role} invoice ${inv.invoice_number || t.invoice_id} is VOID - not edited, review manually.`);
+        }
+        continue;
+      }
       out.links[t.role] = inv.invoice_url || `https://invoice.zoho.com/app#/invoices/${t.invoice_id}`;
       if (String(inv.status).toLowerCase() === 'paid') {
         out.warnings.push(`Zoho ${t.role} invoice ${inv.invoice_number || t.invoice_id} is PAID - not changed, review manually.`);
@@ -201,7 +215,7 @@ exports.handler = async (event) => {
         console.log('ZOHO LEG: targets=', JSON.stringify(targets), 'creds=', credsPresent);
         let z = { updated: 0, warnings: [], links: {} };
         try {
-          z = await applyZohoEdits(targets);
+          z = await applyZohoEdits(targets, body.deal_id);
         } catch (e) {
           z.warnings.push('Zoho edit crashed: ' + (e && e.message));
         }
