@@ -375,10 +375,10 @@ export default function Agreements() {
               </div>
             </div>
             <div className={`mt-4 flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm font-semibold ${totalsChanged() ? 'bg-red-50 border-red-300 text-red-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
-              <span>Agreement total (partial + final)</span>
+              <span>Total payments (incl. ${['1583', '1895'].includes(String(editModal.agreement_type)) ? '0' : '149'} doc fee)</span>
               <span>
-                ${(numv(editForm.partial_amount) + numv(editForm.final_amount)).toFixed(2)}
-                {totalsChanged() && <span className="ml-2 font-normal">was ${(numv(editModal.partial_amount) + numv(editModal.final_amount)).toFixed(2)} - price change, management approval required</span>}
+                ${((['1583', '1895'].includes(String(editModal.agreement_type)) ? 0 : 149) + numv(editForm.partial_amount) + numv(editForm.final_amount)).toFixed(2)}
+                {totalsChanged() && <span className="ml-2 font-normal">was ${((['1583', '1895'].includes(String(editModal.agreement_type)) ? 0 : 149) + numv(editModal.partial_amount) + numv(editModal.final_amount)).toFixed(2)} - price change, management approval required</span>}
               </span>
             </div>
             {String(editModal.status || '').toLowerCase() === 'signed' ? (
