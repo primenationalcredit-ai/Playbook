@@ -63,7 +63,7 @@ async function loadRcSecrets() {
 }
 const RC_SERVER = process.env.RINGCENTRAL_SERVER || 'https://platform.ringcentral.com';
 
-const PER_RUN_LIMIT = 25;
+const PER_RUN_LIMIT = 25; // fallback; live value comes from app_config.affiliate_per_run
 const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
 
 async function supa(path, opts = {}) {
@@ -250,6 +250,10 @@ exports.handler = async (event) => {
     const emailCap = parseInt(cfg.affiliate_daily_email_cap || '150', 10);
     const smsCap = parseInt(cfg.affiliate_daily_sms_cap || '100', 10);
     const smsWindowOpen = onlyId ? true : (hourCT >= 9 && hourCT < 18);
+    // Per-run batch size (app_config.affiliate_per_run): with the daily cap this spreads
+    // sends across the whole day instead of exhausting the cap in the first hour, so
+    // replies trickle in at a pace consultants can actually answer.
+    const perRun = Math.max(1, parseInt(cfg.affiliate_per_run, 10) || PER_RUN_LIMIT);
     await loadRcSecrets();
 
     // templates
@@ -290,7 +294,7 @@ exports.handler = async (event) => {
     const results = { processed: 0, emails: 0, sms: 0, calls_created: 0, skipped: [], errors: [] };
 
     for (const aff of due) {
-      if (results.processed >= PER_RUN_LIMIT) break;
+      if (results.processed >= perRun) break;
 
       // segment change since cadence started -> restart in new segment
       let step = aff.cadence_step || 0;
