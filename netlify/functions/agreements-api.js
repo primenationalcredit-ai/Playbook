@@ -73,7 +73,7 @@ async function applyZohoEdits(targets, dealId) {
           const linkRes = await fetch(`${PAYMENT_BASE}/link-zoho-invoice`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY },
-            body: JSON.stringify({ deal_id: t.deal_id, zoho_invoice_id: created.invoice_id, type: 'partial' })
+            body: JSON.stringify({ deal_id: t.deal_id, zoho_invoice_id: created.invoice_id, invoice_type: 'partial' })
           });
           if (!linkRes.ok) out.warnings.push(`New partial invoice ${created.invoice_number || created.invoice_id} created but charge-linking returned ${linkRes.status} - link it manually.`);
         } catch (e) { out.warnings.push('New partial invoice created but charge-linking failed: ' + e.message); }
