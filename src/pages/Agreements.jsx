@@ -437,6 +437,9 @@ export default function Agreements() {
                 )}
               </div>
             )}
+            {reviewOpen && totalsChanged() && !approvalChecked && (
+              <p className="mt-3 text-right text-xs font-semibold text-red-600">Tick the management-approval box above to enable saving.</p>
+            )}
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => (reviewOpen ? setReviewOpen(false) : setEditModal(null))} disabled={editBusy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50">{reviewOpen ? 'Back to edit' : 'Cancel'}</button>
               {reviewOpen ? (
