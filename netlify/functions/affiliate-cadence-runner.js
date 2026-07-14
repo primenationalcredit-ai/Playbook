@@ -261,6 +261,12 @@ exports.handler = async (event) => {
     const userEmail = {};
     for (const u of (uRes.json || [])) { if (u.name && u.email) userEmail[u.name.toLowerCase().split(/\s+/)[0]] = u.email; }
     const consultantEmailFor = (owner) => userEmail[String(owner || '').toLowerCase().split(/\s+/)[0]] || null;
+    const userPhone = {};
+    for (const u of (uRes.json || [])) {
+      const fw = String(u.name || '').toLowerCase().split(/\s+/)[0];
+      if (fw && u.phone) userPhone[fw] = u.phone;
+    }
+    const consultantPhoneFor = (owner) => userPhone[String(owner || '').toLowerCase().split(/\s+/)[0]] || null;
 
     // open call tasks (affiliates with one get NOTHING)
     const ctRes = await supa('affiliate_call_tasks?status=eq.open&select=affiliate_org_id');
@@ -314,6 +320,7 @@ exports.handler = async (event) => {
 
       const consultantName = firstName(aff.owner_name || '') || 'Your ASAP team';
       const consultantEmail = consultantEmailFor(aff.owner_name);
+      aff.__consultant_phone = consultantPhoneFor(aff.owner_name);
 
       // channel guards
       if (tmpl.channel === 'email' && !aff.contact_email) { results.skipped.push({ org: aff.org_name, why: 'no email' }); continue; }
