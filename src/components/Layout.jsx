@@ -101,14 +101,31 @@ function Layout() {
   // Mariana) handle time-off but not payment financials, so they only get the
   // time-off count.
   const [affiliateCallsDue, setAffiliateCallsDue] = useState(0);
+  const [affiliateCallsOverdue, setAffiliateCallsOverdue] = useState(false);
   useEffect(() => {
+    if (!currentUser) return;
     const k = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
-    fetch('https://kkcbpqbcpzcarxhknzza.supabase.co/rest/v1/affiliate_call_tasks?status=eq.open&select=id', {
-      headers: { apikey: k, Authorization: `Bearer ${k}`, Prefer: 'count=exact', Range: '0-0' }
-    })
-      .then((r) => setAffiliateCallsDue(parseInt((r.headers.get('content-range') || '/0').split('/')[1], 10) || 0))
-      .catch(() => {});
-  }, []);
+    let alive = true;
+    const leadView = currentUser?.department === 'leadership' || currentUser?.role === 'admin';
+    const myFirst = String(currentUser?.name || '').toLowerCase().split(/\s+/)[0];
+    const check = () => {
+      fetch('https://kkcbpqbcpzcarxhknzza.supabase.co/rest/v1/affiliate_call_tasks?status=eq.open&select=assigned_to,due_date&limit=1000', {
+        headers: { apikey: k, Authorization: `Bearer ${k}` }
+      })
+        .then((r) => r.json())
+        .then((rows) => {
+          if (!alive || !Array.isArray(rows)) return;
+          const mine = leadView ? rows : rows.filter((t) => String(t.assigned_to || '').toLowerCase().split(/\s+/)[0] === myFirst);
+          const today = new Date().toISOString().slice(0, 10);
+          setAffiliateCallsDue(mine.length);
+          setAffiliateCallsOverdue(mine.some((t) => t.due_date && String(t.due_date).slice(0, 10) < today));
+        })
+        .catch(() => {});
+    };
+    check();
+    const t = setInterval(check, 120000);
+    return () => { alive = false; clearInterval(t); };
+  }, [currentUser]);
 
   const SUPABASE_URL_LAYOUT = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
   const SUPABASE_KEY_LAYOUT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
@@ -240,14 +257,14 @@ function Layout() {
   // Additional department items (hidden in "More" for leadership only - NOT shown to employees)
   // PRESERVED FOR FUTURE USE - can be re-enabled one at a time
   const additionalDepartmentItems = [
-    ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue }] : []),
+    ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue, unread: affiliateCallsOverdue }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
   ];
 
   // Full department items for Joe
   const departmentItems = isJoe ? [
-    ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue }] : []),
+    ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue, unread: affiliateCallsOverdue }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     { path: '/invoices', icon: FileText, label: 'Invoices' },
     { path: '/agreements', icon: FileText, label: 'Agreements' },

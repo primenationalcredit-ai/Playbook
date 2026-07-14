@@ -8,6 +8,43 @@ import {
 import ReviewClaimQueue from '../components/ReviewClaimQueue';
 import Reviews from './Reviews';
 
+// Live affiliate follow-up calls chip: the consultant's own open call tasks (leadership sees
+// all), split into due today vs past due. Links straight to the call queue. Renders nothing
+// when the queue is clear.
+function AffiliateFollowUpsChip({ name, leadView }) {
+  const [due, setDue] = React.useState(0);
+  const [past, setPast] = React.useState(0);
+  React.useEffect(() => {
+    const k = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
+    let alive = true;
+    const myFirst = String(name || '').toLowerCase().split(/\s+/)[0];
+    const check = () => {
+      fetch('https://kkcbpqbcpzcarxhknzza.supabase.co/rest/v1/affiliate_call_tasks?status=eq.open&select=assigned_to,due_date&limit=1000', {
+        headers: { apikey: k, Authorization: `Bearer ${k}` }
+      })
+        .then((r) => r.json())
+        .then((rows) => {
+          if (!alive || !Array.isArray(rows)) return;
+          const mine = leadView ? rows : rows.filter((t) => String(t.assigned_to || '').toLowerCase().split(/\s+/)[0] === myFirst);
+          const today = new Date().toISOString().slice(0, 10);
+          setPast(mine.filter((t) => t.due_date && String(t.due_date).slice(0, 10) < today).length);
+          setDue(mine.filter((t) => !t.due_date || String(t.due_date).slice(0, 10) >= today).length);
+        })
+        .catch(() => {});
+    };
+    check();
+    const t = setInterval(check, 120000);
+    return () => { alive = false; clearInterval(t); };
+  }, [name, leadView]);
+  if (due + past === 0) return null;
+  return (
+    <a href="/affiliate-outreach" className={`inline-flex items-center gap-2 mt-2 px-3 py-1.5 rounded-lg text-sm font-medium border ${past > 0 ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+      \uD83D\uDCDE {due + past} affiliate follow-up {due + past === 1 ? 'call' : 'calls'} open
+      {past > 0 ? ` \u00B7 ${past} PAST DUE` : ''}
+      <span className="underline">open queue</span>
+    </a>
+  );
+}
 const fmt = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt = (n) => '$' + Math.round(n || 0).toLocaleString();
 const fmtDate = (d) => {
@@ -311,6 +348,7 @@ export default function ConsultantBonus() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Bonus Tracker</h1>
+            <AffiliateFollowUpsChip name={currentUser?.name} leadView={isAdmin} />
             <p className="text-slate-500 text-sm">{data.month} • {data.totalPayments} payments from Zoho</p>
           </div>
         </div>
