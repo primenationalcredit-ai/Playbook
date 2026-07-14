@@ -48,6 +48,37 @@ async function applyZohoEdits(targets) {
   const zh = { Authorization: `Zoho-oauthtoken ${token}`, 'Content-Type': 'application/json' };
   for (const t of targets) {
     if (!t || !t.invoice_id) continue;
+    if (t.action === 'create') {
+      try {
+        const srcRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${t.copy_from}?organization_id=${ZOHO_ORG_ID}`, { headers: zh });
+        const srcData = await srcRes.json().catch(() => ({}));
+        const src = srcData.invoice;
+        if (!src || !src.customer_id) { out.warnings.push('Partial invoice NOT created - could not read the final invoice for customer info; create it manually.'); continue; }
+        const amt = parseFloat(t.amount);
+        const createBody = {
+          customer_id: src.customer_id,
+          due_date: t.due_date || undefined,
+          line_items: [{ name: 'Par1', description: `PARTIAL PAYMENT due on ${t.due_date || ''}`.trim(), rate: isNaN(amt) ? 0 : amt, quantity: 1 }]
+        };
+        const cRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh, body: JSON.stringify(createBody) });
+        const cData = await cRes.json().catch(() => ({}));
+        const created = cData.invoice;
+        if (!cRes.ok || cData.code !== 0 || !created) { out.warnings.push(`Partial invoice creation failed: ${cData.message || cRes.status} - create it manually.`); continue; }
+        try { await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${created.invoice_id}/status/sent?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh }); } catch (e) {}
+        if (created.invoice_url) out.links.partial = created.invoice_url;
+        out.updated++;
+        // Link the new invoice to the deal's first scheduled charge (processor endpoint).
+        try {
+          const linkRes = await fetch(`${PAYMENT_BASE}/link-zoho-invoice`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY },
+            body: JSON.stringify({ deal_id: t.deal_id, zoho_invoice_id: created.invoice_id, type: 'partial' })
+          });
+          if (!linkRes.ok) out.warnings.push(`New partial invoice ${created.invoice_number || created.invoice_id} created but charge-linking returned ${linkRes.status} - link it manually.`);
+        } catch (e) { out.warnings.push('New partial invoice created but charge-linking failed: ' + e.message); }
+      } catch (e) { out.warnings.push('Partial invoice creation error: ' + e.message); }
+      continue;
+    }
     if (t.action === 'void') {
       try {
         const vRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${t.invoice_id}/status/void?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh, body: JSON.stringify({ reason: 'Agreement changed to a plan without this payment' }) });
