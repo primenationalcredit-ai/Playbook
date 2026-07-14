@@ -31,6 +31,7 @@ function mergeFields(text, aff, consultantName) {
     .replace(/\{sold_clients\}/g, String(aff.sold_clients || 0))
     .replace(/\{client_word\}/g, (aff.sold_clients || 0) === 1 ? 'client' : 'clients')
     .replace(/\{referral_word\}/g, (aff.referred_deals || 0) === 1 ? 'referral' : 'referrals')
+    .replace(/\{consultant_phone\}/g, aff.__consultant_phone || '281-545-5001')
     .replace(/\{referred_deals\}/g, String(aff.referred_deals || 0))
     .replace(/\{last_referral_month\}/g, monthName(aff.last_referral_date))
     .replace(/\{portal_link\}/g, aff.portal_link || 'https://portal.asapcreditrepairusa.com')
@@ -51,7 +52,9 @@ async function aiPersonalize(mergedBody, aff, consultantName) {
     segment: aff.segment,
     consultant_name: consultantName,
     portal_link: aff.portal_link || null,
-    payout_amount: aff.payout_amount || null
+    payout_amount: aff.payout_amount || null,
+    consultant_direct_line: aff.__consultant_phone || '281-545-5001',
+    recent_notes: (aff.pipedrive_fu_notes || '').slice(-500) || null
   };
   const prompt = `You personalize partner outreach emails for ASAP Credit & Financial Services. Rewrite the email below so it fits this exact partner, using only the facts provided.
 
@@ -68,6 +71,9 @@ HARD RULES:
 - Exactly one URL may appear in the email: the portal_link. Keep it where the original put it, or omit if the original had none.
 - No em dashes and no hyphens used as punctuation. Write ranges as "60 to 90 days".
 - Warm, human, story-driven, short paragraphs, simple words. Not salesy.
+- ALWAYS use contractions (I'm, you're, it's, don't, we're, that's). Formal uncontracted English sounds robotic and is forbidden.
+- Write like a friendly colleague texting someone they like: relaxed, fun where it fits, natural rhythm, no lecture tone. If a sentence wouldn't be said out loud on a phone call, rewrite it until it would.
+- recent_notes are our team's Pipedrive follow-up notes, full of abbreviations: LVM means left voicemail (we have NOT actually spoken). If the notes show only LVM entries, automated sends, or nothing, write as someone the partner hasn't personally talked to yet, while assuming they know the company they signed up with. If the notes show a real conversation happened, reference it naturally and continue that thread. Never quote the notes verbatim or mention that notes exist.
 - Output ONLY the rewritten email body as plain text. No subject line, no commentary, no markdown.
 
 ORIGINAL EMAIL:

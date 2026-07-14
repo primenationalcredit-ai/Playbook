@@ -32,6 +32,7 @@ function mergePreview(text, aff) {
     .replace(/\{company\}/g, aff.company || aff.org_name || 'your company')
     .replace(/\{sold_clients\}/g, String(aff.sold_clients || 0))
     .replace(/\{client_word\}/g, (aff.sold_clients || 0) === 1 ? 'client' : 'clients')
+    .replace(/\{consultant_phone\}/g, '281-545-5001')
     .replace(/\{referral_word\}/g, (aff.referred_deals || 0) === 1 ? 'referral' : 'referrals')
     .replace(/\{referred_deals\}/g, String(aff.referred_deals || 0))
     .replace(/\{last_referral_month\}/g, monthNameOf(aff.last_referral_date))
