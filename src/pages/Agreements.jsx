@@ -424,8 +424,9 @@ export default function Agreements() {
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => (reviewOpen ? setReviewOpen(false) : setEditModal(null))} disabled={editBusy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50">{reviewOpen ? 'Back to edit' : 'Cancel'}</button>
               {reviewOpen ? (
-                <button onClick={doEditSave} disabled={editBusy || (totalsChanged() && !approvalChecked)} className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded hover:bg-green-700 disabled:opacity-50">
-                  {editBusy ? <RefreshCw size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Confirm and save
+                <button onClick={doEditSave} disabled={editBusy || (totalsChanged() && !approvalChecked)} className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white text-base font-bold rounded-lg hover:bg-green-700 disabled:opacity-50 shadow">
+                  {editBusy ? <RefreshCw size={17} className="animate-spin" /> : <Send size={17} />}
+                  {(String(editModal.status || '').toLowerCase() === 'signed' || typeChanged() || guaranteeChanged() || editResend) ? 'Save and Send to Client' : 'Save Only (no send)'}
                 </button>
               ) : (
                 <button onClick={openReview} disabled={editBusy} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-50">
