@@ -72,6 +72,18 @@ export default function Agreements() {
   };
   const doEditSave = async () => {
     if (!editModal) return;
+    // Amount-change guard: edits that change what the client pays need management approval.
+    const n = (v) => (v == null || v === '' ? 0 : parseFloat(v) || 0);
+    const oldTotal = n(editModal.partial_amount) + n(editModal.final_amount);
+    const newTotal = n(editForm.partial_amount) + n(editForm.final_amount);
+    if (Math.abs(oldTotal - newTotal) > 0.009) {
+      const ok = window.confirm(
+        'PRICE CHANGE: this agreement was for $' + oldTotal.toFixed(2) + ' and you are changing it to $' + newTotal.toFixed(2) + '.\n\n' +
+        'Do you have management approval for this price change?\n\n' +
+        'OK = yes, proceed (leadership will be notified by email). Cancel = go back.'
+      );
+      if (!ok) return;
+    }
     setEditBusy(true);
     setError('');
     try {
