@@ -61,7 +61,8 @@ export default function Agreements() {
       client_email: a.client_email || '',
       client_phone: a.client_phone || '',
       client_address: a.client_address || '',
-      payment_type: a.payment_type_text || '',
+      payment_type: (String(a.payment_type_text || '').toUpperCase().includes('PART') ? 'PARTIAL'
+        : String(a.payment_type_text || '').toUpperCase().includes('PIF') ? 'PIF' : 'FULL'),
       guarantee: a.has_guarantee === false ? 'NO GUARANTEE' : 'GUARANTEE',
       partial_amount: a.partial_amount || '',
       partial_date: a.partial_date || '',
@@ -96,7 +97,8 @@ export default function Agreements() {
     if (!editModal) return false;
     return Math.abs((numv(editModal.partial_amount) + numv(editModal.final_amount)) - (numv(editForm.partial_amount) + numv(editForm.final_amount))) > 0.009;
   };
-  const typeChanged = () => editModal && editForm.payment_type && String(editForm.payment_type) !== String(editModal.payment_type_text || '');
+  const normType = (v) => (String(v || '').toUpperCase().includes('PART') ? 'PARTIAL' : String(v || '').toUpperCase().includes('PIF') ? 'PIF' : 'FULL');
+  const typeChanged = () => editModal && editForm.payment_type && String(editForm.payment_type) !== normType(editModal.payment_type_text);
   const guaranteeChanged = () => editModal && editForm.guarantee && editForm.guarantee !== (editModal.has_guarantee === false ? 'NO GUARANTEE' : 'GUARANTEE');
   const openReview = () => {
     setError('');
