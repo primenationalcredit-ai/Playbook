@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Send, ExternalLink, FileText, RefreshCw, CheckCircle2, Clock, XCircle, AlertTriangle } from 'lucide-react';
+import { Search, Send, ExternalLink, FileText, RefreshCw, CheckCircle2, Clock, XCircle, AlertTriangle, Pencil } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const PIPEDRIVE_DOMAIN = 'asapcredit';
@@ -51,6 +51,47 @@ export default function Agreements() {
   const [resendModal, setResendModal] = useState(null); // { dealId, clientName }
   const [resendBusy, setResendBusy] = useState(false);
   const [toast, setToast] = useState('');
+  const [editModal, setEditModal] = useState(null);   // the agreement row being edited
+  const [editForm, setEditForm] = useState({});
+  const [editResend, setEditResend] = useState(true);
+  const [editBusy, setEditBusy] = useState(false);
+  const openEdit = (a) => {
+    setEditForm({
+      client_name: a.client_name || '',
+      client_email: a.client_email || '',
+      client_phone: a.client_phone || '',
+      client_address: a.client_address || '',
+      payment_type: a.payment_type_text || '',
+      partial_amount: a.partial_amount || '',
+      partial_date: a.partial_date || '',
+      final_amount: a.final_amount || '',
+      final_date: a.final_date || ''
+    });
+    setEditResend(true);
+    setEditModal(a);
+  };
+  const doEditSave = async () => {
+    if (!editModal) return;
+    setEditBusy(true);
+    setError('');
+    try {
+      const mustResend = String(editModal.status || '').toLowerCase() === 'signed';
+      const d = await callAgreementsApi('edit_resend', {
+        deal_id: editModal.pipedrive_deal_id,
+        edits: editForm,
+        resend: mustResend || editResend
+      });
+      const warn = (d.warnings && d.warnings.length) ? ' \u26A0 ' + d.warnings.join(' ') : '';
+      setToast((d.message || 'Agreement updated.') + warn);
+      setEditModal(null);
+      await runSearch();
+      setTimeout(() => setToast(''), 9000);
+    } catch (e) {
+      setError(e.message || 'Edit failed');
+    } finally {
+      setEditBusy(false);
+    }
+  };
 
   const runSearch = async () => {
     setLoading(true);
@@ -204,6 +245,12 @@ export default function Agreements() {
                             </a>
                           )}
                           {a.pipedrive_deal_id && (
+                            <button onClick={() => openEdit(a)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-300 rounded hover:bg-slate-100" title="Edit client details or payment terms (also updates Pipedrive)">
+                              <Pencil size={11} /> Edit
+                            </button>
+                          )}
+                          {a.pipedrive_deal_id && (
                             <button onClick={() => setResendModal({ dealId: a.pipedrive_deal_id, clientName: a.client_name })}
                               className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-white bg-green-600 rounded hover:bg-green-700" title="Void current agreement and send a new signing link">
                               <Send size={11} /> Resend
@@ -227,6 +274,74 @@ export default function Agreements() {
         </div>
       )}
 
+      {/* Edit agreement modal */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !editBusy && setEditModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-asap-blue flex items-center gap-2"><Pencil size={18} /> Edit agreement</h3>
+            <p className="text-xs text-slate-500 mt-1">Deal #{editModal.pipedrive_deal_id} - contact changes also update the Pipedrive person, so future documents come out right.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Client name</label>
+                <input type="text" value={editForm.client_name || ''} onChange={e => setEditForm({ ...editForm, client_name: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Email</label>
+                <input type="text" value={editForm.client_email || ''} onChange={e => setEditForm({ ...editForm, client_email: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Phone</label>
+                <input type="text" value={editForm.client_phone || ''} onChange={e => setEditForm({ ...editForm, client_phone: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Address (street, city, state zip)</label>
+                <input type="text" value={editForm.client_address || ''} onChange={e => setEditForm({ ...editForm, client_address: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Payment type</label>
+                <select value={editForm.payment_type || ''} onChange={e => setEditForm({ ...editForm, payment_type: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue">
+                  <option value="FULL">FULL</option>
+                  <option value="PARTIAL">PARTIAL</option>
+                  <option value="PIF">PIF</option>
+                </select>
+              </div>
+              <div></div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Partial amount</label>
+                <input type="text" value={editForm.partial_amount || ''} onChange={e => setEditForm({ ...editForm, partial_amount: e.target.value })} placeholder="e.g. 275.00" className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Partial date</label>
+                <input type="date" value={editForm.partial_date || ''} onChange={e => setEditForm({ ...editForm, partial_date: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Final amount</label>
+                <input type="text" value={editForm.final_amount || ''} onChange={e => setEditForm({ ...editForm, final_amount: e.target.value })} placeholder="e.g. 275.00" className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Final date</label>
+                <input type="date" value={editForm.final_date || ''} onChange={e => setEditForm({ ...editForm, final_date: e.target.value })} className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+            </div>
+            {String(editModal.status || '').toLowerCase() === 'signed' ? (
+              <div className="mt-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-start gap-2">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" /> This agreement is SIGNED. Saving will void it and send the client a corrected agreement to re-sign - signed documents are never edited silently.
+              </div>
+            ) : (
+              <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={editResend} onChange={e => setEditResend(e.target.checked)} />
+                Resend corrected agreement to the client now (voids the current one, new signing link)
+              </label>
+            )}
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setEditModal(null)} disabled={editBusy} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded disabled:opacity-50">Cancel</button>
+              <button onClick={doEditSave} disabled={editBusy} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-50">
+                {editBusy ? <RefreshCw size={15} className="animate-spin" /> : <Pencil size={15} />} Save changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Resend confirm modal */}
       {resendModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !resendBusy && setResendModal(null)}>
