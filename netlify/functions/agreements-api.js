@@ -50,7 +50,7 @@ exports.handler = async (event) => {
 
   const action = body.action;
   if (!action) return { statusCode: 400, headers, body: JSON.stringify({ error: 'action required' }) };
-  if (action !== 'search' && action !== 'resend') {
+  if (action !== 'search' && action !== 'resend' && action !== 'edit_resend') {
     return { statusCode: 403, headers, body: JSON.stringify({ error: `action '${action}' not allowed` }) };
   }
 
@@ -74,15 +74,18 @@ exports.handler = async (event) => {
       return { statusCode: upstream.status, headers, body: text };
     }
 
-    // action === 'resend' -> reissue_agreement on consultant-dashboard-api
+    // action === 'resend' -> reissue_agreement; 'edit_resend' -> edit_reissue_agreement
     const dealId = body.deal_id;
     if (!dealId) return { statusCode: 400, headers, body: JSON.stringify({ error: 'deal_id required for resend' }) };
     const outHeaders = { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY };
     if (actingAs) outHeaders['X-Acting-As'] = actingAs;
+    const upstreamBody = action === 'edit_resend'
+      ? { action: 'edit_reissue_agreement', deal_id: dealId, edits: body.edits || {}, resend: !!body.resend }
+      : { action: 'reissue_agreement', deal_id: dealId };
     const upstream = await fetch(DASHBOARD_URL, {
       method: 'POST',
       headers: outHeaders,
-      body: JSON.stringify({ action: 'reissue_agreement', deal_id: dealId })
+      body: JSON.stringify(upstreamBody)
     });
     const text = await upstream.text();
     return { statusCode: upstream.status, headers, body: text };
