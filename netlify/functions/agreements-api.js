@@ -57,7 +57,7 @@ async function applyZohoEdits(targets) {
         out.warnings.push(`Zoho ${t.role} invoice ${inv.invoice_number || t.invoice_id} is PAID - not changed, review manually.`);
         continue;
       }
-      const body = {};
+      const body = { reason: 'Agreement terms updated in ASAP system' };
       if (t.due_date) body.due_date = t.due_date;
       const amt = parseFloat(t.amount);
       if (!isNaN(amt) && amt > 0 && Array.isArray(inv.line_items) && inv.line_items.length) {
