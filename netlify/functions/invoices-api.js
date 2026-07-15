@@ -74,13 +74,20 @@ async function zohoSplit(d) {
     if (!cRes.ok || cData.code !== 0 || !created) { out.warnings.push(`Remainder invoice creation failed: ${cData.message || cRes.status} - create it manually.`); return out; }
     try { await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${created.invoice_id}/status/sent?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh }); } catch (e) {}
     out.summary.push(`remainder invoice ${created.invoice_number} created ($${Number(d.remainder_amount).toFixed(2)})`);
-    // 3) link the remainder invoice to the remainder charge (highest sequence = 'final' targeting)
+    // 3) link the remainder invoice to the EXACT remainder charge (by id). Positional
+    // 'final' targeting mislinks once a deal has more than one split.
     try {
-      const lRes = await fetch(LINK_INVOICE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY },
-        body: JSON.stringify({ deal_id: d.deal_id, zoho_invoice_id: created.invoice_id, invoice_type: 'final' })
-      });
+      const lRes = d.remainder_charge_id
+        ? await fetch(PAYMENT_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY },
+            body: JSON.stringify({ action: 'link_invoice_to_charge', charge_id: d.remainder_charge_id, zoho_invoice_id: created.invoice_id })
+          })
+        : await fetch(LINK_INVOICE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY },
+            body: JSON.stringify({ deal_id: d.deal_id, zoho_invoice_id: created.invoice_id, invoice_type: 'final' })
+          });
       if (!lRes.ok) out.warnings.push(`Remainder invoice created but linking returned ${lRes.status} - link it manually.`);
       else out.summary.push('linked to the remainder charge');
     } catch (e) { out.warnings.push('Remainder invoice created but linking failed: ' + e.message); }
