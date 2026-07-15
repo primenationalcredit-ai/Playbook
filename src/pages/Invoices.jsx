@@ -1042,7 +1042,7 @@ export default function Invoices() {
   const openAction = (info) => {
     setModal(info);
     if (info.type === 'update_due_date') setForm({ new_due_date: '' });
-    else if (info.type === 'split_charge') setForm({ partial_amount: '', remainder_date: '' });
+    else if (info.type === 'split_charge') setForm({ partial_amount: '', first_date: new Date().toISOString().slice(0, 10), remainder_date: '' });
     else if (info.type === 'pause_admin') setForm({ pause_until_date: '', pause_indefinite: false });
     else if (info.type === 'request_date_change') setForm({ new_due_date: '', reason: '' });
     else if (info.type === 'request_pause') setForm({ pause_until_date: '', pause_indefinite: false, reason: '' });
@@ -1115,8 +1115,10 @@ export default function Invoices() {
         const orig = parseFloat(modal.amount);
         if (!(partial > 0)) throw new Error('Enter a partial amount greater than 0');
         if (partial >= orig) throw new Error('Partial must be less than the charge amount');
+        if (!form.first_date) throw new Error('Choose a date for the first payment');
         if (!form.remainder_date) throw new Error('Choose a date for the remainder');
-        await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, remainder_date: form.remainder_date });
+        if (form.remainder_date < form.first_date) throw new Error('Remainder date must be on or after the first payment date');
+        await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date });
         setNotice({ type: 'success', text: 'Split into $' + partial.toFixed(2) + ' and $' + (orig - partial).toFixed(2) + '.' });
       }
       setTimeout(() => { setModal(null); loadPendingApprovals(); if (mode === 'browse') browse(); else lookup(dealInput); }, 1400);
@@ -1270,7 +1272,12 @@ export default function Invoices() {
                   <input type="number" step="0.01" min="0.01" value={form.partial_amount || ''} onChange={e => setForm({ ...form, partial_amount: e.target.value })}
                     placeholder="e.g. 150.00"
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
-                  <p className="text-[11px] text-slate-500 mt-1">Charges on the original due date ({fmtDate(modal.current_due_date)}).</p>
+                </div>
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Charge first payment on</label>
+                  <input type="date" value={form.first_date || ''} onChange={e => setForm({ ...form, first_date: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  <p className="text-[11px] text-slate-500 mt-1">{form.first_date === new Date().toISOString().slice(0, 10) ? 'Today: the card is charged as soon as you save.' : 'Charges automatically on this date.'}</p>
                 </div>
                 <div className="mb-3 px-3 py-2 bg-slate-50 rounded text-sm">
                   Remainder: <b>${Math.max(0, (parseFloat(modal.amount) || 0) - (parseFloat(form.partial_amount) || 0)).toFixed(2)}</b>
