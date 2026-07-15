@@ -52,6 +52,10 @@ async function zohoGet(token, endpoint) {
   return await res.json();
 }
 
+async function zohoGetRetry(token, endpoint) {
+  try { return await zohoGet(token, endpoint); }
+  catch (e) { await new Promise(r => setTimeout(r, 800)); return await zohoGet(token, endpoint); }
+}
 function parsePaymentType(itemName) {
   if (!itemName) return 'additional_round';
   const n = itemName.toLowerCase();
@@ -96,6 +100,43 @@ exports.handler = async (event) => {
     const existingSet = new Set(existing.map(e => e.zoho_payment_id).filter(Boolean));
 
     // Pull payments
+    if (params.repair_month) {
+      const rm = params.repair_month;
+      const unkRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${rm}&payment_type=eq.unknown&select=id,zoho_payment_id,amount`, {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+      });
+      const unknowns = unkRes.ok ? await unkRes.json() : [];
+      let repaired = 0, still = 0;
+      for (const row of unknowns) {
+        let newType = 'unknown';
+        if (row.zoho_payment_id) {
+          try {
+            const pd = await zohoGetRetry(token, `/customerpayments/${row.zoho_payment_id}`);
+            const invRef = pd.payment && pd.payment.invoices && pd.payment.invoices[0];
+            if (invRef && invRef.invoice_id) {
+              const invDetail = await zohoGetRetry(token, `/invoices/${invRef.invoice_id}`);
+              if (invDetail.invoice && invDetail.invoice.line_items && invDetail.invoice.line_items[0]) {
+                newType = parsePaymentType(invDetail.invoice.line_items[0].name);
+              }
+            }
+          } catch (e) { console.log(`repair lookup failed for payment ${row.zoho_payment_id}:`, e.message); }
+        }
+        if (newType === 'unknown') {
+          const amt = Math.round(parseFloat(row.amount) || 0);
+          if (amt === 149) newType = 'doc_fee';
+          else if (amt === 249 || amt === 299) newType = 'additional_round';
+        }
+        if (newType !== 'unknown') {
+          await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?id=eq.${row.id}`, {
+            method: 'PATCH',
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ payment_type: newType })
+          });
+          repaired++;
+        } else still++;
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ repair_month: rm, examined: unknowns.length, repaired, still_unknown: still }) };
+    }
     const paymentsData = await zohoGet(token, `/customerpayments?date_start=${monthStart}&date_end=${monthEnd}&sort_column=date&sort_order=D&per_page=${perPage}&page=${page}`);
     const payments = paymentsData.customerpayments || [];
     const hasMore = paymentsData.page_context?.has_more_page || false;
@@ -113,7 +154,7 @@ exports.handler = async (event) => {
       // Look up invoice from list endpoint (has company_name + we can get item info)
       if (payment.invoice_numbers) {
         try {
-          const invList = await zohoGet(token, `/invoices?invoice_number=${payment.invoice_numbers}`);
+          const invList = await zohoGet(token, `/invoices?invoice_number=${String(payment.invoice_numbers).split(',')[0].trim()}`);
           if (invList.invoices && invList.invoices.length > 0) {
             const inv = invList.invoices[0];
             // Get deal_id from company_name
@@ -121,7 +162,7 @@ exports.handler = async (event) => {
             
             // Get payment type from full invoice (need line_items)
             try {
-              const invDetail = await zohoGet(token, `/invoices/${inv.invoice_id}`);
+              const invDetail = await zohoGetRetry(token, `/invoices/${inv.invoice_id}`);
               if (invDetail.invoice?.line_items?.[0]) {
                 paymentType = parsePaymentType(invDetail.invoice.line_items[0].name);
               }
@@ -140,7 +181,7 @@ exports.handler = async (event) => {
       // or the detail lookup failed). Never overrides a real doc_fee/partial/final/paid_in_full code.
       if (paymentType === 'unknown') {
         const amt = Math.round(parseFloat(payment.amount) || 0);
-        if (amt === 249 || amt === 299) paymentType = 'additional_round';
+        if (amt === 149) paymentType = 'doc_fee'; else if (amt === 249 || amt === 299) paymentType = 'additional_round';
       }
 
       batch.push({
