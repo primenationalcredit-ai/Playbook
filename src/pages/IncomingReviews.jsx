@@ -226,6 +226,22 @@ function IncomingReviews() {
       loadData();
     } catch (err) { console.error('Error rejecting claim:', err); alert('Failed to release claim'); }
   };
+  // Fully release an assigned/completed review: back to the pending pool, credit removed,
+  // audit trail stamped in notes. Metrics recalculate on their next load.
+  const handleReleaseAssignment = async (review) => {
+    const who = review.claimed_by_name || getUserName(review.assigned_to) || 'its current owner';
+    if (!confirm(`Release this review from ${who}? It returns to Pending and no longer counts toward their review metric.`)) return;
+    try {
+      const stamp = `Released from ${who} by ${getUserName(currentUser?.id) || currentUser?.email || 'admin'} on ${new Date().toISOString().slice(0, 10)}`;
+      await patchReview(review.id, {
+        status: 'pending',
+        assigned_to: null, assigned_by: null, assigned_at: null,
+        claimed_by: null, claimed_by_name: null, claimed_at: null,
+        notes: review.notes ? `${review.notes} | ${stamp}` : stamp,
+      });
+      loadData();
+    } catch (err) { console.error('Error releasing review:', err); alert('Failed to release review'); }
+  };
 
   const handleEditReview = async () => {
     if (!editingReview) return;
@@ -676,14 +692,38 @@ function IncomingReviews() {
                           <UserPlus size={16} />
                           Reassign
                         </button>
+                        <button
+                          onClick={() => handleReleaseAssignment(review)}
+                          className="flex items-center gap-2 px-3 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                        >
+                          Release
+                        </button>
                       </>
                     )}
                     
                     {review.status === 'completed' && (
-                      <span className="flex items-center gap-2 text-green-600 text-sm">
-                        <CheckCircle2 size={16} />
-                        Completed
-                      </span>
+                      <>
+                        <span className="flex items-center gap-2 text-green-600 text-sm">
+                          <CheckCircle2 size={16} />
+                          Completed
+                        </span>
+                        <button
+                          onClick={() => {
+                            setAssigningReview(review);
+                            setSelectedLocation(review.location_name || '');
+                          }}
+                          className="flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors"
+                        >
+                          <UserPlus size={16} />
+                          Reassign
+                        </button>
+                        <button
+                          onClick={() => handleReleaseAssignment(review)}
+                          className="flex items-center gap-2 px-3 py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                        >
+                          Release
+                        </button>
+                      </>
                     )}
                   </div>
                   
