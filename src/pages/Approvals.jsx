@@ -185,8 +185,17 @@ function DetailView({ approvalId, isAdmin, myEmail, onBack, onChanged }) {
     setBusy(true); setNotice(null);
     try {
       if (approve) {
+        if (approval && approval.request_type === 'split') {
+          // Execute the split first; only mark approved if it succeeds.
+          await callApi('split_charge', {
+            charge_id: approval.charge_id,
+            partial_amount: parseFloat(approval.split_partial_amount),
+            first_date: approval.split_first_date,
+            remainder_date: approval.split_remainder_date
+          });
+        }
         await callApi('approve_request', { approval_id: approvalId });
-        setNotice({ type: 'success', text: 'Approved. The change has been applied.' });
+        setNotice({ type: 'success', text: approval && approval.request_type === 'split' ? 'Approved. The payment has been split.' : 'Approved. The change has been applied.' });
       } else {
         if (!rejectReason.trim() || rejectReason.trim().length < 3) { setNotice({ type: 'error', text: 'Add a short reason for the rejection.' }); setBusy(false); return; }
         await callApi('reject_request', { approval_id: approvalId, rejection_reason: rejectReason.trim() });
