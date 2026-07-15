@@ -39,7 +39,7 @@ async function getZohoToken() {
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return respond(200, {});
   const params = event.queryStringParameters || {};
-  const limit = Math.min(parseInt(params.limit) || 40, 60);
+  const limit = Math.min(parseInt(params.limit) || 60, 60);
   const days = parseInt(params.days) || 45;
 
   try {
