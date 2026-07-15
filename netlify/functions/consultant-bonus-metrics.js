@@ -220,7 +220,7 @@ exports.handler = async (event) => {
     // fall back to the month the row was created.
     const [rvy, rvm] = targetMonth.split('-').map(Number);
     const nextMonthStart = `${new Date(rvy, rvm, 1).getFullYear()}-${String(new Date(rvy, rvm, 1).getMonth() + 1).padStart(2, '0')}-01`;
-    const reviews = await supaGet('incoming_reviews', `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))&select=*`);
+    const reviews = await supaGet('incoming_reviews', `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))&delisted_at=is.null&select=*`);
 
     // Get already-awarded one-time bonuses
     let awardedBonuses = [];
