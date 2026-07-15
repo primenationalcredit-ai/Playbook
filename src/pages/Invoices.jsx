@@ -289,11 +289,17 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
         pendingApproval ? (
           <div className="pt-3 border-t border-slate-100">
             <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 inline-flex items-center gap-1">
-              <Clock size={12} /> A {pendingApproval.request_type === 'pause' ? 'pause' : 'date change'} request is already pending leadership approval. No new request can be made until it's decided.
+              <Clock size={12} /> A {pendingApproval.request_type === 'pause' ? 'pause' : pendingApproval.request_type === 'split' ? 'split payment' : 'date change'} request is already pending leadership approval. No new request can be made until it's decided.
             </p>
           </div>
         ) : (
           <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 items-center">
+            {SPLIT_ENABLED && (
+            <button onClick={() => onAction({ type: 'request_split', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+              <Undo2 size={12} /> Request split
+            </button>
+            )}
             <button onClick={() => onAction({ type: 'request_date_change', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
               <CalendarClock size={12} /> Request date change
@@ -1042,6 +1048,7 @@ export default function Invoices() {
   const openAction = (info) => {
     setModal(info);
     if (info.type === 'update_due_date') setForm({ new_due_date: '' });
+    else if (info.type === 'request_split') setForm({ partial_amount: '', first_date: '', remainder_date: '', reason: '' });
     else if (info.type === 'split_charge') setForm({ partial_amount: '', first_date: new Date().toISOString().slice(0, 10), remainder_date: '' });
     else if (info.type === 'pause_admin') setForm({ pause_until_date: '', pause_indefinite: false });
     else if (info.type === 'request_date_change') setForm({ new_due_date: '', reason: '' });
@@ -1132,6 +1139,27 @@ export default function Invoices() {
         const r = await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date });
         const warnTxt = (r.warnings && r.warnings.length) ? ' \u26A0 ' + r.warnings.join(' ') : '';
         setNotice({ type: 'success', text: (r.message || ('Split into $' + partial.toFixed(2) + ' and $' + (orig - partial).toFixed(2) + '.')) + warnTxt });
+      } else if (modal.type === 'request_split') {
+        const partial = parseFloat(form.partial_amount);
+        const orig = parseFloat(modal.amount);
+        if (!(partial > 0)) throw new Error('Enter a partial amount greater than 0');
+        if (partial >= orig) throw new Error('Partial must be less than the charge amount');
+        if (!form.first_date) throw new Error('Choose a date for the first payment');
+        if (!form.remainder_date) throw new Error('Choose a date for the remainder');
+        if (form.remainder_date < form.first_date) throw new Error('Remainder date must be on or after the first payment date');
+        const rOrigDue = String(modal.current_due_date || '').slice(0, 10);
+        if (rOrigDue) {
+          if (form.first_date > rOrigDue) throw new Error(`Payment 1 cannot be later than the original due date (${fmtDate(rOrigDue)}). A split is not grounds to also extend the deadline; a date change is a separate request.`);
+          const rd45 = new Date(rOrigDue + 'T00:00:00'); rd45.setDate(rd45.getDate() + 45);
+          const rcap45 = rd45.toISOString().slice(0, 10);
+          if (form.remainder_date > rcap45) throw new Error(`Payment 2 must fall within 45 days of the original due date (by ${fmtDate(rcap45)}).`);
+        }
+        const rGap = Math.round((new Date(form.remainder_date + 'T00:00:00') - new Date(form.first_date + 'T00:00:00')) / 86400000);
+        if (rGap > 14) throw new Error(`Payments are ${rGap} days apart. The gap between split payments is capped at 14 days.`);
+        if (rOrigDue && form.remainder_date.slice(0, 7) !== rOrigDue.slice(0, 7) && !form.month_ack) throw new Error('This split crosses a month boundary, which affects qualified-doc and bonus timing. Check the acknowledgment box.');
+        if (!form.reason || form.reason.trim().length < 3) throw new Error('Add a short reason for the split request');
+        const r = await callApi('request_split', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date, reason: form.reason.trim() });
+        setNotice({ type: 'success', text: r.message || 'Split request submitted for leadership approval.' });
       }
       setTimeout(() => { setModal(null); loadPendingApprovals(); if (mode === 'browse') browse(); else lookup(dealInput); }, 1400);
     } catch (e) {
@@ -1274,7 +1302,7 @@ export default function Invoices() {
               </div>
             )}
 
-            {modal.type === 'split_charge' && (
+            {(modal.type === 'split_charge' || modal.type === 'request_split') && (
               <>
                 <div className="mb-3 text-sm text-slate-600">
                   Original charge: <b>${(parseFloat(modal.amount) || 0).toFixed(2)}</b> due {fmtDate(modal.current_due_date)}.
@@ -1296,6 +1324,14 @@ export default function Invoices() {
                   <label className="block text-xs font-semibold text-slate-500 mb-1">2nd payment date</label>
                   <input type="date" value={form.remainder_date || ''} onChange={e => setForm({ ...form, remainder_date: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  {modal.type === 'request_split' && (
+                    <div className="mt-2">
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Reason for the split (required)</label>
+                      <textarea value={form.reason || ''} onChange={e => setForm({ ...form, reason: e.target.value })} rows={2}
+                        placeholder="Why does this client need a split?"
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                    </div>
+                  )}
                   <p className="text-[11px] text-slate-500 mt-2">Policy: Payment 1 no later than the original due date. Gap between payments 14 days max. Full balance within 45 days of the original due date.</p>
                   {(() => {
                     const origDue = String(modal.current_due_date || '').slice(0, 10);
