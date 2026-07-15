@@ -56,6 +56,8 @@ export default function AMBonus() {
   const [uploading, setUploading] = useState(false);
   const [proofFile, setProofFile] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editExisting, setEditExisting] = useState({ proofUrl: null, audioUrl: null });
   const [callTimestamp, setCallTimestamp] = useState('');
   const [viewerUrl, setViewerUrl] = useState(null);
   const [processingId, setProcessingId] = useState(null);
@@ -154,11 +156,29 @@ export default function AMBonus() {
     return { desc, audioUrl, ts };
   };
 
+  const startEdit = (sub) => {
+    const raw = String(sub.proof_description || '');
+    const mi = raw.indexOf(AUDIO_MARK);
+    let desc = raw, exAudio = null, ts = '';
+    if (mi !== -1) {
+      desc = raw.slice(0, mi);
+      try { const p = JSON.parse(raw.slice(mi + AUDIO_MARK.length)); exAudio = p.a || null; ts = p.t || ''; } catch (e) {}
+    }
+    setFormData({ client_name: sub.client_name || '', pipedrive_deal_id: sub.pipedrive_deal_id || '', product_name: sub.product_name || '', proof_description: desc, account_manager_id: sub.account_manager_id || '' });
+    setCallTimestamp(ts || '');
+    setProofFile(null); setAudioFile(null);
+    setEditExisting({ proofUrl: sub.proof_image_url || null, audioUrl: exAudio });
+    setEditingId(sub.id);
+    setShowForm(true);
+  };
   const submitCreditBuilding = async () => {
     if (!formData.client_name || !formData.product_name) return;
+    if (!proofFile && !editExisting.proofUrl) { setError('A proof screenshot is required.'); return; }
+    if (!audioFile && !editExisting.audioUrl) { setError('A call recording is required.'); return; }
+    if (!callTimestamp.trim()) { setError('Tell us where in the call the client confirms.'); return; }
     setUploading(true);
     try {
-      let proofUrl = null;
+      let proofUrl = editingId ? editExisting.proofUrl : null;
       if (proofFile) {
         const ext = (proofFile.name.split('.').pop() || 'png').toLowerCase();
         const path = `${currentUser?.id || 'unknown'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -168,7 +188,7 @@ export default function AMBonus() {
         proofUrl = pub?.publicUrl || null;
       }
       // Optional call recording: confirms the client verbally signed up over the phone.
-      let audioUrl = null;
+      let audioUrl = editingId ? editExisting.audioUrl : null;
       if (audioFile) {
         const aext = (audioFile.name.split('.').pop() || 'm4a').toLowerCase();
         const apath = `${currentUser?.id || 'unknown'}/audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${aext}`;
@@ -186,14 +206,19 @@ export default function AMBonus() {
         submission_month: selectedMonth,
         status: 'pending'
       };
-      await fetch(`${SUPABASE_URL}/rest/v1/credit_building_submissions`, {
-        method: 'POST', headers: { ...supaHeaders, Prefer: 'return=minimal' },
+      if (editingId) { delete body.status; delete body.submitted_by; delete body.submission_month; }
+      await fetch(editingId
+        ? `${SUPABASE_URL}/rest/v1/credit_building_submissions?id=eq.${editingId}`
+        : `${SUPABASE_URL}/rest/v1/credit_building_submissions`, {
+        method: editingId ? 'PATCH' : 'POST', headers: { ...supaHeaders, Prefer: 'return=minimal' },
         body: JSON.stringify(body)
       });
       setFormData({ client_name: '', pipedrive_deal_id: '', product_name: '', proof_description: '', account_manager_id: '' });
       setProofFile(null);
       setAudioFile(null);
       setCallTimestamp('');
+      setEditingId(null);
+      setEditExisting({ proofUrl: null, audioUrl: null });
       setShowForm(false);
       loadData();
     } catch (e) {
@@ -1267,7 +1292,7 @@ export default function AMBonus() {
           {showForm && (
             <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
               <div>
-                <h4 className="font-medium text-slate-800">New Credit-Building Submission</h4>
+                <h4 className="font-medium text-slate-800">{editingId ? 'Edit Credit-Building Submission' : 'New Credit-Building Submission'}</h4>
                 <p className="text-xs text-slate-500">One product per submission. Submit each approved product separately so each gets its own proof and its own Pipedrive note.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1305,17 +1330,19 @@ export default function AMBonus() {
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate-500 mb-1 block">Proof Screenshot</label>
+                <label className="text-xs text-slate-500 mb-1 block">Proof Screenshot <span className="text-red-500">*</span></label>
                 <div className="flex items-center gap-3">
                   <label className="flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-sm text-slate-600 cursor-pointer hover:bg-slate-50">
                     <Upload size={16} /> {proofFile ? 'Change image' : 'Choose image'}
                     <input type="file" accept="image/*" className="hidden" onChange={e => setProofFile(e.target.files?.[0] || null)} />
                   </label>
                   {proofFile && <span className="text-xs text-slate-500 truncate max-w-[200px]">{proofFile.name}</span>}
+                  {!proofFile && editExisting.proofUrl && <span className="text-xs text-slate-500">Current image kept unless you choose a new one</span>}
                 </div>
+                {!proofFile && !editExisting.proofUrl && <p className="text-[11px] text-red-500 mt-1">Required before you can submit.</p>}
               </div>
               <div>
-                <label className="text-xs text-slate-500 mb-1 block">Call Recording (optional)</label>
+                <label className="text-xs text-slate-500 mb-1 block">Call Recording <span className="text-red-500">*</span></label>
                 <p className="text-[11px] text-slate-400 mb-1">Attach the call where the client confirms they signed up. Confirms verbal consent over the phone, not just text or email.</p>
                 <div className="flex items-center gap-3">
                   <label className="flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg text-sm text-slate-600 cursor-pointer hover:bg-slate-50">
@@ -1323,9 +1350,11 @@ export default function AMBonus() {
                     <input type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg" className="hidden" onChange={e => setAudioFile(e.target.files?.[0] || null)} />
                   </label>
                   {audioFile && <span className="text-xs text-slate-500 truncate max-w-[200px]">{audioFile.name}</span>}
+                  {!audioFile && editExisting.audioUrl && <span className="text-xs text-slate-500">Current recording kept unless you choose a new one</span>}
                 </div>
+                {!audioFile && !editExisting.audioUrl && <p className="text-[11px] text-red-500 mt-1">Required before you can submit.</p>}
               </div>
-              {audioFile && (
+              {(audioFile || editExisting.audioUrl) && (
                 <div>
                   <label className="text-xs text-slate-500 mb-1 block">Where in the call did they confirm? <span className="text-red-500">*</span></label>
                   <input type="text" value={callTimestamp} onChange={e => setCallTimestamp(e.target.value)}
@@ -1334,9 +1363,9 @@ export default function AMBonus() {
                 </div>
               )}
               <div className="flex gap-2">
-                <button onClick={submitCreditBuilding} disabled={!formData.client_name || !formData.product_name || uploading || (audioFile && !callTimestamp.trim())}
-                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50">{uploading ? 'Uploading...' : 'Submit'}</button>
-                <button onClick={() => { setShowForm(false); setProofFile(null); setAudioFile(null); setCallTimestamp(''); }} className="px-4 py-2 bg-slate-200 text-slate-700 text-sm rounded-lg hover:bg-slate-300">Cancel</button>
+                <button onClick={submitCreditBuilding} disabled={!formData.client_name || !formData.product_name || uploading || (!proofFile && !editExisting.proofUrl) || (!audioFile && !editExisting.audioUrl) || !callTimestamp.trim()}
+                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50">{uploading ? 'Uploading...' : editingId ? 'Save changes' : 'Submit'}</button>
+                <button onClick={() => { setShowForm(false); setProofFile(null); setAudioFile(null); setCallTimestamp(''); setEditingId(null); setEditExisting({ proofUrl: null, audioUrl: null }); }} className="px-4 py-2 bg-slate-200 text-slate-700 text-sm rounded-lg hover:bg-slate-300">Cancel</button>
               </div>
             </div>
           )}
@@ -1358,6 +1387,9 @@ export default function AMBonus() {
                   <tr key={s.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <p className="font-medium">{s.client_name}</p>
+                      {(isAdmin || (s.submitted_by === currentUser?.id && s.status === 'pending')) && (
+                        <button onClick={() => startEdit(s)} className="text-xs text-asap-blue hover:underline">Edit</button>
+                      )}
                       {s.pipedrive_deal_id && <a href={DEAL_URL(s.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Deal #{s.pipedrive_deal_id} ↗</a>}
                     </td>
                     <td className="px-4 py-3">{s.product_name}</td>
