@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext';
 
 const PIPEDRIVE_DOMAIN = 'asapcreditrepair';
 // Split-charge feature flag. Flip to true only after the full lifecycle test passes.
-const SPLIT_ENABLED = false;
+const SPLIT_ENABLED = true;
 const DEAL_URL = (id) => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${id}`;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const RESTRICTED_LEADER_IDS = [
