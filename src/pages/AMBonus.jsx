@@ -171,6 +171,18 @@ export default function AMBonus() {
     setEditingId(sub.id);
     setShowForm(true);
   };
+  // Admin-only: pull an accidentally approved submission out of the AM's metrics.
+  // Keeps the row (status='removed') so history and disputes stay auditable.
+  const removeFromMetrics = async (sub) => {
+    if (!confirm(`Remove ${sub.client_name}'s "${sub.product_name}" submission from the AM's metrics? It stays in history marked as removed.`)) return;
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/credit_building_submissions?id=eq.${sub.id}`, {
+        method: 'PATCH', headers: { ...supaHeaders, Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'removed', removed_by: currentUser?.id, removed_at: new Date().toISOString() })
+      });
+      loadData();
+    } catch (e) { setError(e.message); }
+  };
   const submitCreditBuilding = async () => {
     if (!formData.client_name || !formData.product_name) return;
     if (!proofFile && !editExisting.proofUrl) { setError('A proof screenshot is required.'); return; }
@@ -1389,6 +1401,9 @@ export default function AMBonus() {
                       <p className="font-medium">{s.client_name}</p>
                       {(isAdmin || (s.submitted_by === currentUser?.id && s.status === 'pending')) && (
                         <button onClick={() => startEdit(s)} className="text-xs text-asap-blue hover:underline">Edit</button>
+                      )}
+                      {isAdmin && s.status === 'approved' && (
+                        <button onClick={() => removeFromMetrics(s)} className="text-xs text-red-600 hover:underline ml-2">Remove from metrics</button>
                       )}
                       {s.pipedrive_deal_id && <a href={DEAL_URL(s.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">Deal #{s.pipedrive_deal_id} ↗</a>}
                     </td>
