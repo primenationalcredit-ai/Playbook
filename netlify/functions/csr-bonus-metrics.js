@@ -159,7 +159,7 @@ exports.handler = async (event) => {
     let csrUsers = [];
     let reviews = [];
     try { csrUsers = await supaGet('users', 'department=eq.customer_support&select=id,name,hire_date'); } catch (e) {}
-    try { reviews = await supaGet('incoming_reviews', `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))&select=assigned_to,location_name,reviewer_name,rating,review_date`); } catch (e) {}
+    try { reviews = await supaGet('incoming_reviews', `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))&delisted_at=is.null&select=assigned_to,location_name,reviewer_name,rating,review_date`); } catch (e) {}
     const nameToUserId = {};
     const nameToHire = {};
     for (const u of csrUsers) if (u.name) { nameToUserId[u.name.trim().toLowerCase()] = u.id; nameToHire[u.name.trim().toLowerCase()] = u.hire_date || null; }

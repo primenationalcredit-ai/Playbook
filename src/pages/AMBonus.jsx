@@ -97,7 +97,7 @@ export default function AMBonus() {
         const nm = new Date(ry, rm, 1);
         const nextMonthStart = `${nm.getFullYear()}-${String(nm.getMonth() + 1).padStart(2, '0')}-01`;
         const revFilter = `or=(and(review_date.gte.${monthStart},review_date.lt.${nextMonthStart}),and(review_date.is.null,created_at.gte.${monthStart},created_at.lt.${nextMonthStart}))`;
-        const revRes = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?${revFilter}&select=*`, { headers: supaHeaders });
+        const revRes = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?${revFilter}&delisted_at=is.null&select=*`, { headers: supaHeaders });
         if (revRes.ok) setReviews(await revRes.json());
       } catch(e) {}
 
