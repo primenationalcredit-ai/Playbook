@@ -1268,23 +1268,21 @@ export default function Invoices() {
                 <div className="mb-3 text-sm text-slate-600">
                   Original charge: <b>${(parseFloat(modal.amount) || 0).toFixed(2)}</b> due {fmtDate(modal.current_due_date)}.
                 </div>
-                <div className="mb-3">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Pay now (partial amount)</label>
+                <div className="mb-3 p-3 border border-slate-200 rounded-lg">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Payment 1 - what they're paying now</p>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Amount</label>
                   <input type="number" step="0.01" min="0.01" value={form.partial_amount || ''} onChange={e => setForm({ ...form, partial_amount: e.target.value })}
                     placeholder="e.g. 150.00"
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
-                </div>
-                <div className="mb-3">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Charge first payment on</label>
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue mb-2" />
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">Payment date</label>
                   <input type="date" value={form.first_date || ''} onChange={e => setForm({ ...form, first_date: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
                   <p className="text-[11px] text-slate-500 mt-1">{form.first_date === new Date().toISOString().slice(0, 10) ? 'Today: the card is charged as soon as you save.' : 'Charges automatically on this date.'}</p>
                 </div>
-                <div className="mb-3 px-3 py-2 bg-slate-50 rounded text-sm">
-                  Remainder: <b>${Math.max(0, (parseFloat(modal.amount) || 0) - (parseFloat(form.partial_amount) || 0)).toFixed(2)}</b>
-                </div>
-                <div className="mb-4">
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">Charge remainder on</label>
+                <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-slate-50">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Payment 2 - remaining balance</p>
+                  <div className="text-lg font-bold text-slate-800 mb-2">${Math.max(0, (parseFloat(modal.amount) || 0) - (parseFloat(form.partial_amount) || 0)).toFixed(2)}</div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">2nd payment date</label>
                   <input type="date" value={form.remainder_date || ''} onChange={e => setForm({ ...form, remainder_date: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
                 </div>
