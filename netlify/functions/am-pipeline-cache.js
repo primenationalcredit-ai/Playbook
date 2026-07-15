@@ -33,6 +33,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCOUNT_MANAGER_FIELD = '0a2bceaec010dd949056d374970917a6b573f1dc';
 const UPDATE_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
 const LOGINS_NOT_READY = 934;
+const PAYMENT_STALL_IDS = new Set([1616, 1777, 1861]); // OWES MONEY family - payment bucket, not report population
 const STALL_MIN_DAYS = 14;            // grace period after a round ends before Logins Not Ready counts
 const START_WINDOW_MIN_DAYS = 45;     // round must have started at least this long ago to be evaluated (cuts out mid-round)
 const START_WINDOW_MAX_DAYS = 90;     // and no more than this long ago (cuts out end-of-service / old clients)
@@ -341,6 +342,13 @@ exports.handler = async (event) => {
 
     // PHASE 2: page people, read AM + Update Status, join with round data, score
     if (phase === 'persons') {
+      // Update Status option labels (id -> label) for the population exclusions below.
+      let statusLabelById = {};
+      try {
+        const pfRes = await pdGet('/personFields');
+        const usf = (pfRes.data || []).find(fl => fl.key === UPDATE_STATUS_FIELD);
+        for (const o of (usf && usf.options) || []) statusLabelById[Number(o.id)] = String(o.label || '');
+      } catch (e) {}
       let hasMore = true, aborted = false;
       while (hasMore && left()) {
         const res = await pdGet(`/persons?start=${cursor}&limit=500`);
@@ -362,13 +370,24 @@ exports.handler = async (event) => {
           const startedInWindow = daysSinceStart != null && daysSinceStart >= START_WINDOW_MIN_DAYS && daysSinceStart <= START_WINDOW_MAX_DAYS;
           const roundEnded = !!(re && re <= now);
           const daysSince = roundEnded ? daysBetween(now, re) : null;
-          const inWindow = startedInWindow;
+          let inWindow = startedInWindow;
+          let excludedWhy = null;
+          if (inWindow) {
+            const statusLabel = statusLabelById[statusId] || '';
+            if (PAYMENT_STALL_IDS.has(statusId) || /owes money|waiting on \$\$\$/i.test(statusLabel)) {
+              // Payment-blocked: tracked under the payment stall bucket, not report On-Time.
+              inWindow = false; excludedWhy = 'payment-blocked';
+            } else if (/rd\s*3.*results\s*sent|results\s*sent.*rd\s*3|service\s*complete|program\s*complete|all\s*rounds\s*(done|complete)/i.test(statusLabel)) {
+              // Service complete: final results sent - nothing left to stall.
+              inWindow = false; excludedWhy = 'service-complete';
+            }
+          }
           let stalled = false, reason = null;
           // Stalled: in the population, still Logins Not Ready, and 14+ days past the latest round end.
           if (inWindow && statusId === LOGINS_NOT_READY && roundEnded && daysSince >= STALL_MIN_DAYS) {
             stalled = true; reason = `Logins Not Ready ${daysSince}d past round end`;
           }
-          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, dealId: ad.dealId, roundEnded, daysSince, roundEndDate: re ? re.toISOString().slice(0, 10) : null, inWindow, stalled, reason };
+          personData[p.id] = { am, statusId, name: p.name, pipeline: ad.pipeline, dealId: ad.dealId, roundEnded, daysSince, roundEndDate: re ? re.toISOString().slice(0, 10) : null, inWindow, stalled, reason, excludedWhy };
         }
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
         cursor = res.additional_data?.pagination?.next_start || (cursor + 500);
