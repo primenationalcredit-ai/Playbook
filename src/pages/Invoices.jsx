@@ -243,9 +243,9 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 <CalendarClock size={12} /> Edit Date
               </button>
               {SPLIT_ENABLED && (
-              <button onClick={() => onAction({ type: 'split_charge', charge_id: c.id, amount: c.amount, current_due_date: c.due_date })}
+              <button onClick={() => onAction({ type: 'request_split', charge_id: c.id, amount: c.amount, current_due_date: c.due_date })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded hover:bg-purple-700">
-                <Undo2 size={12} /> Split
+                <Undo2 size={12} /> Request split
               </button>
               )}
               <button onClick={() => onAction({ type: 'pause_admin', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
@@ -1198,6 +1198,7 @@ export default function Invoices() {
   }, []);
 
   const modalTitles = {
+    request_split: 'Request a payment split',
     send_payment_form: 'Send Payment Form to Client',
     update_due_date: 'Edit Due Date',
     pause_admin: 'Pause Invoice',
@@ -1422,7 +1423,7 @@ export default function Invoices() {
                   modal.type === 'send_payment_form' ? 'Send to Client' :
                   modal.type === 'resume' ? 'Resume' :
                   modal.type.startsWith('request_') ? 'Submit for approval' :
-                  'Apply'
+                  (modal.type === 'request_split' ? 'Submit for approval' : 'Apply')
                 )}
               </button>
             </div>
