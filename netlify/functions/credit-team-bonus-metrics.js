@@ -175,6 +175,7 @@ exports.handler = async (event) => {
     const day4List = [];
     const day4PaymentHold = [];
     const day4WrongStage = [];
+    const day4ClientBlocked = [];
     try {
       const rr = await pdGet(`/deals?filter_id=${REPORTS_RECEIVED_FILTER}&start=0&limit=500`);
       const rrDeals = rr.data || [];
@@ -196,20 +197,52 @@ exports.handler = async (event) => {
           for (const inv of invs) holdDeals.add(String(inv.pipedrive_deal_id));
         }
       } catch (e) {}
-      rrDeals.forEach((deal) => {
+      // Person Update Status option ids that mean the CLIENT is blocking progress
+      // (owes money / missing docs). Matched by label so renamed or new variants
+      // (e.g. "OWES MONEY *AUTO PILOT*", "***MISSING DOCS***") are caught automatically.
+      const UPDATE_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
+      let blockedStatusIds = new Set();
+      try {
+        const pf = await pdGet('/personFields');
+        const usField = (pf.data || []).find(fl => fl.key === UPDATE_STATUS_FIELD);
+        for (const o of (usField && usField.options) || []) {
+          if (/owes money|missing docs/i.test(String(o.label || ''))) blockedStatusIds.add(Number(o.id));
+        }
+      } catch (e) {}
+      for (const deal of rrDeals) {
         if (rrStageIds && !rrStageIds.has(deal.stage_id)) {
           day4WrongStage.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id });
-          return; // filter lag - deal is really in another stage (e.g. Missing Docs)
+          continue; // filter lag - deal is really in another stage (e.g. Missing Docs)
         }
         if (holdDeals.has(String(deal.id))) {
           day4PaymentHold.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id });
-          return; // client owes money - hold, not a team delay
+          continue; // client owes money - hold, not a team delay
         }
         queueTotal++;
         const t = deal.stage_change_time || deal.add_time;
         const bd = t ? businessDaysDiff(new Date(t.replace(' ', 'T') + 'Z'), now) : 0;
-        if (bd > 4) { day4Count++; day4List.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id, days: bd }); }
-      });
+        if (bd > 4) {
+          // Marycruz 7/15: before counting an overdue deal against the team, check the
+          // PERSON's Update Status - owes-money / missing-docs clients are excluded.
+          let blocked = false;
+          if (blockedStatusIds.size > 0) {
+            try {
+              const pid = deal.person_id && (deal.person_id.value || deal.person_id.id || deal.person_id);
+              if (pid) {
+                const pr = await pdGet(`/persons/${pid}`);
+                const sid = Number(pr && pr.data && pr.data[UPDATE_STATUS_FIELD]) || 0;
+                blocked = blockedStatusIds.has(sid);
+              }
+            } catch (e) {}
+          }
+          if (blocked) {
+            day4ClientBlocked.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id, days: bd });
+            queueTotal--;
+            continue;
+          }
+          day4Count++; day4List.push({ name: deal.title || `Deal ${deal.id}`, dealId: deal.id, days: bd });
+        }
+      }
     } catch (e) { /* leave zeros */ }
 
     // --- On-Time R1: filter 17093 holds Round 1 deals due by the 5th business day; should be empty by 5pm CST ---
