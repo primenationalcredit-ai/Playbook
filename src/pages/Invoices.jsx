@@ -1118,8 +1118,9 @@ export default function Invoices() {
         if (!form.first_date) throw new Error('Choose a date for the first payment');
         if (!form.remainder_date) throw new Error('Choose a date for the remainder');
         if (form.remainder_date < form.first_date) throw new Error('Remainder date must be on or after the first payment date');
-        await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date });
-        setNotice({ type: 'success', text: 'Split into $' + partial.toFixed(2) + ' and $' + (orig - partial).toFixed(2) + '.' });
+        const r = await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date });
+        const warnTxt = (r.warnings && r.warnings.length) ? ' \u26A0 ' + r.warnings.join(' ') : '';
+        setNotice({ type: 'success', text: (r.message || ('Split into $' + partial.toFixed(2) + ' and $' + (orig - partial).toFixed(2) + '.')) + warnTxt });
       }
       setTimeout(() => { setModal(null); loadPendingApprovals(); if (mode === 'browse') browse(); else lookup(dealInput); }, 1400);
     } catch (e) {
