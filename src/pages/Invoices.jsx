@@ -1118,6 +1118,17 @@ export default function Invoices() {
         if (!form.first_date) throw new Error('Choose a date for the first payment');
         if (!form.remainder_date) throw new Error('Choose a date for the remainder');
         if (form.remainder_date < form.first_date) throw new Error('Remainder date must be on or after the first payment date');
+        // ===== SPLIT POLICY GUARDRAILS =====
+        const origDue = String(modal.current_due_date || '').slice(0, 10);
+        if (origDue) {
+          if (form.first_date > origDue) throw new Error(`Payment 1 cannot be later than the original due date (${fmtDate(origDue)}). A split is not grounds to also extend the deadline; a date change is a separate approval.`);
+          const d45 = new Date(origDue + 'T00:00:00'); d45.setDate(d45.getDate() + 45);
+          const cap45 = d45.toISOString().slice(0, 10);
+          if (form.remainder_date > cap45) throw new Error(`Payment 2 must fall within 45 days of the original due date (by ${fmtDate(cap45)}). Beyond that this is an installment plan, not a split.`);
+        }
+        const splitGapDays = Math.round((new Date(form.remainder_date + 'T00:00:00') - new Date(form.first_date + 'T00:00:00')) / 86400000);
+        if (splitGapDays > 14) throw new Error(`Payments are ${splitGapDays} days apart. The gap between split payments is capped at 14 days; beyond that it is an installment plan, not a split.`);
+        if (origDue && form.remainder_date.slice(0, 7) !== origDue.slice(0, 7) && !form.month_ack) throw new Error('This split crosses a month boundary, which affects qualified-doc and bonus timing. Check the acknowledgment box to confirm this has been reviewed.');
         const r = await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date });
         const warnTxt = (r.warnings && r.warnings.length) ? ' \u26A0 ' + r.warnings.join(' ') : '';
         setNotice({ type: 'success', text: (r.message || ('Split into $' + partial.toFixed(2) + ' and $' + (orig - partial).toFixed(2) + '.')) + warnTxt });
@@ -1285,6 +1296,18 @@ export default function Invoices() {
                   <label className="block text-xs font-semibold text-slate-500 mb-1">2nd payment date</label>
                   <input type="date" value={form.remainder_date || ''} onChange={e => setForm({ ...form, remainder_date: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  <p className="text-[11px] text-slate-500 mt-2">Policy: Payment 1 no later than the original due date. Gap between payments 14 days max. Full balance within 45 days of the original due date.</p>
+                  {(() => {
+                    const origDue = String(modal.current_due_date || '').slice(0, 10);
+                    const monthCross = origDue && form.remainder_date && form.remainder_date.slice(0, 7) !== origDue.slice(0, 7);
+                    if (!monthCross) return null;
+                    return (
+                      <label className="flex items-start gap-2 mt-2 p-2 rounded bg-amber-50 border border-amber-300 text-xs text-amber-800">
+                        <input type="checkbox" checked={!!form.month_ack} onChange={e => setForm({ ...form, month_ack: e.target.checked })} className="mt-0.5" />
+                        <span>This split crosses a month boundary and affects qualified-doc / bonus timing (Doc Fee Accelerator rules). I confirm this split has been reviewed.</span>
+                      </label>
+                    );
+                  })()}
                 </div>
               </>
             )}
