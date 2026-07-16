@@ -257,7 +257,11 @@ export default function ConsultantBonus() {
 
   const exportReport = () => {
     if (!data) return;
-    const cons = Object.values(data.consultants);
+    // Admins export the full team; consultants export their own statement only.
+    const cons = isAdmin
+      ? Object.values(data.consultants)
+      : [data.consultants[selectedConsultant]].filter(Boolean);
+    if (cons.length === 0) return;
     const html = `<!DOCTYPE html><html><head><title>Bonus Report - ${data.month}</title>
     <style>body{font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px;color:#333}
     h1{font-size:22px;border-bottom:2px solid #333;padding-bottom:8px}
@@ -370,12 +374,10 @@ export default function ConsultantBonus() {
               {syncing ? 'Syncing...' : 'Sync Now'}
             </button>
           )}
-          {isAdmin && (
-            <button onClick={exportReport}
-              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700">
-              Export PDF
-            </button>
-          )}
+          <button onClick={exportReport}
+            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700">
+            Export PDF
+          </button>
           {!isAdmin && (
             <button onClick={() => loadData()} className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200"><RefreshCw size={16} /></button>
           )}
