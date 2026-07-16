@@ -61,6 +61,7 @@ function StatusPill({ status }) {
 
 function RequestSummary({ a }) {
   const isPause = a.request_type === 'pause';
+  const isSplit = a.request_type === 'split';
   const Row = ({ label, children, valueClass = '' }) => (
     <div className="flex py-1.5 border-b border-slate-100 last:border-b-0">
       <dt className="w-32 flex-shrink-0 text-slate-400">{label}</dt>
@@ -70,8 +71,8 @@ function RequestSummary({ a }) {
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-3">
-        {isPause ? <PauseCircle size={18} className="text-amber-600" /> : <CalendarClock size={18} className="text-asap-blue" />}
-        <span className="font-semibold text-slate-800">{isPause ? 'Pause request' : 'Date change request'}</span>
+        {isPause ? <PauseCircle size={18} className="text-amber-600" /> : isSplit ? <DollarSign size={18} className="text-purple-600" /> : <CalendarClock size={18} className="text-asap-blue" />}
+        <span className="font-semibold text-slate-800">{isPause ? 'Pause request' : isSplit ? 'Split payment request' : 'Date change request'}</span>
         <StatusPill status={a.status} />
       </div>
       <dl className="text-sm">
@@ -83,6 +84,11 @@ function RequestSummary({ a }) {
         <Row label="Current due">{fmtDate(a.current_due_date)}</Row>
         {isPause
           ? <Row label="Pause">{a.pause_indefinite ? 'Indefinitely' : `Until ${fmtDate(a.pause_until_date)}`}</Row>
+          : isSplit
+          ? <>
+              <Row label="Payment 1">{fmtMoney(a.split_partial_amount)} on {fmtDate(a.split_first_date)}</Row>
+              <Row label="Payment 2">{fmtMoney((parseFloat(a.amount) || 0) - (parseFloat(a.split_partial_amount) || 0))} on {fmtDate(a.split_remainder_date)}</Row>
+            </>
           : <Row label="New due date">{fmtDate(a.new_due_date)}</Row>}
         <Row label="Requested by">{a.requested_by_name || a.requested_by_email}</Row>
         <Row label="Reason" valueClass="italic font-normal">{a.reason || '—'}</Row>
@@ -96,7 +102,7 @@ function RequestSummary({ a }) {
             className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded-lg hover:bg-blue-800">
             <FileText size={16} /> Go to customer invoice
           </a>
-          <p className="text-[11px] text-slate-400 mt-1.5">Open this client's invoices to verify the date change or pause.</p>
+          <p className="text-[11px] text-slate-400 mt-1.5">Open this client's invoices to verify this request.</p>
         </div>
       )}
     </div>
@@ -423,6 +429,7 @@ function ListView({ isAdmin, myEmail, onOpen }) {
         <div className="space-y-2">
           {shown.map(a => {
             const isPause = a.request_type === 'pause';
+            const isSplit = a.request_type === 'split';
             const unread = (a.unread_count || 0) > 0;
             const decided = a.status === 'approved' || a.status === 'rejected';
             const denied = a.status === 'rejected';
@@ -436,14 +443,16 @@ function ListView({ isAdmin, myEmail, onOpen }) {
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2 min-w-0">
                       {unread && <span className="w-2.5 h-2.5 rounded-full bg-asap-blue flex-shrink-0" title="New message" />}
-                      {isPause ? <PauseCircle size={18} className="text-amber-600 flex-shrink-0" /> : <CalendarClock size={18} className="text-asap-blue flex-shrink-0" />}
+                      {isPause ? <PauseCircle size={18} className="text-amber-600 flex-shrink-0" /> : isSplit ? <DollarSign size={18} className="text-purple-600 flex-shrink-0" /> : <CalendarClock size={18} className="text-asap-blue flex-shrink-0" />}
                       <div className="min-w-0">
                         <p className="font-semibold text-slate-800 truncate">
-                          {isPause ? 'Pause' : 'Date change'} · {a.client_name || 'Client'} · {fmtMoney(a.amount)}{a.payment_label ? ` · ${a.payment_label}` : ''}
+                          {isPause ? 'Pause' : isSplit ? 'Split payment' : 'Date change'} · {a.client_name || 'Client'} · {fmtMoney(a.amount)}{a.payment_label ? ` · ${a.payment_label}` : ''}
                         </p>
                         <p className="text-[11px] text-slate-500 truncate">
                           {isPause
                             ? <>Pause {a.pause_indefinite ? 'indefinitely' : `until ${fmtDate(a.pause_until_date)}`}</>
+                            : isSplit
+                            ? <>{fmtMoney(a.split_partial_amount)} on {fmtDate(a.split_first_date)} + {fmtMoney((parseFloat(a.amount) || 0) - (parseFloat(a.split_partial_amount) || 0))} on {fmtDate(a.split_remainder_date)}</>
                             : <>{fmtDate(a.current_due_date)} → {fmtDate(a.new_due_date)}</>}
                           {' · by '}{a.requested_by_name || a.requested_by_email}
                         </p>
