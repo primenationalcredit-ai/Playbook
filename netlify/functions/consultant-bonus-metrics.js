@@ -95,9 +95,13 @@ exports.handler = async (event) => {
           const nm = row.consultant;
           if (!nm) continue;
           if (!psAgg[nm]) psAgg[nm] = { sales: 0, today: 0, count: 0, docs: 0, partials: 0, finals: 0 };
-          psAgg[nm].sales += amtAll;
-          psAgg[nm].count++;
-          if (row.date_paid === mirrorTodayStr) psAgg[nm].today += amtAll;
+          // Consultant tiles show COMMISSIONABLE sales only (doc/partial/final).
+          // Additional rounds etc. stay in the company MTD above, not personal numbers.
+          if (catAll !== 'other') {
+            psAgg[nm].sales += amtAll;
+            psAgg[nm].count++;
+            if (row.date_paid === mirrorTodayStr) psAgg[nm].today += amtAll;
+          }
           if (catAll === 'doc') psAgg[nm].docs++;
           else if (catAll === 'partial') psAgg[nm].partials++;
           else if (catAll === 'final') psAgg[nm].finals++;
