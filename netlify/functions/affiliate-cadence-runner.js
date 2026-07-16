@@ -357,6 +357,23 @@ exports.handler = async (event) => {
         continue;
       }
 
+      // ===== ATOMIC CLAIM (dedupe) =====
+      // Advance the org's cadence pointers BEFORE sending, filtered on the current
+      // next_touch_due. If a parallel/overlapping run already claimed this org, the
+      // filter matches nothing and we skip - the same touch can never send twice.
+      const claimFilter = aff.next_touch_due == null ? 'next_touch_due=is.null' : `next_touch_due=eq.${encodeURIComponent(aff.next_touch_due)}`;
+      const claim = await supa(`affiliate_orgs?id=eq.${aff.id}&${claimFilter}`, {
+        method: 'PATCH', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          cadence_step: newStep, cadence_segment: cadSeg,
+          next_touch_due: tmpl.channel === 'call' ? null : nextDue,
+          last_touch_at: new Date().toISOString(), last_touch_channel: tmpl.channel
+        })
+      });
+      if (!Array.isArray(claim.json) || claim.json.length === 0) {
+        results.skipped.push({ org: aff.org_name, why: 'already claimed by another run' });
+        continue;
+      }
       try {
         if (tmpl.channel === 'call') {
           const stats = `${aff.sold_clients || 0} clients, last ${monthName(aff.last_referral_date)}`;
@@ -401,16 +418,17 @@ exports.handler = async (event) => {
             ? `${todayCT}: SMS sent (ASAP outreach)`
             : `${todayCT}: Email sent: ${tmpl.subject || 'value email'}${aff.__ai ? ' (personalized)' : ''} (ASAP outreach)`;
         await appendPipedriveFollowUp(aff, fuLine);
+        results.processed++;
+      } catch (e) {
+        // Send failed after the claim - restore the org so the touch retries later.
         await supa(`affiliate_orgs?id=eq.${aff.id}`, {
           method: 'PATCH', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify({
-            cadence_step: newStep, cadence_segment: cadSeg,
-            next_touch_due: tmpl.channel === 'call' ? null : nextDue, // call: resumes when task completes
-            last_touch_at: new Date().toISOString(), last_touch_channel: tmpl.channel
+            cadence_step: aff.cadence_step || 0, cadence_segment: aff.cadence_segment || null,
+            next_touch_due: aff.next_touch_due || null,
+            last_touch_at: aff.last_touch_at || null, last_touch_channel: aff.last_touch_channel || null
           })
-        });
-        results.processed++;
-      } catch (e) {
+        }).catch(() => {});
         results.errors.push({ org: aff.org_name, error: String(e.message || e).slice(0, 150) });
         if (results.errors.length >= 5) break; // stop the run if things are failing
       }
