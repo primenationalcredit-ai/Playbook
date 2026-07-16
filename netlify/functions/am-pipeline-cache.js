@@ -313,6 +313,12 @@ exports.handler = async (event) => {
 
     // PHASE 1: open deals -> active client set with round-end + pipeline + move date
     if (phase === 'deals') {
+      // Stage names (id -> name) so additional-round deals can be excluded in phase 2.
+      let stageNameById = {};
+      try {
+        const stRes = await pdGet('/stages');
+        for (const stg of stRes.data || []) stageNameById[Number(stg.id)] = String(stg.name || '');
+      } catch (e) {}
       let hasMore = true, aborted = false;
       while (hasMore && left()) {
         const res = await pdGet(`/deals?status=open&start=${cursor}&limit=500`);
@@ -329,7 +335,7 @@ exports.handler = async (event) => {
           const { maxStart, maxEnd } = roundDates(d);
           const existing = activeData[pid];
           const better = !existing || PRIO[pipeName] > PRIO[existing.pipeline] || (!existing.roundStart && maxStart);
-          if (better) activeData[pid] = { pipeline: pipeName, roundStart: maxStart ? maxStart.toISOString() : null, roundEnd: maxEnd ? maxEnd.toISOString() : null, dealId: d.id };
+          if (better) activeData[pid] = { pipeline: pipeName, roundStart: maxStart ? maxStart.toISOString() : null, roundEnd: maxEnd ? maxEnd.toISOString() : null, dealId: d.id, stageName: stageNameById[Number(d.stage_id)] || '' };
         }
         hasMore = res.additional_data?.pagination?.more_items_in_collection || false;
         cursor = res.additional_data?.pagination?.next_start || (cursor + 500);
@@ -372,6 +378,10 @@ exports.handler = async (event) => {
           const daysSince = roundEnded ? daysBetween(now, re) : null;
           let inWindow = startedInWindow;
           let excludedWhy = null;
+          if (inWindow && /additional/i.test(ad.stageName || '')) {
+            // Additional-round cycle: not part of the original-service report population.
+            inWindow = false; excludedWhy = 'additional-round';
+          }
           if (inWindow) {
             const statusLabel = statusLabelById[statusId] || '';
             if (PAYMENT_STALL_IDS.has(statusId) || /owes money|waiting on \$\$\$/i.test(statusLabel)) {
