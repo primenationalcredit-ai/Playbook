@@ -176,6 +176,86 @@ export default function CSRBonus() {
         </div>
       </div>
 
+      {/* LEADERSHIP: Today's activity + MTD visuals (bonus list demoted below) */}
+      {isAdmin && names.length > 0 && (() => {
+        const T = names.map((n) => ({ name: n, r: data.csrs[n] }));
+        const sum = (f) => T.reduce((acc, x) => acc + (f(x.r) || 0), 0);
+        const tToday = sum((r) => r.today?.total);
+        const tIdiq = sum((r) => r.today?.idiq);
+        const tDoc = sum((r) => r.today?.docFees);
+        const tRev = sum((r) => r.reviewBonus?.today);
+        const maxRpt = Math.max(1, ...T.map((x) => x.r.reports?.total || 0));
+        const byToday = T.slice().sort((a, b) => (b.r.today?.total || 0) - (a.r.today?.total || 0));
+        const pct = (v) => Math.round(((v || 0) / maxRpt) * 100);
+        return (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-2">Today's Activity - Team</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <StatCard label="Reports pulled today" value={tToday} accent="text-indigo-600" />
+                <StatCard label="IDIQ today" value={tIdiq} />
+                <StatCard label="Doc fees today" value={tDoc} accent="text-emerald-600" />
+                <StatCard label="Reviews today" value={tRev} accent="text-emerald-600" />
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mt-3">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="text-left font-medium px-4 py-2">CSR</th>
+                      <th className="text-right font-medium px-4 py-2">Reports today</th>
+                      <th className="text-right font-medium px-4 py-2">IDIQ</th>
+                      <th className="text-right font-medium px-4 py-2">Doc fees</th>
+                      <th className="text-right font-medium px-4 py-2">Reviews</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {byToday.map(({ name, r }) => (
+                      <tr key={'td-' + name} className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${name === selected ? 'bg-indigo-50' : ''}`} onClick={() => setSelected(name)}>
+                        <td className="px-4 py-2 font-medium text-slate-800">{name}</td>
+                        <td className={`px-4 py-2 text-right font-semibold ${(r.today?.total || 0) > 0 ? 'text-indigo-700' : 'text-slate-300'}`}>{r.today?.total || 0}</td>
+                        <td className="px-4 py-2 text-right">{r.today?.idiq || 0}</td>
+                        <td className={`px-4 py-2 text-right ${(r.today?.docFees || 0) > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-300'}`}>{r.today?.docFees || 0}</td>
+                        <td className="px-4 py-2 text-right">{r.reviewBonus?.today || 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-2">Month to Date</h2>
+              <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+                {T.slice().sort((a, b) => (b.r.reports?.total || 0) - (a.r.reports?.total || 0)).map(({ name, r }) => (
+                  <div key={'mtd-' + name} className={`p-3 cursor-pointer hover:bg-slate-50 ${name === selected ? 'bg-indigo-50' : ''}`} onClick={() => setSelected(name)}>
+                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                      <span className="font-medium text-slate-800 text-sm">{name}</span>
+                      <span className="text-xs text-slate-500">
+                        {r.reports?.total || 0} reports · {r.conversionBonus?.reachedDocs ?? 0} doc fees
+                      </span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
+                      <div className="bg-indigo-500 h-full" style={{ width: pct(r.reports?.idiq) + '%' }} title={`IDIQ ${r.reports?.idiq || 0}`}></div>
+                      <div className="bg-sky-400 h-full" style={{ width: pct(r.reports?.smartcredit) + '%' }} title={`SmartCredit ${r.reports?.smartcredit || 0}`}></div>
+                      <div className="bg-slate-300 h-full" style={{ width: pct(r.reports?.other) + '%' }} title={`Other ${r.reports?.other || 0}`}></div>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1.5 text-[11px]">
+                      <span className={(r.conversionBonus?.rptsToQuoteRate ?? 0) >= 50 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}>R→Q {r.conversionBonus?.rptsToQuoteRate ?? 0}%</span>
+                      <span className={(r.conversionBonus?.quoteToDocsRate ?? 0) >= 40 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}>Q→Doc {r.conversionBonus?.quoteToDocsRate ?? 0}%</span>
+                      <span className="text-slate-400">{r.reportBonus?.qualified ? 'qualified' : `${Math.max(0, 45 - (r.reports?.total || 0))} to qualify`}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-4 mt-2 text-[11px] text-slate-400">
+                <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-indigo-500 mr-1"></span>IDIQ</span>
+                <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-400 mr-1"></span>SmartCredit</span>
+                <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-300 mr-1"></span>Other</span>
+              </div>
+            </div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 -mb-3">Monthly Bonuses</h2>
+          </div>
+        );
+      })()}
       {/* Admin leaderboard across all CSRs */}
       {isAdmin && names.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
