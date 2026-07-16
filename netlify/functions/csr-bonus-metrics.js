@@ -326,11 +326,11 @@ exports.handler = async (event) => {
         tally[rep].convTotal++;                       // all of the rep's month report-deals (ungated) = conversion denominator
         if (reachedQuoteC) {
           tally[rep].reachedQuote++;
-          tally[rep].quoteList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls });
+          tally[rep].quoteList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls, date: dayOf(r) });
         }
         if (paidDocFeeC) {
           tally[rep].reachedDocs++;
-          tally[rep].docsList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls });
+          tally[rep].docsList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls, date: docFeeDateByDeal[String(r.deal_id)] || dayOf(r) });
         }
         if (viewingCurrentMonth && docFeeDateByDeal[String(r.deal_id)] === todayStr) {
           tally[rep].todayDocFees++;
@@ -357,7 +357,7 @@ exports.handler = async (event) => {
       const rank = pipelineRank(r.pipeline_name);
       const reachedQuote = useQuotedFilter ? movedToQuoted.has(String(r.deal_id)) : (rank >= QUOTE_RANK);
       const paidDocFee = docFeeDealIds.has(String(r.deal_id));
-      tally[rep].reportList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls, reachedQuote, paidDocFee });
+      tally[rep].reportList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, site: r.monitoring_site, type: cls, reachedQuote, paidDocFee, date: dayOf(r) });
     }
 
     // Build per-CSR bonus result

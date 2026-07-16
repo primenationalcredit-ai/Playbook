@@ -58,6 +58,10 @@ export default function CSRBonus() {
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
   });
   const [drill, setDrill] = useState(null);
+  const [tab, setTab] = useState('team');       // team | me | bonuses (admins; non-admins always see their own view)
+  const [range, setRange] = useState('today');  // today | yesterday | week | month | custom
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
 
   const load = async (m) => {
     setLoading(true); setError(null);
@@ -176,88 +180,100 @@ export default function CSRBonus() {
         </div>
       </div>
 
-      {/* LEADERSHIP: Today's activity + MTD visuals (bonus list demoted below) */}
-      {isAdmin && names.length > 0 && (() => {
-        const T = names.map((n) => ({ name: n, r: data.csrs[n] }));
-        const sum = (f) => T.reduce((acc, x) => acc + (f(x.r) || 0), 0);
-        const tToday = sum((r) => r.today?.total);
-        const tIdiq = sum((r) => r.today?.idiq);
-        const tDoc = sum((r) => r.today?.docFees);
-        const tRev = sum((r) => r.reviewBonus?.today);
-        const maxRpt = Math.max(1, ...T.map((x) => x.r.reports?.total || 0));
-        const byToday = T.slice().sort((a, b) => (b.r.today?.total || 0) - (a.r.today?.total || 0));
-        const pct = (v) => Math.round(((v || 0) / maxRpt) * 100);
+      {/* Tabs (leadership) */}
+      {isAdmin && (
+        <div className="flex items-center gap-1 border-b border-slate-200">
+          {[['team', 'Team'], ['me', 'Individual'], ['bonuses', 'Bonuses']].map(([k, lbl]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg -mb-px border ${tab === k ? 'bg-white border-slate-200 border-b-white text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* TEAM: one date selector, four cards, one table */}
+      {isAdmin && tab === 'team' && names.length > 0 && (() => {
+        const ctToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+        const shift = (ds, n) => { const d = new Date(ds + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+        let b0 = ctToday, b1 = ctToday;
+        if (range === 'yesterday') { b0 = shift(ctToday, -1); b1 = b0; }
+        else if (range === 'week') { b0 = shift(ctToday, -6); }
+        else if (range === 'month') { b0 = month + '-01'; b1 = month + '-31'; }
+        else if (range === 'custom') { b0 = customStart || ctToday; b1 = customEnd || ctToday; }
+        const inR = (d) => d && d >= b0 && d <= b1;
+        const per = names.map((n) => {
+          const r = data.csrs[n];
+          const reps = (r.details?.reports || []).filter((d) => inR(d.date));
+          const idiq = reps.filter((d) => d.type === 'idiq').length;
+          const smart = reps.filter((d) => d.type === 'smart').length;
+          const other = reps.length - idiq - smart;
+          const quoted = reps.filter((d) => d.reachedQuote).length;
+          const docs = (r.details?.docsDeals || []).filter((d) => inR(d.date)).length;
+          const reviews = (r.details?.reviews || []).filter((d) => inR(d.date)).length;
+          const rq = reps.length ? Math.round((quoted / reps.length) * 100) : 0;
+          const qd = quoted ? Math.round((reps.filter((d) => d.paidDocFee).length / quoted) * 100) : 0;
+          return { name: n, reports: reps.length, idiq, smart, other, docs, reviews, rq, qd };
+        }).sort((a, b) => b.reports - a.reports || b.docs - a.docs);
+        const tot = per.reduce((a, x) => ({ reports: a.reports + x.reports, docs: a.docs + x.docs, reviews: a.reviews + x.reviews, idiq: a.idiq + x.idiq }), { reports: 0, docs: 0, reviews: 0, idiq: 0 });
         return (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-2">Today's Activity - Team</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <StatCard label="Reports pulled today" value={tToday} accent="text-indigo-600" />
-                <StatCard label="IDIQ today" value={tIdiq} />
-                <StatCard label="Doc fees today" value={tDoc} accent="text-emerald-600" />
-                <StatCard label="Reviews today" value={tRev} accent="text-emerald-600" />
-              </div>
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mt-3">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-slate-500">
-                    <tr>
-                      <th className="text-left font-medium px-4 py-2">CSR</th>
-                      <th className="text-right font-medium px-4 py-2">Reports today</th>
-                      <th className="text-right font-medium px-4 py-2">IDIQ</th>
-                      <th className="text-right font-medium px-4 py-2">Doc fees</th>
-                      <th className="text-right font-medium px-4 py-2">Reviews</th>
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {[['today', 'Today'], ['yesterday', 'Yesterday'], ['week', 'Last 7 days'], ['month', 'This month'], ['custom', 'Custom']].map(([k, lbl]) => (
+                <button key={k} onClick={() => setRange(k)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-full border ${range === k ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-600 hover:border-indigo-300'}`}>
+                  {lbl}
+                </button>
+              ))}
+              {range === 'custom' && (
+                <span className="flex items-center gap-1 text-xs">
+                  <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1 text-xs" />
+                  <span className="text-slate-400">to</span>
+                  <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1 text-xs" />
+                </span>
+              )}
+              <span className="text-[11px] text-slate-400 ml-auto">within {month}</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatCard label="Reports" value={tot.reports} sub={`${tot.idiq} IDIQ`} accent="text-indigo-600" />
+              <StatCard label="Doc fees" value={tot.docs} accent="text-emerald-600" />
+              <StatCard label="Reviews" value={tot.reviews} />
+              <StatCard label="Conversion" value={tot.reports ? Math.round((tot.docs / tot.reports) * 100) + '%' : '0%'} sub="doc fees / reports" />
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="text-left font-medium px-4 py-2">CSR</th>
+                    <th className="text-right font-medium px-4 py-2">Reports</th>
+                    <th className="text-right font-medium px-4 py-2">Doc fees</th>
+                    <th className="text-right font-medium px-4 py-2">Reviews</th>
+                    <th className="text-right font-medium px-4 py-2">R→Q</th>
+                    <th className="text-right font-medium px-4 py-2">Q→Doc</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {per.map((x) => (
+                    <tr key={'tm-' + x.name} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
+                      onClick={() => { setSelected(x.name); setTab('me'); }}>
+                      <td className="px-4 py-2 font-medium text-slate-800">{x.name}</td>
+                      <td className="px-4 py-2 text-right">
+                        <span className={`font-semibold ${x.reports > 0 ? 'text-indigo-700' : 'text-slate-300'}`}>{x.reports}</span>
+                        {x.reports > 0 && <span className="text-[10px] text-slate-400 ml-1.5">{x.idiq}i {x.smart}s {x.other}o</span>}
+                      </td>
+                      <td className={`px-4 py-2 text-right ${x.docs > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-300'}`}>{x.docs}</td>
+                      <td className={`px-4 py-2 text-right ${x.reviews > 0 ? '' : 'text-slate-300'}`}>{x.reviews}</td>
+                      <td className={`px-4 py-2 text-right text-xs ${x.rq >= 50 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>{x.rq}%</td>
+                      <td className={`px-4 py-2 text-right text-xs ${x.qd >= 40 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>{x.qd}%</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {byToday.map(({ name, r }) => (
-                      <tr key={'td-' + name} className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${name === selected ? 'bg-indigo-50' : ''}`} onClick={() => setSelected(name)}>
-                        <td className="px-4 py-2 font-medium text-slate-800">{name}</td>
-                        <td className={`px-4 py-2 text-right font-semibold ${(r.today?.total || 0) > 0 ? 'text-indigo-700' : 'text-slate-300'}`}>{r.today?.total || 0}</td>
-                        <td className="px-4 py-2 text-right">{r.today?.idiq || 0}</td>
-                        <td className={`px-4 py-2 text-right ${(r.today?.docFees || 0) > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-300'}`}>{r.today?.docFees || 0}</td>
-                        <td className="px-4 py-2 text-right">{r.reviewBonus?.today || 0}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-2">Month to Date</h2>
-              <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-                {T.slice().sort((a, b) => (b.r.reports?.total || 0) - (a.r.reports?.total || 0)).map(({ name, r }) => (
-                  <div key={'mtd-' + name} className={`p-3 cursor-pointer hover:bg-slate-50 ${name === selected ? 'bg-indigo-50' : ''}`} onClick={() => setSelected(name)}>
-                    <div className="flex items-center justify-between gap-3 mb-1.5">
-                      <span className="font-medium text-slate-800 text-sm">{name}</span>
-                      <span className="text-xs text-slate-500">
-                        {r.reports?.total || 0} reports · {r.conversionBonus?.reachedDocs ?? 0} doc fees
-                      </span>
-                    </div>
-                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden flex">
-                      <div className="bg-indigo-500 h-full" style={{ width: pct(r.reports?.idiq) + '%' }} title={`IDIQ ${r.reports?.idiq || 0}`}></div>
-                      <div className="bg-sky-400 h-full" style={{ width: pct(r.reports?.smartcredit) + '%' }} title={`SmartCredit ${r.reports?.smartcredit || 0}`}></div>
-                      <div className="bg-slate-300 h-full" style={{ width: pct(r.reports?.other) + '%' }} title={`Other ${r.reports?.other || 0}`}></div>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1.5 text-[11px]">
-                      <span className={(r.conversionBonus?.rptsToQuoteRate ?? 0) >= 50 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}>R→Q {r.conversionBonus?.rptsToQuoteRate ?? 0}%</span>
-                      <span className={(r.conversionBonus?.quoteToDocsRate ?? 0) >= 40 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}>Q→Doc {r.conversionBonus?.quoteToDocsRate ?? 0}%</span>
-                      <span className="text-slate-400">{r.reportBonus?.qualified ? 'qualified' : `${Math.max(0, 45 - (r.reports?.total || 0))} to qualify`}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-4 mt-2 text-[11px] text-slate-400">
-                <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-indigo-500 mr-1"></span>IDIQ</span>
-                <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-sky-400 mr-1"></span>SmartCredit</span>
-                <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-300 mr-1"></span>Other</span>
-              </div>
-            </div>
-            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 -mb-3">Monthly Bonuses</h2>
           </div>
         );
       })()}
       {/* Admin leaderboard across all CSRs */}
-      {isAdmin && names.length > 0 && (
+      {isAdmin && tab === 'bonuses' && names.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500">
@@ -310,7 +326,7 @@ export default function CSRBonus() {
       )}
 
       {/* Selected CSR detail */}
-      {c ? (
+      {(!isAdmin || tab === 'me') && c ? (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-800">{myName} — {month}</h2>
