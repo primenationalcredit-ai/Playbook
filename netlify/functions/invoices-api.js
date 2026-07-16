@@ -39,58 +39,29 @@ async function zohoToken() {
 
 // Shrink the original invoice to the first piece; create+send+link the remainder invoice.
 async function zohoSplit(d) {
+  // ONE INVOICE, TWO PAYMENTS (Joe 7/15): Zoho is not restructured by a split.
+  // The invoice keeps its full amount; both scheduled charges share the same
+  // zoho_invoice_id and pay it down in two collections. Only touch: move the
+  // invoice due date to payment 2's date so it doesn't show overdue in between.
   const out = { warnings: [], summary: [] };
-  if (!d.zoho_invoice_id) { out.warnings.push('No Zoho invoice linked to the split charge - update Zoho manually.'); return out; }
-  if (!ZOHO_CLIENT_ID || !ZOHO_CLIENT_SECRET || !ZOHO_REFRESH_TOKEN || !ZOHO_ORG_ID) { out.warnings.push('Zoho credentials not configured - invoices not updated.'); return out; }
+  if (!d.zoho_invoice_id) { out.warnings.push('No Zoho invoice linked to the split charge - nothing to update.'); return out; }
+  if (!ZOHO_CLIENT_ID || !ZOHO_CLIENT_SECRET || !ZOHO_REFRESH_TOKEN || !ZOHO_ORG_ID) { out.warnings.push('Zoho credentials not configured - invoice due date not updated.'); return out; }
   const token = await zohoToken();
-  if (!token) { out.warnings.push('Zoho auth failed - invoices not updated.'); return out; }
+  if (!token) { out.warnings.push('Zoho auth failed - invoice due date not updated.'); return out; }
   const zh = { Authorization: `Zoho-oauthtoken ${token}`, 'Content-Type': 'application/json' };
   try {
     const gRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${d.zoho_invoice_id}?organization_id=${ZOHO_ORG_ID}`, { headers: zh });
     const inv = (await gRes.json().catch(() => ({}))).invoice;
-    if (!inv) { out.warnings.push('Original Zoho invoice not found - update Zoho manually.'); return out; }
-    if (String(inv.status).toLowerCase() === 'paid') { out.warnings.push(`Original invoice ${inv.invoice_number} is PAID - Zoho untouched, review manually.`); return out; }
-    // 1) shrink the original to the first piece
-    const shrinkBody = {
-      reason: 'Payment split at client request',
-      due_date: d.partial_due_date || undefined,
-      line_items: Array.isArray(inv.line_items) && inv.line_items.length
-        ? inv.line_items.map((li, i) => (i === 0 ? { line_item_id: li.line_item_id, rate: d.partial_amount, quantity: li.quantity || 1 } : { line_item_id: li.line_item_id }))
-        : undefined
-    };
-    const pRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${d.zoho_invoice_id}?organization_id=${ZOHO_ORG_ID}`, { method: 'PUT', headers: zh, body: JSON.stringify(shrinkBody) });
-    const pData = await pRes.json().catch(() => ({}));
-    if (pRes.ok && pData.code === 0) out.summary.push(`invoice ${inv.invoice_number} reduced to $${Number(d.partial_amount).toFixed(2)}`);
-    else out.warnings.push(`Original invoice reduce failed: ${pData.message || pRes.status} - update Zoho manually.`);
-    // 2) create the remainder invoice
-    const cBody = {
-      customer_id: inv.customer_id,
-      due_date: d.remainder_due_date || undefined,
-      line_items: [{ name: 'Remainder', description: `REMAINING BALANCE due on ${d.remainder_due_date || ''}`.trim(), rate: Number(d.remainder_amount) || 0, quantity: 1 }]
-    };
-    const cRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh, body: JSON.stringify(cBody) });
-    const cData = await cRes.json().catch(() => ({}));
-    const created = cData.invoice;
-    if (!cRes.ok || cData.code !== 0 || !created) { out.warnings.push(`Remainder invoice creation failed: ${cData.message || cRes.status} - create it manually.`); return out; }
-    try { await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${created.invoice_id}/status/sent?organization_id=${ZOHO_ORG_ID}`, { method: 'POST', headers: zh }); } catch (e) {}
-    out.summary.push(`remainder invoice ${created.invoice_number} created ($${Number(d.remainder_amount).toFixed(2)})`);
-    // 3) link the remainder invoice to the EXACT remainder charge (by id). Positional
-    // 'final' targeting mislinks once a deal has more than one split.
-    try {
-      const lRes = d.remainder_charge_id
-        ? await fetch(PAYMENT_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY },
-            body: JSON.stringify({ action: 'link_invoice_to_charge', charge_id: d.remainder_charge_id, zoho_invoice_id: created.invoice_id })
-          })
-        : await fetch(LINK_INVOICE_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-API-Key': PAYMENT_API_KEY },
-            body: JSON.stringify({ deal_id: d.deal_id, zoho_invoice_id: created.invoice_id, invoice_type: 'final' })
-          });
-      if (!lRes.ok) out.warnings.push(`Remainder invoice created but linking returned ${lRes.status} - link it manually.`);
-      else out.summary.push('linked to the remainder charge');
-    } catch (e) { out.warnings.push('Remainder invoice created but linking failed: ' + e.message); }
+    if (!inv) { out.warnings.push('Zoho invoice not found - due date not updated.'); return out; }
+    if (String(inv.status).toLowerCase() === 'paid') { out.warnings.push(`Invoice ${inv.invoice_number} is already PAID - review manually.`); return out; }
+    if (d.remainder_due_date) {
+      const pRes = await fetch(`https://www.zohoapis.com/invoice/v3/invoices/${d.zoho_invoice_id}?organization_id=${ZOHO_ORG_ID}`, { method: 'PUT', headers: zh, body: JSON.stringify({ due_date: d.remainder_due_date, reason: 'Payment split - balance collected in two payments' }) });
+      const pData = await pRes.json().catch(() => ({}));
+      if (pRes.ok && pData.code === 0) out.summary.push(`invoice ${inv.invoice_number} unchanged ($${inv.total}); due date moved to ${d.remainder_due_date}; both payments apply to it`);
+      else out.warnings.push(`Invoice due date update failed: ${pData.message || pRes.status} (split still active - both payments apply to the invoice).`);
+    } else {
+      out.summary.push(`invoice ${inv.invoice_number} unchanged; both payments apply to it`);
+    }
   } catch (e) { out.warnings.push('Zoho split error: ' + e.message); }
   return out;
 }
