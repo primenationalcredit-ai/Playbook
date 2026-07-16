@@ -214,6 +214,17 @@ export default function CSRBonus() {
           const qd = quoted ? Math.round((reps.filter((d) => d.paidDocFee).length / quoted) * 100) : 0;
           return { name: n, reports: reps.length, idiq, smart, other, docs, reviews, rq, qd };
         }).sort((a, b) => b.reports - a.reports || b.docs - a.docs);
+        const teamRows = (kind, onlyName) => {
+          const out = [];
+          for (const n of (onlyName ? [onlyName] : names)) {
+            const r = data.csrs[n];
+            if (kind === 'reports') for (const d of (r.details?.reports || [])) { if (inR(d.date)) out.push({ title: d.title, sub: `${n} · ${d.site || ''}`, href: DEAL_URL(d.dealId), tag: TYPE_TAG[d.type] || 'Other' }); }
+            if (kind === 'docs') for (const d of (r.details?.docsDeals || [])) { if (inR(d.date)) out.push({ title: d.title, sub: `${n} · ${d.site || ''}`, href: DEAL_URL(d.dealId), tag: 'Doc Fee' }); }
+            if (kind === 'reviews') for (const d of (r.details?.reviews || [])) { if (inR(d.date)) out.push({ title: d.reviewer, sub: `${n} · ${d.location || ''}`, href: null, tag: d.bbb ? 'BBB' : '' }); }
+          }
+          return out;
+        };
+        const openTeam = (label, kind, onlyName) => setDrill({ label, rows: teamRows(kind, onlyName) });
         const tot = per.reduce((a, x) => ({ reports: a.reports + x.reports, docs: a.docs + x.docs, reviews: a.reviews + x.reviews, idiq: a.idiq + x.idiq }), { reports: 0, docs: 0, reviews: 0, idiq: 0 });
         return (
           <div className="space-y-4">
@@ -234,9 +245,9 @@ export default function CSRBonus() {
               <span className="text-[11px] text-slate-400 ml-auto">within {month}</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatCard label="Reports" value={tot.reports} sub={`${tot.idiq} IDIQ`} accent="text-indigo-600" />
-              <StatCard label="Doc fees" value={tot.docs} accent="text-emerald-600" />
-              <StatCard label="Reviews" value={tot.reviews} />
+              <StatCard label="Reports" value={tot.reports} sub={`${tot.idiq} IDIQ · click for list`} accent="text-indigo-600" onClick={() => openTeam('Reports (' + b0 + ' to ' + b1 + ')', 'reports')} />
+              <StatCard label="Doc fees" value={tot.docs} accent="text-emerald-600" onClick={() => openTeam('Doc fees (' + b0 + ' to ' + b1 + ')', 'docs')} />
+              <StatCard label="Reviews" value={tot.reviews} onClick={() => openTeam('Reviews (' + b0 + ' to ' + b1 + ')', 'reviews')} />
               <StatCard label="Conversion" value={tot.reports ? Math.round((tot.docs / tot.reports) * 100) + '%' : '0%'} sub="doc fees / reports" />
             </div>
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -256,12 +267,12 @@ export default function CSRBonus() {
                     <tr key={'tm-' + x.name} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
                       onClick={() => { setSelected(x.name); setTab('me'); }}>
                       <td className="px-4 py-2 font-medium text-slate-800">{x.name}</td>
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-4 py-2 text-right cursor-pointer hover:bg-indigo-50" onClick={(e) => { e.stopPropagation(); if (x.reports > 0) openTeam(x.name + ' - reports', 'reports', x.name); }}>
                         <span className={`font-semibold ${x.reports > 0 ? 'text-indigo-700' : 'text-slate-300'}`}>{x.reports}</span>
-                        {x.reports > 0 && <span className="text-[10px] text-slate-400 ml-1.5">{x.idiq}i {x.smart}s {x.other}o</span>}
+                        {x.reports > 0 && <span className="text-[10px] text-slate-400 ml-1.5">{x.idiq} IDIQ · {x.smart} SC · {x.other} Other</span>}
                       </td>
-                      <td className={`px-4 py-2 text-right ${x.docs > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-300'}`}>{x.docs}</td>
-                      <td className={`px-4 py-2 text-right ${x.reviews > 0 ? '' : 'text-slate-300'}`}>{x.reviews}</td>
+                      <td className={`px-4 py-2 text-right cursor-pointer hover:bg-emerald-50 ${x.docs > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-300'}`} onClick={(e) => { e.stopPropagation(); if (x.docs > 0) openTeam(x.name + ' - doc fees', 'docs', x.name); }}>{x.docs}</td>
+                      <td className={`px-4 py-2 text-right cursor-pointer hover:bg-slate-100 ${x.reviews > 0 ? '' : 'text-slate-300'}`} onClick={(e) => { e.stopPropagation(); if (x.reviews > 0) openTeam(x.name + ' - reviews', 'reviews', x.name); }}>{x.reviews}</td>
                       <td className={`px-4 py-2 text-right text-xs ${x.rq >= 50 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>{x.rq}%</td>
                       <td className={`px-4 py-2 text-right text-xs ${x.qd >= 40 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>{x.qd}%</td>
                     </tr>
