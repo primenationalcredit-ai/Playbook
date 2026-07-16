@@ -279,6 +279,28 @@ exports.handler = async (event) => {
     const ctRes = await supa('affiliate_call_tasks?status=eq.open&select=affiliate_org_id');
     const openCallOrgIds = new Set((ctRes.json || []).map((t) => t.affiliate_org_id));
 
+    // ===== CALL SURFACER (max 20 active per consultant) =====
+    // Call tasks are born 'queued'. Promote the OLDEST queued to 'open' until each
+    // consultant holds at most 20 open tasks (top-up: finished tasks free slots the
+    // next run fills). Runs every invocation; idempotent.
+    try {
+      const CALL_CAP = parseInt(cfg.affiliate_call_cap_daily || '20', 10) || 20;
+      const openRes = await supa(`affiliate_call_tasks?status=eq.open&select=id,assigned_to`);
+      const queuedRes = await supa(`affiliate_call_tasks?status=eq.queued&select=id,assigned_to,created_at&order=created_at.asc&limit=1000`);
+      const openBy = {};
+      for (const t of (openRes.json || [])) { const k = String(t.assigned_to || 'team').toLowerCase(); openBy[k] = (openBy[k] || 0) + 1; }
+      const promote = [];
+      for (const t of (queuedRes.json || [])) {
+        const k = String(t.assigned_to || 'team').toLowerCase();
+        if ((openBy[k] || 0) < CALL_CAP) { promote.push(t.id); openBy[k] = (openBy[k] || 0) + 1; }
+      }
+      if (promote.length > 0) {
+        await supa(`affiliate_call_tasks?id=in.(${promote.join(',')})`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: 'open' })
+        });
+      }
+    } catch (e) { /* surfacer is best-effort; never blocks the run */ }
     // due affiliates: never touched (next_touch_due null) or due today/earlier
     const segPriority = ['new_never', 'dormant', 'slowing', 'producing', 'cold'];
     const dueRes = onlyId
@@ -384,7 +406,8 @@ exports.handler = async (event) => {
               contact_phone: aff.contact_phone, segment: cadSeg, step_number: newStep,
               assigned_to: aff.owner_name || null, stats_line: stats,
               talking_points: mergeFields(tmpl.body, aff, consultantName),
-              due_date: todayCT
+              due_date: todayCT,
+              status: 'queued'
             }])
           });
           results.calls_created++;

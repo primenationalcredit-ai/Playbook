@@ -78,6 +78,7 @@ export default function AffiliateOutreach() {
   const [expanded, setExpanded] = useState(null);
   const [touches, setTouches] = useState({});
   const [callTasks, setCallTasks] = useState([]);
+  const [queuedCount, setQueuedCount] = useState(0);
   const [templates, setTemplates] = useState([]);
   const [callView, setCallView] = useState('open');
   const [completingTask, setCompletingTask] = useState(null);
@@ -127,12 +128,16 @@ export default function AffiliateOutreach() {
   }, [segFilter, search, page]);
 
   const loadCalls = useCallback(async () => {
-    const status = callView === 'open' ? 'eq.open' : 'neq.open';
+    const status = callView === 'open' ? 'eq.open' : 'not.in.(open,queued)';
     const data = await sbGet(`affiliate_call_tasks?status=${status}&select=*&order=created_at.${callView === 'open' ? 'asc' : 'desc'}&limit=200`);
     const all = Array.isArray(data) ? data : [];
     // Consultants see their own calls (matched on first name of the deal owner); leadership sees everything
     const myFirst = String(currentUser?.name || '').trim().toLowerCase().split(/\s+/)[0];
-    setCallTasks(isLeadership || !myFirst ? all : all.filter((t) => String(t.assigned_to || '').trim().toLowerCase().startsWith(myFirst)));
+    const mine = (list) => (isLeadership || !myFirst ? list : list.filter((t) => String(t.assigned_to || '').trim().toLowerCase().startsWith(myFirst)));
+    setCallTasks(mine(all));
+    // backlog: queued tasks waiting for a free slot (max 20 active per consultant)
+    const qd = await sbGet('affiliate_call_tasks?status=eq.queued&select=id,assigned_to&limit=1000');
+    setQueuedCount(mine(Array.isArray(qd) ? qd : []).length);
   }, [callView, isLeadership, currentUser]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
@@ -519,9 +524,14 @@ export default function AffiliateOutreach() {
 
       {tab === 'calls' && (
         <>
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4 items-center">
             <button onClick={() => setCallView('open')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${callView === 'open' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>Open</button>
             <button onClick={() => setCallView('done')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${callView === 'done' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>Completed</button>
+            {queuedCount > 0 && (
+              <span className="ml-auto text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg" title="Waiting in the background. New tasks surface as you complete open ones (max 20 active).">
+                +{queuedCount} queued
+              </span>
+            )}
           </div>
           {callTasks.length === 0 ? (
             <div className="text-center py-12 text-gray-400">No {callView} call tasks.</div>
