@@ -339,6 +339,8 @@ function IncomingReviews() {
 
   // Filter reviews by search
   const filteredReviews = reviews.filter(review => {
+    // delisted reviews appear ONLY when explicitly viewing delisted
+    if (review.delisted_at && statusFilter !== 'delisted') return false;
     if (statusFilter !== 'all' && review.status !== statusFilter) return false;
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
@@ -355,10 +357,13 @@ function IncomingReviews() {
   });
 
   // Stats
-  const pendingCount = reviews.filter(r => r.status === 'pending').length;
-  const assignedCount = reviews.filter(r => r.status === 'assigned').length;
-  const completedCount = reviews.filter(r => r.status === 'completed').length;
-  const claimedCount = reviews.filter(r => r.status === 'pending' && r.claimed_by).length;
+  // Delisted reviews count NOWHERE except the delisted view - matching the
+  // bonus tracker (which excludes delisted_at), so tab numbers always equal
+  // bonus numbers for every employee.
+  const pendingCount = reviews.filter(r => r.status === 'pending' && !r.delisted_at).length;
+  const assignedCount = reviews.filter(r => r.status === 'assigned' && !r.delisted_at).length;
+  const completedCount = reviews.filter(r => r.status === 'completed' && !r.delisted_at).length;
+  const claimedCount = reviews.filter(r => r.status === 'pending' && r.claimed_by && !r.delisted_at).length;
   const delistedCount = reviews.filter(r => r.delisted_at).length;
 
   if (loading) {
