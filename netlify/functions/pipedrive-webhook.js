@@ -152,6 +152,33 @@ async function handlePersonUpdate(supabase, current, previous, action) {
   const personId = current.id?.toString();
   const personName = current.name;
   const personEmail = current.email?.[0]?.value;
+  // ===== ADDITIONAL ROUNDS TRIGGER (Update Status -> 1893) =====
+  // Fires the AR offer pipeline exactly once per transition into
+  // ***CLIENT INTERESTED IN ADD ROUNDS***. ar-offer self-gates on AR_ENABLED,
+  // so this is inert until launch day. Never blocks the rest of the webhook.
+  try {
+    const AR_STATUS_FIELD = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad';
+    const AR_INTERESTED = 1893;
+    const curV = Number(current[AR_STATUS_FIELD]) || null;
+    const prevV = previous ? (Number(previous[AR_STATUS_FIELD]) || null) : null;
+    if (curV === AR_INTERESTED && prevV !== AR_INTERESTED) {
+      const pdTok = process.env.PIPEDRIVE_API_TOKEN;
+      const arKey = process.env.AR_INTERNAL_API_KEY;
+      const arUrl = process.env.AR_OFFER_URL || 'https://asap-payment-processor.netlify.app/.netlify/functions/ar-offer';
+      if (pdTok && arKey) {
+        const dRes = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/persons/${personId}/deals?status=open&api_token=${pdTok}`);
+        const deals = (await dRes.json().catch(() => ({}))).data || [];
+        if (deals.length > 0) {
+          const r = await fetch(arUrl, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': arKey },
+            body: JSON.stringify({ deal_id: String(deals[0].id) })
+          });
+          console.log(`AR trigger: person ${personId} -> deal ${deals[0].id} -> ar-offer ${r.status}`);
+        } else console.log(`AR trigger: person ${personId} interested but has no open deal`);
+      } else console.log('AR trigger skipped: PIPEDRIVE_API_TOKEN or AR_INTERNAL_API_KEY not set on Playbook site');
+    }
+  } catch (e) { console.error('AR trigger error (webhook continues):', e.message); }
+  // ===== END ADDITIONAL ROUNDS TRIGGER =====
   
   // Get labels from person (Pipedrive stores labels in a custom field or as tags)
   // The exact field depends on your Pipedrive setup - adjust as needed
