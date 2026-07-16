@@ -350,10 +350,14 @@ exports.handler = async (event) => {
     if (phase === 'persons') {
       // Update Status option labels (id -> label) for the population exclusions below.
       let statusLabelById = {};
+      const CURRENT_STATUS_FIELD = '612856f2221d04679c1809eadb77b30300936445';
+      let currentLabelById = {};
       try {
         const pfRes = await pdGet('/personFields');
         const usf = (pfRes.data || []).find(fl => fl.key === UPDATE_STATUS_FIELD);
         for (const o of (usf && usf.options) || []) statusLabelById[Number(o.id)] = String(o.label || '');
+        const csf = (pfRes.data || []).find(fl => fl.key === CURRENT_STATUS_FIELD);
+        for (const o of (csf && csf.options) || []) currentLabelById[Number(o.id)] = String(o.label || '');
       } catch (e) {}
       let hasMore = true, aborted = false;
       while (hasMore && left()) {
@@ -378,7 +382,8 @@ exports.handler = async (event) => {
           const daysSince = roundEnded ? daysBetween(now, re) : null;
           let inWindow = startedInWindow;
           let excludedWhy = null;
-          if (inWindow && /additional/i.test(ad.stageName || '')) {
+          const curStatusLabel = currentLabelById[Number(statusIdOf(p[CURRENT_STATUS_FIELD]))] || '';
+          if (inWindow && (/additional/i.test(curStatusLabel) || /additional/i.test(ad.stageName || ''))) {
             // Additional-round cycle: not part of the original-service report population.
             inWindow = false; excludedWhy = 'additional-round';
           }
