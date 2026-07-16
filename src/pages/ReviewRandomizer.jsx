@@ -106,7 +106,7 @@ function ReviewRandomizer() {
       // Fetch every review once. We compute both all-time totals (used for the
       // 100 target logic) and timeframe-filtered counts (used for the stats
       // display) from the same data set.
-      const reviews = await supabaseFetch('incoming_reviews', `select=location_name,review_date`);
+      const reviews = await supabaseFetch('incoming_reviews', `select=location_name,review_date&delisted_at=is.null`);
 
       let threshold = null;
       const now = new Date();

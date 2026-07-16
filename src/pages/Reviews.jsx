@@ -99,7 +99,9 @@ function Reviews() {
       const query = `select=*&order=created_at.desc&limit=5000`;
       const data = await supabaseFetch('incoming_reviews', query);
 
-      const rowsArray = Array.isArray(data) ? data : [];
+      // Delisted reviews count nowhere (matches the bonus trackers and the
+      // Incoming Reviews tab), so every surface shows the same numbers.
+      const rowsArray = (Array.isArray(data) ? data : []).filter(r => !r.delisted_at);
 
       const reviewsWithUsers = rowsArray
         .filter(r => r.assigned_to)   // only reviews assigned/credited to someone
