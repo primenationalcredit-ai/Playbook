@@ -209,6 +209,19 @@ exports.handler = async (event) => {
         body: JSON.stringify(batch)
       });
       if (!insertRes.ok) console.error('Insert error:', await insertRes.text());
+      // New payments landed: bust the bonus caches for every month written so the
+      // next page load recomputes. No payment may exist that a report can't see.
+      if (insertRes.ok) {
+        try {
+          const monthsTouched = [...new Set(batch.map(r => r.payment_month).filter(Boolean))];
+          for (const m of monthsTouched) {
+            await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.consultant_bonus_${m}`, {
+              method: 'DELETE', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+            }).catch(() => {});
+          }
+          if (monthsTouched.length) console.log('Busted bonus cache for: ' + monthsTouched.join(', '));
+        } catch (e) { console.error('Cache bust failed (non-fatal):', e.message); }
+      }
     }
 
     return {
