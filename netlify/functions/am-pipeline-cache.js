@@ -383,9 +383,9 @@ exports.handler = async (event) => {
           let inWindow = startedInWindow;
           let excludedWhy = null;
           const curStatusLabel = currentLabelById[Number(statusIdOf(p[CURRENT_STATUS_FIELD]))] || '';
-          if (inWindow && (/additional/i.test(curStatusLabel) || /additional/i.test(ad.stageName || ''))) {
+          if (inWindow && (/additional/i.test(curStatusLabel) || /additional/i.test(ad.stageName || '') || /submitted/i.test(curStatusLabel))) {
             // Additional-round cycle: not part of the original-service report population.
-            inWindow = false; excludedWhy = 'additional-round';
+            inWindow = false; excludedWhy = /submitted/i.test(curStatusLabel) ? 'round-submitted' : 'additional-round';
           }
           if (inWindow) {
             const statusLabel = statusLabelById[statusId] || '';
