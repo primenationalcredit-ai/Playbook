@@ -267,11 +267,11 @@ export default function CSRBonus() {
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
                     <th className="text-left font-medium px-4 py-2">CSR</th>
-                    <th className="text-right font-medium px-4 py-2">Reports</th>
-                    <th className="text-right font-medium px-4 py-2">Doc fees</th>
-                    <th className="text-right font-medium px-4 py-2">Reviews</th>
-                    <th className="text-right font-medium px-4 py-2">R→Q</th>
-                    <th className="text-right font-medium px-4 py-2">Q→Doc</th>
+                    <th className="text-right font-medium px-4 py-2" title="Deals where a credit monitoring site was set in this period. A deal only counts as a report once its Monitoring Site field is filled in Pipedrive.">Reports</th>
+                    <th className="text-right font-medium px-4 py-2" title="Report deals whose doc fee was PAID (confirmed in payment records) in this period.">Doc fees</th>
+                    <th className="text-right font-medium px-4 py-2" title="Client reviews assigned to this CSR, credited to the month the review was left. Standard: 10/month. Pay: $5 each past 10, plus $50 per BBB review.">Reviews</th>
+                    <th className="text-right font-medium px-4 py-2" title="Reports to Quote: % of this period's report deals that moved into Quoted 2.0. Standard: 50%. Both conversion standards met = $100 conversion bonus.">R→Q</th>
+                    <th className="text-right font-medium px-4 py-2" title="Quote to Doc Fee: % of quoted report deals that paid a doc fee. Standard: 40%. Both conversion standards met = $100 conversion bonus.">Q→Doc</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,13 +302,13 @@ export default function CSRBonus() {
             <thead className="bg-slate-50 text-slate-500">
               <tr>
                 <th className="text-left font-medium px-4 py-2">CSR</th>
-                <th className="text-right font-medium px-4 py-2">IDIQ</th>
-                <th className="text-right font-medium px-4 py-2">SmartCredit</th>
-                <th className="text-right font-medium px-4 py-2">Other</th>
-                <th className="text-right font-medium px-4 py-2">Total</th>
-                <th className="text-right font-medium px-4 py-2">Qualified</th>
-                <th className="text-right font-medium px-4 py-2">Report Bonus</th>
-                <th className="text-right font-medium px-4 py-2">Total Bonus</th>
+                <th className="text-right font-medium px-4 py-2" title="IDIQ reports pulled. ONLY IDIQ reports pay: the first 35 are unpaid, then $3 each at 51-65 total reports, $5 each at 66-80, $7 each at 81+.">IDIQ</th>
+                <th className="text-right font-medium px-4 py-2" title="SmartCredit reports. These count toward the 50-report qualifier but are not paid per report.">SmartCredit</th>
+                <th className="text-right font-medium px-4 py-2" title="Reports on any other monitoring site. Count toward the 50-report qualifier but are not paid per report.">Other</th>
+                <th className="text-right font-medium px-4 py-2" title="All reports this month (IDIQ + SmartCredit + Other). You must reach 50 TOTAL reports to be eligible for the report bonus at all.">Total</th>
+                <th className="text-right font-medium px-4 py-2" title="Whether the 50-total-report qualifier is met this month. Below 50 total = no report bonus regardless of IDIQ count.">Qualified</th>
+                <th className="text-right font-medium px-4 py-2" title="Pay for IDIQ reports past the first 35, at the tier rate your TOTAL report count reaches: $3 (51-65), $5 (66-80), $7 (81+).">Report Bonus</th>
+                <th className="text-right font-medium px-4 py-2" title="Report bonus + conversion bonus ($100 when both 50% R-to-Q and 40% Q-to-Doc are met) + review bonus ($5/review past 10, $50/BBB) + All-Star ($100).">Total Bonus</th>
               </tr>
             </thead>
             <tbody>

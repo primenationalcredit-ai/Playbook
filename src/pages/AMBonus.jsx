@@ -585,15 +585,15 @@ export default function AMBonus() {
                   <thead className="bg-slate-50 text-slate-500 text-left">
                     <tr>
                       <th className="px-4 py-2 font-medium">Account Manager</th>
-                      <th className="px-4 py-2 font-medium text-center">Credit Signups</th>
-                      <th className="px-4 py-2 font-medium text-center">Stall Rate</th>
-                      <th className="px-4 py-2 font-medium text-center">Past Due</th>
-                      <th className="px-4 py-2 font-medium text-center">Overall</th>
-                      <th className="px-4 py-2 font-medium text-center">Add'l Rounds</th>
-                      <th className="px-4 py-2 font-medium text-center">Referrals</th>
-                      <th className="px-4 py-2 font-medium text-center">Reviews</th>
-                      <th className="px-4 py-2 font-medium text-center">CSAT</th>
-                      <th className="px-4 py-2 font-medium text-right">Total Bonus</th>
+                      <th className="px-4 py-2 font-medium text-center" title="Approved credit-building product signups this month. Standard ramps: 8/month June-August, 20/month from September.">Credit Signups</th>
+                      <th className="px-4 py-2 font-medium text-center" title="Of your clients whose round started 45-90 days ago: % stalled in Logins Not Ready 14+ days past round end. Deals in a SUBMITTED round status are excluded (waiting on bureaus, not you). Health gate for the bonus.">Stall Rate</th>
+                      <th className="px-4 py-2 font-medium text-center" title="Of your clients with a payment due in the last 30 days: % now 5+ days past due.">Past Due</th>
+                      <th className="px-4 py-2 font-medium text-center" title="Average of Stall Rate and Past Due - your overall book health, used as the bonus health gate.">Overall</th>
+                      <th className="px-4 py-2 font-medium text-center" title="Additional Rounds sold to your in-service clients this month.">Add'l Rounds</th>
+                      <th className="px-4 py-2 font-medium text-center" title="New clients referred by your existing clients and placed under you.">Referrals</th>
+                      <th className="px-4 py-2 font-medium text-center" title="Client reviews assigned to you this month. Standard: 10. Pay: $5 each past 10, $50 per BBB review.">Reviews</th>
+                      <th className="px-4 py-2 font-medium text-center" title="Average of clients' rate-your-account-manager scores this month.">CSAT</th>
+                      <th className="px-4 py-2 font-medium text-right" title="Sum of all bonus components this month, subject to the book-health gate.">Total Bonus</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
