@@ -328,7 +328,8 @@ exports.handler = async (event) => {
       if (!ms) {
         // MISSING MONITORING SITE: attributed to a CSR, no site set - invisible to
         // report credit until someone stamps the field. Tracked so it stops being silent.
-        if (String(r.deal_created_at || '').slice(0, 7) === month) {
+        const curPipMS = (r.pipeline_name || '').trim().toLowerCase();
+        if (String(r.deal_created_at || '').slice(0, 7) === month && REPORT_PIPELINE_GATE.includes(curPipMS)) {
           tally[rep].missingSiteList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, created: r.deal_created_at ? String(r.deal_created_at).slice(0, 10) : null });
         }
         continue;
