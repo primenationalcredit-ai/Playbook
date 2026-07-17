@@ -222,6 +222,12 @@ export default function CSRBonus() {
             if (kind === 'docs') for (const d of (r.details?.docsDeals || [])) { if (inR(d.date)) out.push({ title: d.title, sub: `${n} · ${d.site || ''}`, href: DEAL_URL(d.dealId), tag: 'Doc Fee' }); }
             if (kind === 'reviews') for (const d of (r.details?.reviews || [])) { if (inR(d.date)) out.push({ title: d.reviewer, sub: `${n} · ${d.location || ''}`, href: null, tag: d.bbb ? 'BBB' : '' }); }
           }
+          if (kind === 'missing') {
+            for (const n of (onlyName ? [onlyName] : names)) {
+              const r = data.csrs[n];
+              for (const d of (r.details?.missingSite || [])) out.push({ title: d.title, sub: `${n} - ${d.pipeline}${d.stage ? ' | ' + d.stage : ''}${d.created ? ' - created ' + d.created : ''}`, href: DEAL_URL(d.dealId), tag: 'No Site' });
+            }
+          }
           return out;
         };
         const openTeam = (label, kind, onlyName) => setDrill({ label, rows: teamRows(kind, onlyName) });
@@ -244,6 +250,12 @@ export default function CSRBonus() {
               )}
               <span className="text-[11px] text-slate-400 ml-auto">within {month}</span>
             </div>
+            {(() => { const missN = names.reduce((a, n) => a + ((data.csrs[n]?.reports?.missingSite) || 0), 0); return missN > 0 ? (
+              <div onClick={() => openTeam('Clients missing a credit monitoring site', 'missing')}
+                className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-700 cursor-pointer hover:border-rose-400 transition font-medium">
+                {'\u26A0\uFE0F'} {missN} client{missN === 1 ? '' : 's'} in early pipelines with no credit monitoring site set - click to view and update
+              </div>
+            ) : null; })()}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <StatCard label="Reports" value={tot.reports} sub={`${tot.idiq} IDIQ · click for list`} accent="text-indigo-600" onClick={() => openTeam('Reports (' + b0 + ' to ' + b1 + ')', 'reports')} />
               <StatCard label="Doc fees" value={tot.docs} accent="text-emerald-600" onClick={() => openTeam('Doc fees (' + b0 + ' to ' + b1 + ')', 'docs')} />
@@ -465,6 +477,19 @@ export default function CSRBonus() {
             </div>
           </div>
 
+          {(c.details?.missingSite || []).length > 0 && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+              <div className="font-medium text-rose-700 mb-1">{'\u26A0\uFE0F'} {c.details.missingSite.length} of your clients have no credit monitoring site</div>
+              <div className="text-xs text-rose-600 mb-2">These deals cannot count as reports until Monitoring Site (1) is set on the Pipedrive deal. Click a client to open the deal and update it.</div>
+              <div className="space-y-1">
+                {c.details.missingSite.map((d) => (
+                  <a key={d.dealId} href={DEAL_URL(d.dealId)} target="_blank" rel="noreferrer" className="block text-sm text-slate-700 hover:text-indigo-600">
+                    {d.title} <span className="text-xs text-slate-400">{d.pipeline}{d.stage ? ' | ' + d.stage : ''}{d.created ? ' - created ' + d.created : ''}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           {c.reports.total === 0 && (
             <div className="text-xs text-slate-400">
               Tracking starts fresh from today. Reports count as monitoring sites are set going forward, so this month fills in over time and next month is a full clean month.
