@@ -128,6 +128,19 @@ function classify(ms) {
   return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 45 only
 }
 
+// Round 1 start date field - arbiter for late-stamp crediting (Joe's rule 7/17):
+// a monitoring site set while the deal already sat in SOLD / C.R.S. counts ONLY
+// if Round 1 had not started by the stamp date (report pulled before service began).
+const R1_FIELD = '6979c70df67f42c28dfcff39284ae17d564d600f';
+async function pdGetDealR1(dealId) {
+  try {
+    const tok = process.env.PIPEDRIVE_API_TOKEN;
+    if (!tok || !dealId) return null;
+    const res = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/${dealId}?api_token=${tok}`);
+    const j = await res.json().catch(() => null);
+    return j && j.data ? (j.data[R1_FIELD] || null) : null;
+  } catch (e) { return null; }
+}
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -213,7 +226,7 @@ exports.handler = async (event) => {
     const ops = {};
     const dist = {};
     for (const name of staff) {
-      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, convTotal: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], quoteList: [], docsList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [] };
+      tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, convTotal: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], quoteList: [], docsList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [], missingSiteList: [], lateCredited: 0, lateExcluded: 0 };
       ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
@@ -312,8 +325,33 @@ exports.handler = async (event) => {
       // drill list - it already appeared above in the stage distribution and the operational
       // funnel, which is where lead-stage deals belong. (Reni's ticket: NEW-AUTOPILOT leads
       // were being credited as "other" reports via the classify() fallback.)
-      if (!ms) continue;
-      if (monthOf(r) !== month) { tally[rep].outOfMonth++; continue; }
+      if (!ms) {
+        // MISSING MONITORING SITE: attributed to a CSR, no site set - invisible to
+        // report credit until someone stamps the field. Tracked so it stops being silent.
+        if (String(r.deal_created_at || '').slice(0, 7) === month) {
+          tally[rep].missingSiteList.push({ dealId: r.deal_id, title: r.deal_title || `Deal #${r.deal_id}`, pipeline: r.pipeline_name || 'Unknown', stage: r.stage_name || null, created: r.deal_created_at ? String(r.deal_created_at).slice(0, 10) : null });
+        }
+        continue;
+      }
+      // LATE-STAMP RULE (Joe 7/17): site set while the deal sat in a later pipeline
+      // (SOLD / C.R.S.) = a late stamp on a report that happened earlier. It counts ONLY
+      // if Round 1 had not started by the stamp date, and is dated to the deal's creation.
+      let effMonth = monthOf(r);
+      let effDay = dayOf(r);
+      const setPipLate = (r.monitoring_site_set_pipeline || '').trim().toLowerCase();
+      const isLateStamp = !!setPipLate && !REPORT_PIPELINE_GATE.includes(setPipLate);
+      if (isLateStamp) {
+        effMonth = String(r.deal_created_at || '').slice(0, 7) || effMonth;
+        effDay = String(r.deal_created_at || '').slice(0, 10) || effDay;
+      }
+      if (effMonth !== month) { tally[rep].outOfMonth++; continue; }
+      if (isLateStamp) {
+        const r1Start = await pdGetDealR1(r.deal_id);
+        const stampDay = String(r.monitoring_site_set_at || '').slice(0, 10);
+        const r1StartedFirst = !!(r1Start && stampDay && String(r1Start).slice(0, 10) <= stampDay);
+        if (r1StartedFirst) { tally[rep].lateExcluded++; tally[rep].gatedOut++; continue; }
+        tally[rep].lateCredited++;
+      }
 
       // Conversion tracking runs for ALL of the rep's report deals this month, BEFORE the
       // pipeline gate. A conversion means the deal moved FORWARD (to quote / paid a doc fee),
@@ -345,7 +383,7 @@ exports.handler = async (event) => {
       tally[rep].total++;
 
       // Today's pulls (same gate/month rules already passed): track separately for daily tracking.
-      if (viewingCurrentMonth && dayOf(r) === todayStr) {
+      if (viewingCurrentMonth && effDay === todayStr) {
         tally[rep].todayTotal++;
         if (cls === 'idiq') tally[rep].todayIdiq++;
         else if (cls === 'smart') tally[rep].todaySmart++;
@@ -406,7 +444,7 @@ exports.handler = async (event) => {
 
       csrs[name] = {
         month,
-        reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total },
+        reports: { idiq: t.idiq, smartcredit: t.smart, other: t.other, total: t.total, missingSite: t.missingSiteList.length, lateCredited: t.lateCredited, lateExcluded: t.lateExcluded },
         today: { total: t.todayTotal, idiq: t.todayIdiq, smartcredit: t.todaySmart, other: t.todayOther, docFees: t.todayDocFees, date: todayStr },
         reportBonus: report,
         conversionBonus: conversion,
@@ -427,6 +465,7 @@ exports.handler = async (event) => {
             .sort((a, b) => b.count - a.count)
         },
         details: {
+          missingSite: t.missingSiteList,
           reports: t.reportList,
           quoteDeals: t.quoteList,
           docsDeals: t.docsList,
