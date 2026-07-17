@@ -612,7 +612,7 @@ exports.handler = async (event) => {
         if (p.is_affiliate_deal) { affiliateSales += amt; } else { organicSales += amt; }
         if (p.payment_type === 'doc_fee') docFeeCount++;
         else if (p.payment_type === 'partial') partialCount++;
-        else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') { finalCount++; if (p.payment_type === 'paid_in_full') paidInFullCount++; }
+        else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') { finalCount++; const wcF = windowClientMap[p.pipedrive_deal_id || p.client_name]; if (p.payment_type === 'paid_in_full' || !(wcF && wcF.hasPartial)) paidInFullCount++; }
         else unknownCount++;
       }
 
@@ -1255,7 +1255,7 @@ exports.handler = async (event) => {
           affiliateClients: myPayments.filter(p => p.is_affiliate_deal).map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, type: p.payment_type, date: p.payment_date, org: p.referrer_org })),
           docFeeList: myPayments.filter(p => p.payment_type === 'doc_fee').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date })),
           partialList: myPayments.filter(p => p.payment_type === 'partial').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date })),
-          finalList: myPayments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date, type: p.payment_type === 'paid_in_full' ? '\uD83D\uDCB0 Full Payment' : 'Final (payment plan)' })),
+          finalList: myPayments.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full').map(p => ({ name: p.client_name, dealId: resolveDealId(p), amount: p.amount, date: p.payment_date, type: (p.payment_type === 'paid_in_full' || !((windowClientMap[p.pipedrive_deal_id || p.client_name] || {}).hasPartial)) ? '\uD83D\uDCB0 Full Payment' : 'Final (payment plan)' })),
           qualifiedList: qualifiedClients.map(c => ({ name: c.name, dealId: c.dealId, totalPaid: c.totalPaid, org: c.orgName, isAffiliate: c.isAffiliate, payments: c.payments.map(p => ({ type: p.payment_type, amount: p.amount, date: p.payment_date })) })),
           docFeeOnlyList: docFeeOnlyClients.map(c => ({ name: c.name, dealId: c.dealId, totalPaid: c.totalPaid })),
           reviewList: myReviews.map(r => ({ reviewer: r.reviewer_name, rating: r.rating, date: r.review_date, location: r.location_name, dealId: r.pipedrive_deal_id || null, text: (r.review_text || '').substring(0, 100) })),
