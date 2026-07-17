@@ -623,7 +623,7 @@ export default function ConsultantBonus() {
                 <th className="text-center px-3 py-2"><Tip text="Total payment transactions">Payments</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Doc fees collected">Doc Fees</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Partial payments received">Partials</Tip></th>
-                <th className="text-center px-3 py-2"><Tip text="Final payments received">Finals</Tip></th>
+                <th className="text-center px-3 py-2"><Tip text="Final payments received - the (N) shows how many were single paid-in-full payments">Finals (full pay)</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Doc fee clients who also paid partial/final (84% standard)">Pay-Past-Doc</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Doc fee 14+ days ago, no further payment">Past Due 14d</Tip></th>
                 <th className="text-center px-3 py-2"><Tip text="Doc fee 30+ days ago, no further payment">Stale 30d</Tip></th>
@@ -632,7 +632,7 @@ export default function ConsultantBonus() {
                 <tr key={c.name} className="hover:bg-slate-50">
                   <td className="px-3 py-2.5 font-medium">{c.name.split(' ')[0]}</td>
                   <Cell v={c.paymentCount||0} /><Cell v={c.docFeeCount||0} />
-                  <Cell v={c.partialCount||0} /><Cell v={c.finalCount||0} />
+                  <Cell v={c.partialCount||0} /><Cell v={`${c.finalCount||0}${(c.paidInFullCount||0) ? ` (${c.paidInFullCount})` : ''}`} />
                   <Cell v={(c.payPastDocRate||0)+'%'} good={c.meetsPayPastDocStandard} bad={!c.meetsPayPastDocStandard} />
                   <Cell v={c.pastDueCount||0} bad={(c.pastDueCount||0)>3} />
                   <Cell v={c.staleCount||0} bad={(c.staleCount||0)>0} />
@@ -1308,7 +1308,7 @@ export default function ConsultantBonus() {
           </div>
           <div className="p-2 bg-green-50 rounded-lg cursor-pointer hover:bg-green-100" onClick={() => setExpandedSection(expandedSection === 'finals' ? null : 'finals')}>
             <p className="text-2xl font-bold text-green-600">{c.finalCount || 0}</p>
-            <p className="text-xs text-slate-500">Finals</p>
+            <p className="text-xs text-slate-500">Finals{(c.paidInFullCount || 0) > 0 ? ` (${c.paidInFullCount} full pay)` : ''}</p>
             <p className="text-xs text-green-400">👆 View</p>
           </div>
         </div>

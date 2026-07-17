@@ -603,7 +603,7 @@ exports.handler = async (event) => {
 
       // === SALES & COMMISSION (from Zoho) ===
       let totalSales = 0, affiliateSales = 0, organicSales = 0;
-      let docFeeCount = 0, partialCount = 0, finalCount = 0, unknownCount = 0;
+      let docFeeCount = 0, partialCount = 0, finalCount = 0, paidInFullCount = 0, unknownCount = 0;
       
       for (const p of myPayments) {
         const amt = parseFloat(p.amount) || 0;
@@ -612,7 +612,7 @@ exports.handler = async (event) => {
         if (p.is_affiliate_deal) { affiliateSales += amt; } else { organicSales += amt; }
         if (p.payment_type === 'doc_fee') docFeeCount++;
         else if (p.payment_type === 'partial') partialCount++;
-        else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') finalCount++;
+        else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') { finalCount++; if (p.payment_type === 'paid_in_full') paidInFullCount++; }
         else unknownCount++;
       }
 
@@ -1197,7 +1197,7 @@ exports.handler = async (event) => {
         affiliateCommission: Math.round(affiliateCommission * 100) / 100,
         totalCommission: Math.round(totalCommission * 100) / 100,
         paymentCount: myPayments.length,
-        docFeeCount, partialCount, finalCount, unknownCount,
+        docFeeCount, partialCount, finalCount, paidInFullCount, unknownCount,
         // Qualified docs from payment data
         qualifiedDocs,
         docFeeOnlyCount: docFeeOnlyClients.length,
