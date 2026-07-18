@@ -18,6 +18,30 @@ const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
 
 function DrillPanel({ drill, onClose }) {
   if (!drill) return null;
+  const SITE_OPTIONS = [
+    ['486', 'Identity IQ'], ['3703', 'Identity Iq (Client Sent Reports)'], ['1715', 'Smart Credit'],
+    ['3704', 'Smart Credit (Client Sent Reports)'], ['1744', 'Client sent credit reports to us'],
+    ['1917', 'My Score IQ'], ['3571', 'CreditBuilder IQ'], ['3572', 'CreditScore IQ'],
+    ['479', 'ProCredit'], ['480', 'Identity Guard'], ['481', 'Annual Credit Report'], ['482', 'Free Scores'],
+    ['483', 'Privacy Guard'], ['484', 'ScoreSense'], ['485', 'Credit Check Total'], ['487', 'Idenity Force'],
+    ['488', 'Freecreditscore.com'], ['561', 'Experian.com'], ['562', 'Transunion.com'], ['563', 'Equifax.com'],
+    ['1150', 'MyFico.com'], ['1278', 'Free Score Connect'], ['1279', 'ID Lookout (Scoresense)'],
+    ['1280', 'My Free Score Now'], ['1690', 'National Credit Report'], ['1867', 'Lender reports'],
+    ['1914', 'Truly ID'], ['1928', 'ID Club'], ['1929', 'Credit Monitoring Solutions']
+  ];
+  const rowDealId = (row) => row.dealId || (row.href && (String(row.href).match(/deal\/(\d+)/) || [])[1]) || null;
+  const fixSite = async (dealId, optionId, label) => {
+    if (!window.confirm(`Set Monitoring Site to "${label}" for deal ${dealId}?\n\nThis updates Pipedrive (the source of truth) and the tracker.`)) return;
+    try {
+      const res = await fetch('/.netlify/functions/set-monitoring-site', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deal_id: dealId, option_id: optionId })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
+      window.alert(data.message || 'Saved. Counts update on the next metrics refresh.');
+    } catch (e) { window.alert('Failed: ' + e.message); }
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white w-full sm:max-w-2xl sm:rounded-xl rounded-t-xl max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -34,6 +58,14 @@ function DrillPanel({ drill, onClose }) {
                 {row.sub && <div className="text-xs text-slate-500 truncate">{row.sub}</div>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {rowDealId(row) && (
+                  <select defaultValue="" onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => { const oid = e.target.value; if (!oid) return; const lbl = (SITE_OPTIONS.find(o => o[0] === oid) || [])[1]; fixSite(rowDealId(row), oid, lbl); e.target.value = ''; }}
+                    className="text-[11px] border border-slate-200 rounded px-1 py-0.5 text-slate-500 bg-white max-w-[110px]">
+                    <option value="">Fix site…</option>
+                    {SITE_OPTIONS.map(([oid, lbl]) => <option key={oid} value={oid}>{lbl}</option>)}
+                  </select>
+                )}
                 {row.tag && <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{row.tag}</span>}
                 {row.href && <a href={row.href} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline">Open</a>}
               </div>
