@@ -16,7 +16,7 @@
 
 # Zoho payment sync - runs hourly during business hours Mon-Sat
 [functions."zoho-payment-sync"]
-  schedule = "*/10 12-23 * * *"
+  schedule = "*/5 12-23 * * *"
 
 # Fill in consultant names (Pipedrive deal owner) on freshly synced payments.
 # Runs every 5 min in the business window; does up to 30 rows per run.
