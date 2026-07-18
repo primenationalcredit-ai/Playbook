@@ -35,7 +35,7 @@ function ConsultantPayments() {
 
   // Fetch from live Google Sheets API (single call for multiple months)
   const fetchLiveData = async (monthsList) => {
-    const response = await fetch(`/.netlify/functions/paysheet-live?months=${monthsList.join(',')}`);
+    const response = await fetch(`/.netlify/functions/payments-live?months=${monthsList.join(',')}`); // Zoho-synced consultant_payments (was Google Sheet paysheet-live)
     if (!response.ok) throw new Error('Failed to fetch sales data');
     const data = await response.json();
     if (!data.success) throw new Error(data.error || 'Failed to load');
@@ -51,6 +51,7 @@ function ConsultantPayments() {
     if (code.includes('doc')) return 'doc';
     if (code.includes('par')) return 'partial';
     if (code.includes('fin')) return 'final';
+    if (code.includes('ar') || code.includes('round')) return 'rounds';
     
     // Fallback: use Fee Type column
     if (feeType === 'doc fee' || feeType.includes('doc')) return 'doc';
@@ -71,7 +72,7 @@ function ConsultantPayments() {
 
   // Process data into stats
   const processStats = (data) => {
-    let sales = 0, docs = 0, docsAmount = 0, partials = 0, partialsAmount = 0, finals = 0, finalsAmount = 0;
+    let sales = 0, docs = 0, docsAmount = 0, partials = 0, partialsAmount = 0, finals = 0, finalsAmount = 0, rounds = 0, roundsAmount = 0, count = 0;
     let paidInFull = 0, refunds = 0, refundsAmount = 0, negativeItems = 0, negativeItemsClients = 0;
 
     (data || []).forEach(row => {
@@ -89,7 +90,11 @@ function ConsultantPayments() {
       } else if (category === 'final') {
         finals++;
         finalsAmount += amount;
+      } else if (category === 'rounds') {
+        rounds++;
+        roundsAmount += amount;
       }
+      count++;
 
       // Paid in Full: this payment covers the client's full program price (fee >= total_price),
       // or the code/fee_type flags a paid-in-full. total_price is per-row from the paysheet.
@@ -113,7 +118,7 @@ function ConsultantPayments() {
     });
 
     return {
-      sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount,
+      sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount, rounds, roundsAmount, count,
       paidInFull, refunds, refundsAmount, negativeItems, negativeItemsClients,
       count: (data || []).length
     };
@@ -577,11 +582,12 @@ function ConsultantPayments() {
             }`}>
               <h3 className={`text-sm font-medium mb-3 ${todayStats.sales >= 4000 ? 'text-emerald-100' : 'text-red-100'}`}>Today's Totals</h3>
               <p className="text-3xl font-bold mb-2">{formatCurrency(todayStats.sales)}</p>
-              <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="grid grid-cols-5 gap-2 text-xs">
                 <div><span className={`block ${todayStats.sales >= 4000 ? 'text-emerald-200' : 'text-red-200'}`}>Docs</span><span className="font-bold">{todayStats.docs}</span></div>
                 <div><span className={`block ${todayStats.sales >= 4000 ? 'text-emerald-200' : 'text-red-200'}`}>Partials</span><span className="font-bold">{todayStats.partials}</span></div>
                 <div><span className={`block ${todayStats.sales >= 4000 ? 'text-emerald-200' : 'text-red-200'}`}>Finals</span><span className="font-bold">{todayStats.finals}</span></div>
-                <div><span className={`block ${todayStats.sales >= 4000 ? 'text-emerald-200' : 'text-red-200'}`}>Total</span><span className="font-bold">{todayStats.docs + todayStats.partials + todayStats.finals}</span></div>
+                <div><span className={`block ${todayStats.sales >= 4000 ? 'text-emerald-200' : 'text-red-200'}`}>AR</span><span className="font-bold">{todayStats.rounds || 0}</span></div>
+                <div><span className={`block ${todayStats.sales >= 4000 ? 'text-emerald-200' : 'text-red-200'}`}>Total</span><span className="font-bold">{todayStats.count || (todayStats.docs + todayStats.partials + todayStats.finals)}</span></div>
               </div>
             </div>
 
