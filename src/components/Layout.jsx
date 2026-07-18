@@ -48,6 +48,30 @@ import CoverageAlerts from './CoverageAlerts';
 function Layout() {
   const { currentUser, logout, getCompletionStats, notifications, isViewingAs, realUser, stopViewingAs } = useApp();
   const navigate = useNavigate();
+  // --- Sidebar customization (saved in this browser) ---
+  const NAVPREF_KEY = 'navPrefs:v1';
+  const [navPrefs, setNavPrefs] = useState(() => { try { return JSON.parse(localStorage.getItem(NAVPREF_KEY)) || { hidden: [], order: {} }; } catch { return { hidden: [], order: {} }; } });
+  const [showCustomize, setShowCustomize] = useState(false);
+  const saveNavPrefs = (p) => { setNavPrefs(p); try { localStorage.setItem(NAVPREF_KEY, JSON.stringify(p)); } catch (e) {} };
+  const applyNavPrefs = (items, section) => {
+    const hidden = new Set(navPrefs.hidden || []);
+    const order = (navPrefs.order || {})[section] || [];
+    const pos = new Map(order.map((p, i) => [p, i]));
+    return items.filter(it => !hidden.has(it.path)).slice()
+      .sort((a, b) => (pos.has(a.path) ? pos.get(a.path) : 999) - (pos.has(b.path) ? pos.get(b.path) : 999));
+  };
+  const moveNavItem = (section, items, path, dir) => {
+    const base = ((navPrefs.order || {})[section] && navPrefs.order[section].length ? navPrefs.order[section] : items.map(i => i.path)).slice();
+    const idx = base.indexOf(path); const j = idx + dir;
+    if (idx < 0 || j < 0 || j >= base.length) return;
+    [base[idx], base[j]] = [base[j], base[idx]];
+    saveNavPrefs({ ...navPrefs, order: { ...(navPrefs.order || {}), [section]: base } });
+  };
+  const toggleNavItem = (path) => {
+    const hidden = new Set(navPrefs.hidden || []);
+    if (hidden.has(path)) hidden.delete(path); else hidden.add(path);
+    saveNavPrefs({ ...navPrefs, hidden: [...hidden] });
+  };
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -380,7 +404,7 @@ function Layout() {
 
         {/* Navigation */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {navItems.map(item => (
+          {applyNavPrefs(navItems, 'main').map(item => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -437,7 +461,7 @@ function Layout() {
               </div>
               {moreMenuOpen && sidebarOpen && (
                 <div className="space-y-1 pl-2 border-l border-white/10 ml-4">
-                  {additionalNavItems.map(item => (
+                  {applyNavPrefs(additionalNavItems, 'more').map(item => (
                     <NavLink
                       key={item.path}
                       to={item.path}
@@ -458,7 +482,7 @@ function Layout() {
                       )}
                     </NavLink>
                   ))}
-                  {additionalDepartmentItems.map(item => (
+                  {applyNavPrefs(additionalDepartmentItems, 'deptMore').map(item => (
                     <NavLink
                       key={item.path}
                       to={item.path}
@@ -489,7 +513,7 @@ function Layout() {
                   </p>
                 )}
               </div>
-              {departmentItems.map(item => (
+              {applyNavPrefs(departmentItems, 'dept').map(item => (
                 <NavLink
                   key={item.path}
                   to={item.path}
@@ -537,7 +561,7 @@ function Layout() {
               
               {sidebarOpen ? (
                 <div className="space-y-1">
-                  {adminItems.map(item => (
+                  {applyNavPrefs(adminItems, 'admin').map(item => (
                     <NavLink
                       key={item.path}
                       to={item.path}
@@ -559,7 +583,7 @@ function Layout() {
                 </div>
               ) : (
                 <div className="space-y-1">
-                  {adminItems.map(item => (
+                  {applyNavPrefs(adminItems, 'admin').map(item => (
                     <NavLink
                       key={item.path}
                       to={item.path}
@@ -583,6 +607,14 @@ function Layout() {
 
         {/* Settings & Logout */}
         <div className="p-3 border-t border-white/10 space-y-1">
+          <button
+            onClick={() => setShowCustomize(true)}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all w-full text-slate-300 hover:bg-white/10 hover:text-white ${!sidebarOpen && 'justify-center'}`}
+            title={!sidebarOpen ? 'Customize Menu' : undefined}
+          >
+            <Settings size={20} />
+            {sidebarOpen && <span>Customize Menu</span>}
+          </button>
           <NavLink
             to="/settings"
             className={({ isActive }) => `
@@ -611,6 +643,35 @@ function Layout() {
           </button>
         </div>
       </aside>
+      {showCustomize && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowCustomize(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col m-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b">
+              <div className="font-semibold text-slate-800">Customize Menu</div>
+              <button onClick={() => setShowCustomize(false)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">{'\u00D7'}</button>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-4">
+              <p className="text-xs text-slate-500">Reorder with the arrows, hide what you don't use. Changes save instantly and only affect your view on this device.</p>
+              {[['main', 'Main', navItems], ['dept', 'Department', departmentItems], ['deptMore', 'Department extras', additionalDepartmentItems], ['more', 'More', additionalNavItems], ['admin', 'Admin', typeof adminItems !== 'undefined' ? adminItems : []]].filter(([, , arr]) => arr && arr.length).map(([sec, secLabel, arr]) => (
+                <div key={sec}>
+                  <div className="text-xs font-semibold text-slate-400 uppercase mb-1">{secLabel}</div>
+                  {applyNavPrefs(arr, sec).concat(arr.filter(i => (navPrefs.hidden || []).includes(i.path))).map(item => { const isHidden = (navPrefs.hidden || []).includes(item.path); return (
+                    <div key={sec + item.path} className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded ${isHidden ? 'opacity-40' : ''}`}>
+                      <span className="text-sm text-slate-700 truncate">{item.label}</span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => moveNavItem(sec, arr, item.path, -1)} className="px-1.5 py-0.5 text-xs border rounded hover:bg-slate-50">{'\u2191'}</button>
+                        <button onClick={() => moveNavItem(sec, arr, item.path, 1)} className="px-1.5 py-0.5 text-xs border rounded hover:bg-slate-50">{'\u2193'}</button>
+                        <button onClick={() => toggleNavItem(item.path)} className={`px-2 py-0.5 text-xs border rounded hover:bg-slate-50 ${isHidden ? 'text-slate-400' : 'text-emerald-600'}`}>{isHidden ? 'Show' : 'Hide'}</button>
+                      </span>
+                    </div>
+                  ); })}
+                </div>
+              ))}
+              <button onClick={() => saveNavPrefs({ hidden: [], order: {} })} className="text-xs text-indigo-600 hover:underline">Reset to default</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
