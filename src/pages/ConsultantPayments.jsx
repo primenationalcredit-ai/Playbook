@@ -118,7 +118,7 @@ function ConsultantPayments() {
     });
 
     return {
-      sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount, rounds, roundsAmount, count,
+      sales, docs, docsAmount, partials, partialsAmount, finals, finalsAmount, rounds, roundsAmount,
       paidInFull, refunds, refundsAmount, negativeItems, negativeItemsClients,
       count: (data || []).length
     };
