@@ -16,6 +16,8 @@ const WRITE_ACTIONS = new Set([
   'request_split', 'request_date_change', 'request_pause', 'post_approval_message', 'approve_request', 'reject_request', 'mark_approval_read',
   // Admin direct actions (the payment processor still gates these via isAdmin)
   'update_due_date', 'pause', 'resume', 'charge_now', 'refund_initial', 'refund_scheduled',
+  // External (Zelle) payment recording - Zoho payment + charge closed on the processor side
+  'mark_paid_external',
   // Card on file (save a card for a client, e.g. Zelle clients with no card yet)
   'update_card_on_file', 'collect_and_save_card',
   'send_payment_form',

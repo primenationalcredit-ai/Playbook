@@ -82,6 +82,17 @@ function tokenizeCard({ cardNumber, expMonth, expYear, cardCode, zip, fullName }
   });
 }
 
+async function zellePaidFlow(chargeId, amount, reload) {
+  const conf = window.prompt(`Mark this $${amount} payment as PAID via Zelle.\n\nEnter the Zelle confirmation number:`);
+  if (conf === null) return;
+  if (!conf.trim()) { window.alert('Confirmation number is required.'); return; }
+  if (!window.confirm(`Confirm: the client paid $${amount} via Zelle (confirmation ${conf.trim()}).\n\nThis records the payment in Zoho, marks the charge paid, and notes the deal.`)) return;
+  try {
+    const res = await callApi('mark_paid_external', { charge_id: chargeId, reference: conf.trim(), method: 'zelle' });
+    window.alert(res && res.message ? res.message : 'Marked paid.');
+    if (typeof reload === 'function') reload();
+  } catch (e) { window.alert('Failed: ' + (e.message || e)); }
+}
 async function callApi(action, payload = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   const authHeader = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
@@ -252,6 +263,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700">
                 <PauseCircle size={12} /> Pause
               </button>
+              <button onClick={() => onAction({ type: 'zelle_paid', charge_id: c.id, amount: c.amount })}
+                title="Client paid this outside the card system (Zelle). Enter the confirmation number to record it in Zoho and mark the charge paid."
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700">
+                <CheckCircle2 size={12} /> Zelle Paid
+              </button>
             </>
           )}
           {isPaused && (
@@ -307,6 +323,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
             <button onClick={() => onAction({ type: 'request_pause', charge_id: c.id, current_due_date: c.due_date, amount: c.amount, label })}
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-white border border-amber-500 rounded hover:bg-amber-50">
               <PauseCircle size={12} /> Request pause
+            </button>
+            <button onClick={() => onAction({ type: 'zelle_paid', charge_id: c.id, amount: c.amount })}
+              title="Client paid this via Zelle. Enter the confirmation number to record it in Zoho and mark the charge paid."
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded hover:bg-emerald-700">
+              <CheckCircle2 size={12} /> Zelle Paid
             </button>
             <span className="text-[11px] text-slate-400 self-center">Requires leadership approval</span>
           </div>
@@ -1046,6 +1067,7 @@ export default function Invoices() {
   const [notice, setNotice] = useState(null);
 
   const openAction = (info) => {
+    if (info.type === 'zelle_paid') { zellePaidFlow(info.charge_id, info.amount, () => window.location.reload()); return; }
     setModal(info);
     if (info.type === 'update_due_date') setForm({ new_due_date: '' });
     else if (info.type === 'request_split') setForm({ partial_amount: '', first_date: '', remainder_date: '', reason: '' });
