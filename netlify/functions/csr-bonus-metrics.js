@@ -123,8 +123,9 @@ function gatePass(row) {
 function classify(ms) {
   const s = (ms || '').toLowerCase();
   if (!s) return null;
+  const z = s.replace(/[^a-z]/g, ''); // space/punctuation-proof: "ID IQ" -> "idiq"
   if (s.includes('smart')) return 'smart';                          // Smart Credit, incl. "Smart Credit (Client Sent Reports)"
-  if (s.includes('identity') || s.includes('idiq')) return 'idiq'; // Identity IQ, incl. "Identity Iq (Client Sent Reports)". Generic "client sent"/Experian fall through to other.
+  if (s.includes('identity') || z.includes('idiq')) return 'idiq'; // Identity IQ / IDIQ / "ID IQ" / "Identity Iq (Client Sent Reports)". "My Score IQ"/"CreditScore IQ" normalize without 'idiq' and stay other.
   return 'other';                                                   // Experian.com, My Score IQ, CreditBuilder IQ — count toward the 45 only
 }
 
