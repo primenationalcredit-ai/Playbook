@@ -77,6 +77,8 @@ export default function AffiliateOutreach() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [lastTouch, setLastTouch] = useState({});
+  const [viewTouch, setViewTouch] = useState(null);
+  const touchPacket = (t) => { try { const p = JSON.parse(t.detail); return (p && typeof p === 'object') ? p : {}; } catch (e) { return {}; } };
   useEffect(() => {
     (async () => {
       try {
@@ -514,10 +516,25 @@ export default function AffiliateOutreach() {
                                       <span className="text-gray-600">{new Date(t.created_at).toLocaleString()}</span>
                                       <span className="font-medium">{t.channel}</span>
                                       {t.subject && <span className="text-gray-500">· {t.subject}</span>}
-                                      <span className={`px-1.5 rounded-full ${t.status === 'sent' ? 'bg-green-100 text-green-700' : t.status === 'task_created' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{t.status}</span>
+                                      <span className={`px-1.5 rounded-full ${['sent', 'opened', 'clicked'].includes(t.status) ? 'bg-green-100 text-green-700' : t.status === 'task_created' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{t.status}</span>
+                                      {touchPacket(t).body && <button onClick={() => setViewTouch(t)} className="text-indigo-600 hover:underline">View</button>}
                                     </div>
                                   );
                                 })}
+                              </div>
+                            )}
+                            {viewTouch && (
+                              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setViewTouch(null)}>
+                                <div className="bg-white rounded-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col m-4" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-between px-5 py-3 border-b">
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-slate-800 truncate">{viewTouch.channel === 'sms' ? 'SMS sent' : (viewTouch.subject || 'Email sent')}</div>
+                                      <div className="text-xs text-slate-400">{new Date(viewTouch.created_at).toLocaleString()} {'\u00b7'} step {viewTouch.step_number ?? ''} {'\u00b7'} {viewTouch.status}</div>
+                                    </div>
+                                    <button onClick={() => setViewTouch(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">{'\u00D7'}</button>
+                                  </div>
+                                  <div className="overflow-y-auto p-5 text-sm text-slate-700 whitespace-pre-wrap">{touchPacket(viewTouch).body}</div>
+                                </div>
                               </div>
                             )}
                           </td>

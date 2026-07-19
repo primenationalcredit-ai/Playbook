@@ -186,11 +186,11 @@ ${mergedBody}`;
   return text.trim();
 }
 
-async function sendEmail(aff, consultantName, consultantEmail, subject, body) {
+async function sendEmail(aff, consultantName, consultantEmail, subject, body, ref) {
   const unsub = `${SITE_BASE}/.netlify/functions/affiliate-unsub?id=${aff.id}&k=${Buffer.from(String(aff.pipedrive_org_id)).toString('base64')}`;
   const fullBody = `${body}\n\n----\nNo longer want partner emails? Unsubscribe: ${unsub}`;
   const payload = {
-    personalizations: [{ to: [{ email: aff.contact_email }] }],
+    personalizations: [{ to: [{ email: aff.contact_email }], ...(ref ? { custom_args: { touch_ref: ref } } : {}) }],
     from: { email: FROM_EMAIL, name: `${consultantName} at ASAP` },
     reply_to: { email: consultantEmail || FROM_EMAIL, name: consultantName },
     subject,
@@ -423,11 +423,15 @@ exports.handler = async (event) => {
             try { finalBody = await aiPersonalize(tmpl.subject, mergedBody, aff, consultantName); aiUsed = true; }
             catch (e) { finalBody = mergedBody; }
           }
-          await sendEmail(aff, consultantName, consultantEmail, mergeFields(tmpl.subject, aff, consultantName), finalBody);
+          aff.__sgRef = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
+          await sendEmail(aff, consultantName, consultantEmail, mergeFields(tmpl.subject, aff, consultantName), finalBody, aff.__sgRef);
+          aff.__sentBody = finalBody;
           if (aiUsed) aff.__ai = true;
           emailsSent++; results.emails++;
         } else if (tmpl.channel === 'sms') {
-          await sendSms(aff.contact_phone, mergeFields(tmpl.body, aff, consultantName));
+          const smsBodySent = mergeFields(tmpl.body, aff, consultantName);
+          await sendSms(aff.contact_phone, smsBodySent);
+          aff.__sentBody = smsBodySent;
           smsSent++; results.sms++;
         }
 
@@ -437,7 +441,9 @@ exports.handler = async (event) => {
             affiliate_org_id: aff.id, pipedrive_org_id: aff.pipedrive_org_id, channel: tmpl.channel,
             segment: cadSeg, step_number: newStep, template_id: tmpl.id, subject: tmpl.subject || null,
             status: tmpl.channel === 'call' ? 'task_created' : 'sent',
-            detail: aff.__ai ? 'ai_personalized' : null
+            // JSON packet in the existing text column (no DB migration needed):
+            // ai flag + SendGrid tracking ref + the exact body sent.
+            detail: JSON.stringify({ ai: !!aff.__ai, ref: (tmpl.channel === 'email' ? aff.__sgRef : null) || null, body: tmpl.channel === 'call' ? null : (aff.__sentBody || null) })
           }])
         });
         const fuLine = tmpl.channel === 'call'
