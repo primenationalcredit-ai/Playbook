@@ -37,6 +37,11 @@ async function appendPipedriveFollowUp(aff, line) {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [PD_FU_NOTES_KEY]: combined })
     });
+    // Also drop a REAL note in the org's activity feed so consultants see every send.
+    await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/notes?api_token=${PIPEDRIVE_TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: aff.pipedrive_org_id, content: `<b>Partner outreach</b><br/>${line}` })
+    });
   } catch (e) { /* never block outreach on Pipedrive */ }
 }
 const FROM_EMAIL = process.env.AFFILIATE_FROM_EMAIL || 'teamelite@asapcreditrepairusa.com';
