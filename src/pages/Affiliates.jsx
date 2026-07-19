@@ -370,7 +370,7 @@ export default function Affiliates() {
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs text-slate-500">{new Date(t.created_at).toLocaleString()}</p>
-                      <p className={`text-[11px] font-semibold ${(t.status === 'sent' || t.status === 'task_created') ? 'text-green-600' : 'text-red-600'}`}>{t.status}</p>
+                      <p className={`text-[11px] font-semibold ${['sent', 'task_created', 'opened', 'clicked'].includes(t.status) ? 'text-green-600' : 'text-red-600'}`}>{t.status}</p>
                     </div>
                   </div>
                 ))}
