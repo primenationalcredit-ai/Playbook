@@ -46,6 +46,15 @@ exports.handler = async (event) => {
       body: JSON.stringify({ pipedrive_fu_notes: text || null })
     });
 
+    // Appends (touch logs) also drop a real PD note in the activity feed.
+    if (append != null) {
+      try {
+        await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/notes?api_token=${PIPEDRIVE_TOKEN}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: aff.pipedrive_org_id, content: `<b>Partner outreach</b><br/>${String(append)}` })
+        });
+      } catch (e) { /* non-blocking */ }
+    }
     return { statusCode: 200, headers, body: JSON.stringify({ success: true }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: String(e.message || e).slice(0, 300) }) };

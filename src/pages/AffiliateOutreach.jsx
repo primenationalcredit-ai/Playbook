@@ -76,6 +76,17 @@ export default function AffiliateOutreach() {
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
+  const [lastTouch, setLastTouch] = useState({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const rows = await sbGet('affiliate_touches?select=affiliate_org_id,channel,step_number,created_at,status&order=created_at.desc&limit=1000');
+        const m = {};
+        for (const t of (Array.isArray(rows) ? rows : [])) if (!m[t.affiliate_org_id]) m[t.affiliate_org_id] = t;
+        setLastTouch(m);
+      } catch (e) { /* non-blocking */ }
+    })();
+  }, []);
   const [touches, setTouches] = useState({});
   const [callTasks, setCallTasks] = useState([]);
   const [queuedCount, setQueuedCount] = useState(0);
@@ -326,6 +337,7 @@ export default function AffiliateOutreach() {
                     <th className="px-4 py-2">Sold</th>
                     <th className="px-4 py-2">Last sold</th>
                     <th className="px-4 py-2">Cadence</th>
+                    <th className="px-4 py-2" title="Most recent automated or manual outreach touch">Last touch</th>
                     <th className="px-4 py-2">Owner</th>
                     <th className="px-4 py-2"></th>
                   </tr>
@@ -357,6 +369,9 @@ export default function AffiliateOutreach() {
                         <td className="px-4 py-2 text-xs">
                           step {a.cadence_step || 0}{a.next_touch_due ? ` · next ${a.next_touch_due}` : ''}
                         </td>
+                        <td className="px-4 py-2 text-xs whitespace-nowrap">
+                          {(() => { const t = lastTouch[a.id]; if (!t) return <span className="text-gray-300">{'\u2014'}</span>; const d = new Date(t.created_at); return <span title={`${t.channel} step ${t.step_number ?? ''} · ${t.status}`}>{t.channel === 'sms' ? '\uD83D\uDCAC' : '\uD83D\uDCE7'} {d.toLocaleDateString()}</span>; })()}
+                        </td>
                         <td className="px-4 py-2 text-xs">
                           {a.owner_name || '-'}
                           {a.recruited_by_super && <div className="text-gray-400">via {a.recruited_by_super}</div>}
@@ -373,7 +388,7 @@ export default function AffiliateOutreach() {
                       </tr>
                       {expanded === a.id && (
                         <tr className="border-t bg-gray-50">
-                          <td colSpan={10} className="px-6 py-3">
+                          <td colSpan={11} className="px-6 py-3">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                               <div className="bg-white border rounded-lg p-2">
                                 <div className="text-[10px] uppercase text-gray-400">Became an affiliate</div>

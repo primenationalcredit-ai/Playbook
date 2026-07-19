@@ -68,6 +68,11 @@ async function appendPdNote(orgId, line) {
       body: JSON.stringify({ [PD_FU_NOTES_KEY]: combined })
     });
     await supa(`affiliate_orgs?pipedrive_org_id=eq.${orgId}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ pipedrive_fu_notes: combined }) });
+    // Real PD note so the send shows in the org's activity feed.
+    await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/notes?api_token=${PIPEDRIVE_TOKEN}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: orgId, content: `<b>Partner outreach</b><br/>${line}` })
+    });
   } catch (e) { /* non-blocking */ }
 }
 
