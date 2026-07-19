@@ -366,7 +366,7 @@ export default function Affiliates() {
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold flex-shrink-0 ${t.channel === 'email' ? 'bg-blue-100 text-blue-700' : t.channel === 'sms' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{t.channel}</span>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-slate-800 truncate">{t.org_name}{t.contact_name ? ` · ${t.contact_name}` : ''}</p>
-                      <p className="text-xs text-slate-500 truncate">{t.segment} step {t.step_number}{t.subject ? ` · ${t.subject}` : ''}{t.detail === 'ai_personalized' ? ' · AI personalized' : ''}</p>
+                      <p className="text-xs text-slate-500 truncate">{t.segment} step {t.step_number}{t.subject ? ` · ${t.subject}` : ''}{(t.detail === 'ai_personalized' || String(t.detail || '').includes('\x22ai\x22:true')) ? ' · AI personalized' : ''}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs text-slate-500">{new Date(t.created_at).toLocaleString()}</p>
