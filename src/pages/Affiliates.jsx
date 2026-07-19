@@ -56,6 +56,14 @@ export default function Affiliates() {
   const [activeTab, setActiveTab] = useState('action');
   const [activity, setActivity] = useState(null);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [actRange, setActRange] = useState('today');
+  const [actChannel, setActChannel] = useState('all');
+  const actMatch = (t) => (actChannel === 'all' || t.channel === actChannel) &&
+    (actRange === 'all' ? true
+      : actRange === 'today' ? new Date(t.created_at).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }) === new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+      : actRange === 'yesterday' ? new Date(t.created_at).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }) === new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+      : actRange === '7d' ? (Date.now() - new Date(t.created_at).getTime()) <= 7 * 86400000
+      : (Date.now() - new Date(t.created_at).getTime()) <= 30 * 86400000);
   const [showFollowupModal, setShowFollowupModal] = useState(false);
   const [selectedAffiliate, setSelectedAffiliate] = useState(null);
   const [expandedAffiliate, setExpandedAffiliate] = useState(null);
@@ -70,7 +78,7 @@ export default function Affiliates() {
   const loadActivity = async () => {
     setActivityLoading(true);
     try {
-      const r = await fetch('/.netlify/functions/affiliate-activity');
+      const r = await fetch('/.netlify/functions/affiliate-activity?limit=500');
       setActivity(await r.json());
     } catch (e) { setActivity({ error: e.message }); }
     setActivityLoading(false);
@@ -346,22 +354,36 @@ export default function Affiliates() {
            : activity.error ? <p className="text-sm text-red-600 py-8 text-center">{activity.error}</p>
            : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="bg-white border border-slate-200 rounded-xl p-4">
-                  <p className="text-xs text-slate-400 mb-1">Today</p>
-                  <p className="text-sm text-slate-700 font-semibold">{activity.summary.today.emails} emails · {activity.summary.today.sms} SMS · {activity.summary.today.calls} call tasks</p>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-xl p-4">
-                  <p className="text-xs text-slate-400 mb-1">Last 7 days</p>
-                  <p className="text-sm text-slate-700 font-semibold">{activity.summary.last7.emails} emails · {activity.summary.last7.sms} SMS · {activity.summary.last7.calls} call tasks</p>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-xl p-4">
-                  <p className="text-xs text-slate-400 mb-1">Feed</p>
-                  <p className="text-sm text-slate-700 font-semibold">last {activity.rows.length} touches</p>
-                </div>
-              </div>
+              {(() => {
+                const rows = (activity.rows || []).filter(actMatch);
+                const emails = rows.filter(t => t.channel === 'email');
+                const opened = emails.filter(t => t.status === 'opened' || t.status === 'clicked').length;
+                const clicked = emails.filter(t => t.status === 'clicked').length;
+                const bounced = emails.filter(t => t.status === 'bounced').length;
+                const pct = (n, d) => d ? `${Math.round((n / d) * 100)}%` : '\u2014';
+                const Chip = ({ id, label, cur, set }) => (
+                  <button onClick={() => set(id)} className={`px-2.5 py-1 rounded-full text-xs font-medium border ${cur === id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>{label}</button>
+                );
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All']].map(([id, l]) => <Chip key={id} id={id} label={l} cur={actRange} set={setActRange} />)}
+                      <span className="mx-1 text-slate-300">|</span>
+                      {[['all', 'All'], ['email', 'Emails'], ['sms', 'SMS'], ['call', 'Calls']].map(([id, l]) => <Chip key={'c' + id} id={id} label={l} cur={actChannel} set={setActChannel} />)}
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+                      {[['Touches', rows.length], ['Emails', emails.length], ['SMS', rows.filter(t => t.channel === 'sms').length], ['Call tasks', rows.filter(t => t.channel === 'call').length], ['Opened', `${opened} (${pct(opened, emails.length)})`], ['Clicked', `${clicked} (${pct(clicked, emails.length)})`], ['Bounced', bounced]].map(([l, v]) => (
+                        <div key={l} className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+                          <p className="text-lg font-bold text-slate-800">{v}</p>
+                          <p className="text-[11px] text-slate-400">{l}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
               <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
-                {activity.rows.map(t => (
+                {(activity.rows || []).filter(actMatch).map(t => (
                   <div key={t.id} className="p-3 flex items-start gap-3 text-sm">
                     <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold flex-shrink-0 ${t.channel === 'email' ? 'bg-blue-100 text-blue-700' : t.channel === 'sms' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{t.channel}</span>
                     <div className="min-w-0 flex-1">
