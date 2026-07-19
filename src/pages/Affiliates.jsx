@@ -54,6 +54,8 @@ export default function Affiliates() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('action');
+  const [activity, setActivity] = useState(null);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [showFollowupModal, setShowFollowupModal] = useState(false);
   const [selectedAffiliate, setSelectedAffiliate] = useState(null);
   const [expandedAffiliate, setExpandedAffiliate] = useState(null);
@@ -65,6 +67,14 @@ export default function Affiliates() {
     loadData();
   }, [currentUser, viewMode]);
 
+  const loadActivity = async () => {
+    setActivityLoading(true);
+    try {
+      const r = await fetch('/.netlify/functions/affiliate-activity');
+      setActivity(await r.json());
+    } catch (e) { setActivity({ error: e.message }); }
+    setActivityLoading(false);
+  };
   const loadData = async () => {
     if (!currentUser?.id) return;
     setLoading(true);
@@ -301,6 +311,16 @@ export default function Affiliates() {
           <Users size={16} className="inline mr-2" />
           All Affiliates ({totalAffiliates})
         </button>
+        <button
+          onClick={() => { setActiveTab('activity'); if (!activity) loadActivity(); }}
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+            activeTab === 'activity'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Outreach Activity
+        </button>
       </div>
 
       {/* Search */}
@@ -315,6 +335,50 @@ export default function Affiliates() {
         />
       </div>
 
+      {/* Outreach Activity Tab */}
+      {activeTab === 'activity' && (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button onClick={loadActivity} className="text-xs text-blue-600 hover:underline">Refresh</button>
+          </div>
+          {activityLoading ? <p className="text-sm text-slate-400 py-8 text-center">Loading activity...</p>
+           : !activity ? <p className="text-sm text-slate-400 py-8 text-center">Loading...</p>
+           : activity.error ? <p className="text-sm text-red-600 py-8 text-center">{activity.error}</p>
+           : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <p className="text-xs text-slate-400 mb-1">Today</p>
+                  <p className="text-sm text-slate-700 font-semibold">{activity.summary.today.emails} emails · {activity.summary.today.sms} SMS · {activity.summary.today.calls} call tasks</p>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <p className="text-xs text-slate-400 mb-1">Last 7 days</p>
+                  <p className="text-sm text-slate-700 font-semibold">{activity.summary.last7.emails} emails · {activity.summary.last7.sms} SMS · {activity.summary.last7.calls} call tasks</p>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <p className="text-xs text-slate-400 mb-1">Feed</p>
+                  <p className="text-sm text-slate-700 font-semibold">last {activity.rows.length} touches</p>
+                </div>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+                {activity.rows.map(t => (
+                  <div key={t.id} className="p-3 flex items-start gap-3 text-sm">
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold flex-shrink-0 ${t.channel === 'email' ? 'bg-blue-100 text-blue-700' : t.channel === 'sms' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{t.channel}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-slate-800 truncate">{t.org_name}{t.contact_name ? ` · ${t.contact_name}` : ''}</p>
+                      <p className="text-xs text-slate-500 truncate">{t.segment} step {t.step_number}{t.subject ? ` · ${t.subject}` : ''}{t.detail === 'ai_personalized' ? ' · AI personalized' : ''}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-xs text-slate-500">{new Date(t.created_at).toLocaleString()}</p>
+                      <p className={`text-[11px] font-semibold ${(t.status === 'sent' || t.status === 'task_created') ? 'text-green-600' : 'text-red-600'}`}>{t.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       {/* Action Needed Tab */}
       {activeTab === 'action' && (
         <div className="space-y-3">
