@@ -7,10 +7,20 @@ const ZOHO_ORG_ID = process.env.ZOHO_ORG_ID;
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-async function getZohoToken() {
+async function clearZohoTokenCache() {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.zoho_access_token`, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, Prefer: 'return=minimal' }
+    });
+  } catch (e) {}
+}
+async function getZohoToken(force) {
+  if (force) await clearZohoTokenCache();
   // Reuse a cached access token (Zoho tokens last ~1 hour). Minting a new one on
   // every call trips Zoho's refresh rate limit, which 500s the whole sync.
   try {
+    if (force) throw new Error('skip cache');
     const c = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.zoho_access_token&select=cache_value`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
@@ -235,6 +245,10 @@ exports.handler = async (event) => {
     };
   } catch (error) {
     console.error('Zoho sync error:', error);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
+    // Self-heal: a Zoho 401 means the cached token was invalidated (Zoho keeps
+    // a limited number of live access tokens; new mints kill old ones). Evict
+    // it so the next run - 5 minutes away - mints fresh and succeeds.
+    if (String(error && error.message || '').includes('Zoho 401')) { await clearZohoTokenCache(); }
+    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message, selfHeal: String(error && error.message || '').includes('Zoho 401') ? 'token cache evicted - next run recovers' : undefined }) };
   }
 };
