@@ -60,8 +60,13 @@ exports.handler = async (event) => {
           if (rows.length > 0) {
             const full = JSON.parse(rows[0].cache_value);
             const age = Date.now() - new Date(full.calculatedAt).getTime();
-            if (full.accountManagers && age < 48 * 3600000) { // 48 hours
-              return { statusCode: 200, headers, body: JSON.stringify({ ...full, fromCache: true, source: 'full_scan' }) };
+            if (full.accountManagers) {
+              // ALWAYS prefer the authoritative round-window scan, however old.
+              // The crude person-level fallback punishes AMs for cleaning their
+              // book (denominator shrinks, stalled linger -> rate rises), so a
+              // stale-but-correct snapshot beats a fresh-but-wrong one. Staleness
+              // is reported so the UI can show "as of".
+              return { statusCode: 200, headers, body: JSON.stringify({ ...full, fromCache: true, source: 'full_scan', staleHours: Math.round(age / 3600000) }) };
             }
           }
         }
@@ -164,7 +169,7 @@ exports.handler = async (event) => {
         paymentStalled: stats.paymentStalled,
         reportStallRate: stats.total > 0 ? Math.round((stats.reportStalled / stats.total) * 100) : 0,
         paymentStallRate: stats.total > 0 ? Math.round((stats.paymentStalled / stats.total) * 100) : 0,
-        combinedStallRate: stats.total > 0 ? Math.round(((stats.reportStalled + stats.paymentStalled) / stats.total) * 100) : 0,
+        combinedStallRate: stats.total > 0 ? Math.round((stats.stalledClients.length / stats.total) * 100) : 0, // unique stalled people (1857 counted once)
         stalledClients: stats.stalledClients.slice(0, 30)
       };
     }
