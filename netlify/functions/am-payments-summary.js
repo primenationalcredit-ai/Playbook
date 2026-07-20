@@ -45,8 +45,16 @@ exports.handler = async (event) => {
 
     if (!refresh) {
       try {
-        const c = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.${CACHE_KEY}&select=cache_value`, { headers: supa });
-        if (c.ok) { const rows = await c.json(); if (rows[0]?.cache_value) return { statusCode: 200, headers, body: rows[0].cache_value }; }
+        // 10-minute TTL: a cached month is only served while fresh. Without
+        // this the first snapshot of a month froze forever (served 7/2 data
+        // on 7/20).
+        const TTL_MS = 10 * 60000;
+        const c = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.${CACHE_KEY}&select=cache_value,updated_at`, { headers: supa });
+        if (c.ok) {
+          const rows = await c.json();
+          const fresh = rows[0]?.updated_at && (Date.now() - new Date(rows[0].updated_at).getTime()) < TTL_MS;
+          if (rows[0]?.cache_value && fresh) return { statusCode: 200, headers, body: rows[0].cache_value };
+        }
       } catch (e) {}
     }
 
