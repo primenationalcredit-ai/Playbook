@@ -31,8 +31,27 @@ async function supa(path, opts = {}) {
 }
 
 async function getZohoToken() {
+  // Cached in app_config so all scheduled runs share one token (~55 min life).
+  // Uncached per-run refreshes were tripping Zoho's refresh-endpoint rate
+  // limit, 401-ing entire runs.
+  try {
+    const c = await supa('app_config?key=eq.zoho_token_cache&select=value');
+    const row = Array.isArray(c.json) && c.json[0];
+    if (row && row.value) {
+      const parsed = JSON.parse(row.value);
+      if (parsed.token && parsed.expires && Date.now() < parsed.expires) return parsed.token;
+    }
+  } catch (e) {}
   const res = await fetch(`https://accounts.zoho.com/oauth/v2/token?refresh_token=${ZOHO_REFRESH_TOKEN}&client_id=${ZOHO_CLIENT_ID}&client_secret=${ZOHO_CLIENT_SECRET}&grant_type=refresh_token`, { method: 'POST' });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
+  if (data.access_token) {
+    try {
+      await supa('app_config?on_conflict=key', {
+        method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([{ key: 'zoho_token_cache', value: JSON.stringify({ token: data.access_token, expires: Date.now() + 55 * 60000 }) }])
+      });
+    } catch (e) {}
+  }
   return data.access_token;
 }
 
@@ -64,6 +83,7 @@ exports.handler = async (event) => {
     if (invoices.length === 0) return respond(200, { checked: 0, deleted: 0, updated: 0, hasMore: false, message: 'Nothing open in window' });
 
     const token = await getZohoToken();
+    if (!token) return respond(200, { checked: 0, deleted: 0, updated: 0, unchanged: 0, errors: 0, changes: [], hasMore: true, note: 'zoho auth throttled - next scheduled run resumes from the same cursor' });
     let deleted = 0, updated = 0, unchanged = 0, errors = 0;
     const changes = [];
 
@@ -75,7 +95,7 @@ exports.handler = async (event) => {
         const data = await res.json().catch(() => ({}));
         const zi = data.invoice;
 
-        if (!zi && (res.status === 404 || /not exist|does not exist|invalid|not found/i.test(data.message || ''))) {
+        if (!zi && res.status === 404) { // ONLY a true 404 tombstones - auth/throttle errors must never delete
           // Deleted in Zoho -> tombstone, remove it
           const del = await supa(`consultant_invoices?id=eq.${inv.id}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
           if (del.ok) { deleted++; changes.push({ who: inv.customer_name, was: `$${inv.balance} due ${inv.due_date}`, action: 'DELETED (gone from Zoho)' }); }
