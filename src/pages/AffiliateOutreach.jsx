@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
+import EngineDashboard from '../components/EngineDashboard';
 import {
   Users, Search, Phone, Mail, MessageSquare, PhoneCall, Pause, Play,
   CheckCircle, AlertTriangle, RefreshCw, ChevronDown, ChevronUp, Zap, ZapOff
@@ -276,6 +277,7 @@ export default function AffiliateOutreach() {
         </div>
       </div>
 
+      <EngineDashboard />
       {/* Segment cards */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
         {SEGMENTS.map((s) => (
