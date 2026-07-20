@@ -56,6 +56,11 @@ export default function Affiliates() {
   const [activeTab, setActiveTab] = useState('action');
   const [activity, setActivity] = useState(null);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [engineStatus, setEngineStatus] = useState(null);
+  const loadEngineStatus = async () => {
+    try { const r = await fetch('/.netlify/functions/affiliate-engine-status'); setEngineStatus(await r.json()); }
+    catch (e) { setEngineStatus({ error: e.message }); }
+  };
   const [actRange, setActRange] = useState('today');
   const [actChannel, setActChannel] = useState('all');
   const actMatch = (t) => (actChannel === 'all' || t.channel === actChannel) &&
@@ -320,7 +325,7 @@ export default function Affiliates() {
           All Affiliates ({totalAffiliates})
         </button>
         <button
-          onClick={() => { setActiveTab('activity'); if (!activity) loadActivity(); }}
+          onClick={() => { setActiveTab('activity'); if (!activity) loadActivity(); if (!engineStatus) loadEngineStatus(); }}
           className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
             activeTab === 'activity'
               ? 'border-blue-600 text-blue-600'
@@ -346,8 +351,36 @@ export default function Affiliates() {
       {/* Outreach Activity Tab */}
       {activeTab === 'activity' && (
         <div className="space-y-3">
-          <div className="flex justify-end">
-            <button onClick={loadActivity} className="text-xs text-blue-600 hover:underline">Refresh</button>
+          <div className="bg-white border border-slate-200 rounded-xl p-3">
+            {!engineStatus ? <p className="text-xs text-slate-400">Checking engine{'\u2026'}</p>
+             : engineStatus.error ? <p className="text-xs text-red-600">Engine status error: {engineStatus.error}</p>
+             : (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${engineStatus.enabled ? 'bg-green-500' : 'bg-amber-500'}`}></span>
+                    {engineStatus.enabled ? 'Engine RUNNING' : 'Engine PAUSED'}
+                  </span>
+                  <span className="text-slate-600">Today: <b>{engineStatus.today.emails}</b> emails {'\u00b7'} <b>{engineStatus.today.sms}</b> SMS {'\u00b7'} <b>{engineStatus.today.calls}</b> call tasks</span>
+                  <span className="text-slate-500 text-xs">Last send: {engineStatus.lastTouch ? `${engineStatus.lastTouch.channel} ${new Date(engineStatus.lastTouch.created_at).toLocaleString()}` : 'never'}</span>
+                  <span className="text-slate-400 text-xs">Runs weekdays {'\u00b7'} SMS 9am{'\u2013'}6pm CT</span>
+                  <button onClick={() => { loadActivity(); loadEngineStatus(); }} className="ml-auto text-xs text-blue-600 hover:underline">Refresh</button>
+                </div>
+                <details>
+                  <summary className="text-xs font-semibold text-slate-600 cursor-pointer">Up next ({engineStatus.upNextCount || 0} queued for the next run)</summary>
+                  {(engineStatus.upNext || []).length === 0 ? <p className="text-xs text-slate-400 mt-1">Nothing due right now.</p> : (
+                    <div className="mt-1 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                      {engineStatus.upNext.map((u, i) => (
+                        <div key={i} className="py-1.5 text-xs flex items-start gap-2">
+                          <span className="font-medium text-slate-800 flex-shrink-0">{u.org}</span>
+                          <span className="text-slate-500">{u.plan}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </details>
+              </div>
+            )}
           </div>
           {activityLoading ? <p className="text-sm text-slate-400 py-8 text-center">Loading activity...</p>
            : !activity ? <p className="text-sm text-slate-400 py-8 text-center">Loading...</p>
