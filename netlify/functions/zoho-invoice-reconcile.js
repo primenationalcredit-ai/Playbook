@@ -43,11 +43,11 @@ exports.handler = async (event) => {
   const days = parseInt(params.days) || 45;
   // Scheduled runs pass no cursor - resume from the stored one so the whole
   // set rotates through across runs (see treadmill note in header).
-  let after = after || null;
+  let after = params.after || null;
   if (!after) {
     try {
-      const cRes = await fetch(`${SUPABASE_URL}/rest/v1/app_config?key=eq.zoho_reconcile_cursor&select=value`, { headers: SB });
-      const cRows = cRes.ok ? await cRes.json() : [];
+      const cRes = await supa('app_config?key=eq.zoho_reconcile_cursor&select=value');
+      const cRows = Array.isArray(cRes.json) ? cRes.json : [];
       if (cRows[0] && cRows[0].value) after = cRows[0].value;
     } catch (e) {}
   }
@@ -106,10 +106,10 @@ exports.handler = async (event) => {
     // Persist rotation cursor: hasMore -> save next_after; done -> clear so the
     // next run starts from the top.
     try {
-      const cursorVal = (typeof hasMore !== 'undefined' && hasMore && typeof nextAfter !== 'undefined' && nextAfter) ? String(nextAfter) : '';
-      await fetch(`${SUPABASE_URL}/rest/v1/app_config?on_conflict=key`, {
+      const cursorVal = (invoices.length === limit && lastId) ? String(lastId) : '';
+      await supa('app_config?on_conflict=key', {
         method: 'POST',
-        headers: { ...SB, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify([{ key: 'zoho_reconcile_cursor', value: cursorVal }])
       });
     } catch (e) {}
