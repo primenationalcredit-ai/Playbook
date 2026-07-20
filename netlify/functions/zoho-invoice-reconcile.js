@@ -41,6 +41,16 @@ exports.handler = async (event) => {
   const params = event.queryStringParameters || {};
   const limit = Math.min(parseInt(params.limit) || 60, 60);
   const days = parseInt(params.days) || 45;
+  // Scheduled runs pass no cursor - resume from the stored one so the whole
+  // set rotates through across runs (see treadmill note in header).
+  let after = after || null;
+  if (!after) {
+    try {
+      const cRes = await fetch(`${SUPABASE_URL}/rest/v1/app_config?key=eq.zoho_reconcile_cursor&select=value`, { headers: SB });
+      const cRows = cRes.ok ? await cRes.json() : [];
+      if (cRows[0] && cRows[0].value) after = cRows[0].value;
+    } catch (e) {}
+  }
 
   try {
     const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
@@ -48,7 +58,7 @@ exports.handler = async (event) => {
     const rows = await supa(
       `consultant_invoices?balance=gt.1&due_date=gte.${cutoff}&zoho_invoice_id=not.is.null` +
       `&select=id,zoho_invoice_id,customer_name,balance,due_date&order=id.asc&limit=${limit}` +
-      (params.after ? `&id=gt.${params.after}` : '')
+      (after ? `&id=gt.${after}` : '')
     );
     const invoices = rows.json || [];
     if (invoices.length === 0) return respond(200, { checked: 0, deleted: 0, updated: 0, hasMore: false, message: 'Nothing open in window' });
@@ -92,10 +102,22 @@ exports.handler = async (event) => {
     }
 
     const lastId = invoices[invoices.length - 1].id;
+    {
+    // Persist rotation cursor: hasMore -> save next_after; done -> clear so the
+    // next run starts from the top.
+    try {
+      const cursorVal = (typeof hasMore !== 'undefined' && hasMore && typeof nextAfter !== 'undefined' && nextAfter) ? String(nextAfter) : '';
+      await fetch(`${SUPABASE_URL}/rest/v1/app_config?on_conflict=key`, {
+        method: 'POST',
+        headers: { ...SB, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([{ key: 'zoho_reconcile_cursor', value: cursorVal }])
+      });
+    } catch (e) {}
     return respond(200, {
       checked: invoices.length, deleted, updated, unchanged, errors,
       changes, hasMore: invoices.length === limit, next_after: lastId
     });
+  }
   } catch (e) {
     return respond(500, { error: String(e.message || e).slice(0, 300) });
   }
