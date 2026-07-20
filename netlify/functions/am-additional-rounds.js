@@ -185,6 +185,10 @@ exports.handler = async (event) => {
           const total = Math.round(parseFloat(inv.total) || 0);
           let remaining;
           if (paid >= total) { paid -= total; remaining = 0; } else { remaining = total - paid; paid = 0; }
+          // Zoho's own balance is authoritative when LOWER: a paid/partial invoice
+          // whose payment synced under a different payment_type must not show as owed.
+          const zohoBal = parseFloat(inv.balance);
+          if (!isNaN(zohoBal) && zohoBal < remaining) remaining = Math.max(0, Math.round(zohoBal));
           const due = inv.due_date ? String(inv.due_date).slice(0, 10) : null;
           if (remaining > 1 && due && due < todayStr) {
             if (!resolved) { am = await resolveAM(Number(dealId)); resolved = true; }
