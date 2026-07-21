@@ -16,7 +16,8 @@ function StatCard({ label, value, sub, accent, onClick }) {
 
 const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
 
-function DrillPanel({ drill, onClose }) {
+function DrillPanel({ drill, onClose, onSaved }) {
+  const [savedMap, setSavedMap] = React.useState({});
   if (!drill) return null;
   const SITE_OPTIONS = [
     ['486', 'Identity IQ'], ['3703', 'Identity Iq (Client Sent Reports)'], ['1715', 'Smart Credit'],
@@ -39,7 +40,9 @@ function DrillPanel({ drill, onClose }) {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
-      window.alert(data.message || 'Saved. Counts update on the next metrics refresh.');
+      // Show the change on the row immediately; re-tally metrics in the background.
+      setSavedMap((m) => ({ ...m, [String(dealId)]: label }));
+      if (onSaved) onSaved();
     } catch (e) { window.alert('Failed: ' + e.message); }
   };
   return (
@@ -58,7 +61,10 @@ function DrillPanel({ drill, onClose }) {
                 {row.sub && <div className="text-xs text-slate-500 truncate">{row.sub}</div>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {rowDealId(row) && (
+                {rowDealId(row) && savedMap[String(rowDealId(row))] && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">-&gt; {savedMap[String(rowDealId(row))]}</span>
+                )}
+                {rowDealId(row) && !savedMap[String(rowDealId(row))] && (
                   <select defaultValue="" onClick={(e) => e.stopPropagation()}
                     onChange={(e) => { const oid = e.target.value; if (!oid) return; const lbl = (SITE_OPTIONS.find(o => o[0] === oid) || [])[1]; fixSite(rowDealId(row), oid, lbl); e.target.value = ''; }}
                     className="text-[11px] border border-slate-200 rounded px-1 py-0.5 text-slate-500 bg-white max-w-[110px]">
@@ -532,7 +538,7 @@ export default function CSRBonus() {
         <div className="p-6 text-center text-slate-500">No bonus data found for {myName}.</div>
       )}
 
-      <DrillPanel drill={drill} onClose={() => setDrill(null)} />
+      <DrillPanel drill={drill} onClose={() => setDrill(null)} onSaved={() => load(month)} />
     </div>
   );
 }
