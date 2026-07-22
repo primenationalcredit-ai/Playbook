@@ -192,7 +192,7 @@ async function sendEmail(aff, consultantName, consultantEmail, subject, body, re
   const payload = {
     personalizations: [{ to: [{ email: aff.contact_email }], ...(ref ? { custom_args: { touch_ref: ref } } : {}) }],
     from: { email: FROM_EMAIL, name: `${consultantName} at ASAP` },
-    reply_to: { email: consultantEmail || FROM_EMAIL, name: consultantName },
+    reply_to: { email: consultantEmail || FROM_EMAIL, name: consultantName }, // company-domain only (override map or teamelite@)
     subject,
     content: [{ type: 'text/plain', value: fullBody }]
   };
@@ -270,9 +270,16 @@ exports.handler = async (event) => {
 
     // consultants (owner name -> email) for reply-to
     const uRes = await supa('users?select=*');
-    const userEmail = {};
-    for (const u of (uRes.json || [])) { if (u.name && u.email) userEmail[u.name.toLowerCase().split(/\s+/)[0]] = u.email; }
-    const consultantEmailFor = (owner) => userEmail[String(owner || '').toLowerCase().split(/\s+/)[0]] || null;
+    // Reply-to is ALWAYS a company-domain address. The users table holds login
+    // emails (personal Gmail) - never expose those on outreach. Unknown owners
+    // fall back to FROM_EMAIL.
+    const REPLY_TO_OVERRIDE = {
+      cindy: 'cindy@asapcreditrepairusa.com',
+      eric: 'eric@asapcreditrepairusa.com',
+      carlos: 'carlos@asapcreditrepairusa.com',
+      rosalia: 'rosalia@asapcreditrepairusa.com',
+    };
+    const consultantEmailFor = (owner) => REPLY_TO_OVERRIDE[String(owner || '').toLowerCase().split(/\s+/)[0]] || null;
     const userPhone = {};
     for (const u of (uRes.json || [])) {
       const fw = String(u.name || '').toLowerCase().split(/\s+/)[0];
