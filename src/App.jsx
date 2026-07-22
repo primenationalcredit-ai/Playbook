@@ -8,6 +8,7 @@ import MyPlaybook from './pages/MyPlaybook';
 import TeamView from './pages/TeamView';
 import Updates from './pages/Updates';
 import AdminTasks from './pages/AdminTasks';
+import CommandCenter from './pages/CommandCenter';
 import AdminUsers from './pages/AdminUsers';
 import AdminUpdates from './pages/AdminUpdates';
 import AdminTraining from './pages/AdminTraining';
@@ -134,6 +135,7 @@ function App() {
         <Route path="approvals" element={<Approvals />} />
         <Route path="approvals/:id" element={<Approvals />} />
         <Route path="admin/all-payments" element={<ConsultantPayments />} />
+              <Route path="admin/command-center" element={<CommandCenter />} />
         <Route path="secured-cards" element={<SecuredCards />} />
         <Route path="paysheet" element={<Paysheet />} />
         <Route path="csr-dashboard" element={<CSRDashboard />} />
