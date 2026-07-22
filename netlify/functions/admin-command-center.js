@@ -1,9 +1,7 @@
 // netlify/functions/admin-command-center.js
-// COMMAND CENTER P1.1: date-range cohort funnel + live pipeline census.
-// GET ?start=YYYY-MM-DD&end=YYYY-MM-DD  (defaults: current month, America/Chicago)
-// Cohort = deals CREATED in [start, end]; funnel shows where they are NOW.
-// CLOSED = deal currently in SOLD or C.R.S. (incl ADDITIONAL C.R.S.) - Joe's definition.
-// 10-minute in-memory cache per range.
+// COMMAND CENTER P2 server: range cohort funnel + census + RANGE-FILTERED
+// REVIEWS (all employees, from incoming_reviews + users name join).
+// GET ?start=YYYY-MM-DD&end=YYYY-MM-DD (defaults: current month, America/Chicago)
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -15,7 +13,6 @@ const PIPELINE_RANK = {
   'c.r.s.': 5, 'additional c.r.s.': 5,
 };
 const rankOf = (p) => PIPELINE_RANK[String(p || '').trim().toLowerCase()] || 0;
-
 const respond = (status, body) => ({
   statusCode: status,
   headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -40,25 +37,22 @@ exports.handler = async (event) => {
     if (!SUPABASE_URL || !SUPABASE_KEY) return respond(500, { error: 'Server misconfigured' });
     const ct = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
     const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const monthStart = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-01`;
     const q = event.queryStringParameters || {};
-    const start = (q.start || monthStart).slice(0, 10);
+    const start = (q.start || `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-01`).slice(0, 10);
     const end = (q.end || iso(ct)).slice(0, 10);
     const force = q.force === '1';
     const cacheKey = `${start}_${end}`;
-
     const cached = globalThis.__ccCache[cacheKey];
     if (!force && cached && Date.now() - cached.at < CACHE_TTL_MS) {
       return respond(200, { ...cached.data, cached: true });
     }
 
-    // ---- COHORT: deals created in [start, end] (end inclusive) ----
+    // ---- COHORT FUNNEL ----
     const cohort = await supaAll(
       'cs_deals',
       `deal_created_at=gte.${start}T00:00:00Z&deal_created_at=lte.${end}T23:59:59Z` +
       `&select=deal_id,deal_title,pipeline_name,stage_name,call_center_rep_name,monitoring_site,has_doc_fee,deal_created_at,deal_status`
     );
-
     const funnel = {
       leadsIn: cohort.length,
       stillNewLeads: 0, reachedReports: 0, reachedQuoted: 0, closed: 0, docFeePaid: 0,
@@ -76,7 +70,7 @@ exports.handler = async (event) => {
       if (rank === 1) { funnel.stillNewLeads++; funnel.lists.stillNewLeads.push(item); }
       if (rank >= 2) { funnel.reachedReports++; funnel.lists.reachedReports.push(item); }
       if (rank >= 3) { funnel.reachedQuoted++; funnel.lists.reachedQuoted.push(item); }
-      if (rank >= 4) { funnel.closed++; funnel.lists.closed.push(item); }   // SOLD or C.R.S.
+      if (rank >= 4) { funnel.closed++; funnel.lists.closed.push(item); }
       if (d.has_doc_fee) funnel.docFeePaid++;
     }
     const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
@@ -88,7 +82,33 @@ exports.handler = async (event) => {
       claimRate: pct(funnel.claimed, funnel.leadsIn),
     };
 
-    // ---- LIVE CENSUS (open deals, whole mirror, right now) ----
+    // ---- REVIEWS (range-filtered, all employees) ----
+    let reviews = [];
+    try {
+      const revRows = await supaAll(
+        'incoming_reviews',
+        `review_date=gte.${start}&review_date=lte.${end}&select=assigned_to,review_date,location_name,reviewer_name`
+      );
+      let nameByUid = {};
+      try {
+        const users = await supaAll('users', 'select=*', 2);
+        for (const u of users) {
+          const nm = u.name || u.full_name || u.display_name || u.email || null;
+          if (u.id != null && nm) nameByUid[u.id] = nm;
+        }
+      } catch (e) { /* name join optional */ }
+      const agg = {};
+      for (const r of revRows) {
+        const key = r.assigned_to != null ? (nameByUid[r.assigned_to] || `User ${r.assigned_to}`) : 'Unassigned';
+        agg[key] = agg[key] || { count: 0, bbb: 0 };
+        agg[key].count++;
+        if ((r.location_name || '').toLowerCase().includes('bbb') || (r.location_name || '').toLowerCase().includes('better business')) agg[key].bbb++;
+      }
+      reviews = Object.entries(agg).map(([name, v]) => ({ name, count: v.count, bbb: v.bbb }))
+        .sort((a, b) => b.count - a.count);
+    } catch (e) { reviews = [{ name: `reviews unavailable: ${e.message}`, count: 0, bbb: 0 }]; }
+
+    // ---- CENSUS ----
     const all = await supaAll('cs_deals', `deal_status=eq.open&select=pipeline_name,stage_name`);
     const census = {};
     for (const d of all) {
@@ -107,7 +127,7 @@ exports.handler = async (event) => {
 
     const data = {
       start, end, generatedAt: new Date().toISOString(),
-      funnel, census: censusOut, censusTotalOpen: all.length,
+      funnel, reviews, census: censusOut, censusTotalOpen: all.length,
     };
     globalThis.__ccCache[cacheKey] = { at: Date.now(), data };
     return respond(200, data);
