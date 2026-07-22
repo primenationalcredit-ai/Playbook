@@ -228,7 +228,7 @@ exports.handler = async (event) => {
     const dist = {};
     for (const name of staff) {
       tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, convTotal: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], quoteList: [], docsList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [], missingSiteList: [], lateCredited: 0, lateExcluded: 0 };
-      ops[name] = { newDeals: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
+      ops[name] = { newDeals: 0, claimedGotReport: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
 
@@ -298,6 +298,7 @@ exports.handler = async (event) => {
         const dealRank = pipelineRank(r.pipeline_name);
         const hasDocFee = docFeeDealIds.has(String(r.deal_id));
         ops[rep].newDeals++;
+        if (r.monitoring_site) ops[rep].claimedGotReport++;
         if (dealRank >= REPORTS_RANK) ops[rep].reachedReports++;
         if (dealRank >= QUOTE_RANK) ops[rep].reachedQuoted++;
         if (hasDocFee) ops[rep].docFeeCollected++;
@@ -459,6 +460,7 @@ exports.handler = async (event) => {
         closingRate: t.total ? Math.round((t.reachedDocs / t.total) * 100) : 0,
         kpis: {
           newDeals: ops[name].newDeals,
+          claimedGotReport: ops[name].claimedGotReport,
           reachedReports: ops[name].reachedReports,
           reachedQuoted: ops[name].reachedQuoted,
           docFeeCollected: ops[name].docFeeCollected
