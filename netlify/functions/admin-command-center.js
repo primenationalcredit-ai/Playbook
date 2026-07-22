@@ -1,7 +1,6 @@
 // netlify/functions/admin-command-center.js
-// COMMAND CENTER P2 server: range cohort funnel + census + RANGE-FILTERED
-// REVIEWS (all employees, from incoming_reviews + users name join).
-// GET ?start=YYYY-MM-DD&end=YYYY-MM-DD (defaults: current month, America/Chicago)
+// COMMAND CENTER P3 server: cohort funnel + JOURNEY (doc fee + dispute rounds)
+// + range reviews + census. GET ?start&end (defaults current month CT).
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -32,6 +31,37 @@ async function supaAll(table, query, maxPages = 30) {
   return out;
 }
 
+// Round-dates cache (filled by credit-team-cache-background). Structure is
+// probed tolerantly: we look for per-deal entries carrying rd1/rd3/rd4 dates.
+async function loadRoundDates() {
+  try {
+    const rows = await supaAll('app_cache', `cache_key=eq.credit_team_round_dates&select=cache_value`, 1);
+    if (!rows[0]) return null;
+    const parsed = JSON.parse(rows[0].cache_value);
+    const byDeal = {};
+    const ingest = (id, obj) => {
+      if (!id || !obj || typeof obj !== 'object') return;
+      const keys = Object.keys(obj);
+      const find = (frag) => {
+        const k = keys.find((x) => x.toLowerCase().includes(frag));
+        return k ? obj[k] : null;
+      };
+      byDeal[String(id)] = { rd1: find('rd1') || find('round1'), rd3: find('rd3') || find('round3'), rd4: find('rd4') || find('round4') };
+    };
+    if (Array.isArray(parsed)) {
+      for (const e of parsed) ingest(e.dealId || e.deal_id || e.id, e);
+    } else if (parsed && typeof parsed === 'object') {
+      const vals = Object.values(parsed);
+      if (vals.length && typeof vals[0] === 'object' && !Array.isArray(vals[0])) {
+        for (const [id, e] of Object.entries(parsed)) ingest(id, e);
+      } else if (parsed.deals && typeof parsed.deals === 'object') {
+        for (const [id, e] of Object.entries(parsed.deals)) ingest(id, e);
+      }
+    }
+    return Object.keys(byDeal).length ? byDeal : null;
+  } catch (e) { return null; }
+}
+
 exports.handler = async (event) => {
   try {
     if (!SUPABASE_URL || !SUPABASE_KEY) return respond(500, { error: 'Server misconfigured' });
@@ -47,19 +77,21 @@ exports.handler = async (event) => {
       return respond(200, { ...cached.data, cached: true });
     }
 
-    // ---- COHORT FUNNEL ----
     const cohort = await supaAll(
       'cs_deals',
       `deal_created_at=gte.${start}T00:00:00Z&deal_created_at=lte.${end}T23:59:59Z` +
       `&select=deal_id,deal_title,pipeline_name,stage_name,call_center_rep_name,monitoring_site,has_doc_fee,deal_created_at,deal_status`
     );
+
     const funnel = {
       leadsIn: cohort.length,
       stillNewLeads: 0, reachedReports: 0, reachedQuoted: 0, closed: 0, docFeePaid: 0,
       claimed: 0, unclaimed: 0,
       lists: { stillNewLeads: [], reachedReports: [], reachedQuoted: [], closed: [] },
     };
+    const cohortIds = new Set();
     for (const d of cohort) {
+      cohortIds.add(String(d.deal_id));
       const rank = rankOf(d.pipeline_name);
       const item = {
         dealId: d.deal_id, title: d.deal_title || `Deal #${d.deal_id}`,
@@ -82,12 +114,31 @@ exports.handler = async (event) => {
       claimRate: pct(funnel.claimed, funnel.leadsIn),
     };
 
-    // ---- REVIEWS (range-filtered, all employees) ----
+    // ---- JOURNEY: the cohort's full arc including dispute rounds ----
+    const roundDates = await loadRoundDates();
+    const journey = {
+      leadsIn: funnel.leadsIn, claimed: funnel.claimed,
+      reachedReports: funnel.reachedReports, reachedQuoted: funnel.reachedQuoted,
+      closed: funnel.closed, docFeePaid: funnel.docFeePaid,
+      round1Started: 0, round3Started: 0, round4Started: 0,
+      roundsAvailable: !!roundDates,
+    };
+    if (roundDates) {
+      for (const id of cohortIds) {
+        const r = roundDates[id];
+        if (!r) continue;
+        if (r.rd1) journey.round1Started++;
+        if (r.rd3) journey.round3Started++;
+        if (r.rd4) journey.round4Started++;
+      }
+    }
+
+    // ---- REVIEWS (range) ----
     let reviews = [];
     try {
       const revRows = await supaAll(
         'incoming_reviews',
-        `review_date=gte.${start}&review_date=lte.${end}&select=assigned_to,review_date,location_name,reviewer_name`
+        `review_date=gte.${start}&review_date=lte.${end}&select=assigned_to,review_date,location_name`
       );
       let nameByUid = {};
       try {
@@ -96,17 +147,18 @@ exports.handler = async (event) => {
           const nm = u.name || u.full_name || u.display_name || u.email || null;
           if (u.id != null && nm) nameByUid[u.id] = nm;
         }
-      } catch (e) { /* name join optional */ }
+      } catch (e) {}
       const agg = {};
       for (const r of revRows) {
         const key = r.assigned_to != null ? (nameByUid[r.assigned_to] || `User ${r.assigned_to}`) : 'Unassigned';
         agg[key] = agg[key] || { count: 0, bbb: 0 };
         agg[key].count++;
-        if ((r.location_name || '').toLowerCase().includes('bbb') || (r.location_name || '').toLowerCase().includes('better business')) agg[key].bbb++;
+        const loc = (r.location_name || '').toLowerCase();
+        if (loc.includes('bbb') || loc.includes('better business')) agg[key].bbb++;
       }
       reviews = Object.entries(agg).map(([name, v]) => ({ name, count: v.count, bbb: v.bbb }))
         .sort((a, b) => b.count - a.count);
-    } catch (e) { reviews = [{ name: `reviews unavailable: ${e.message}`, count: 0, bbb: 0 }]; }
+    } catch (e) { reviews = []; }
 
     // ---- CENSUS ----
     const all = await supaAll('cs_deals', `deal_status=eq.open&select=pipeline_name,stage_name`);
@@ -127,7 +179,7 @@ exports.handler = async (event) => {
 
     const data = {
       start, end, generatedAt: new Date().toISOString(),
-      funnel, reviews, census: censusOut, censusTotalOpen: all.length,
+      funnel, journey, reviews, census: censusOut, censusTotalOpen: all.length,
     };
     globalThis.__ccCache[cacheKey] = { at: Date.now(), data };
     return respond(200, data);

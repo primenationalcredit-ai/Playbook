@@ -6,7 +6,12 @@ import { useEffect, useState } from 'react';
 
 const CC_URL = '/.netlify/functions/admin-command-center';
 const CSR_URL = '/.netlify/functions/csr-bonus-metrics';
-const AM_URL = '/.netlify/functions/account-manager-metrics';
+const AM_HELPERS = {
+  csat: '/.netlify/functions/am-csat',
+  referrals: '/.netlify/functions/am-referrals',
+  stall: '/.netlify/functions/am-stall-rate',
+  rounds: '/.netlify/functions/am-additional-rounds',
+};
 const CONS_URL = '/.netlify/functions/consultant-bonus-metrics';
 const CREDIT_URL = '/.netlify/functions/credit-team-bonus-metrics';
 const DEAL_URL = (id) => `https://asapcreditrepair.pipedrive.com/deal/${id}`;
@@ -92,7 +97,11 @@ export default function CommandCenter() {
   }, [start, end]);
   useEffect(() => { fetch(CSR_URL).then((r) => r.json()).then(setCsr).catch(() => {}); }, []);
   useEffect(() => {
-    if (tab === 'am' && !am) fetch(AM_URL).then((r) => r.json()).then(setAm).catch(() => setAm({ error: true }));
+    if (tab === 'am' && !am) {
+      Promise.all(Object.entries(AM_HELPERS).map(([k, u]) =>
+        fetch(u).then((r) => r.json()).then((d) => [k, d]).catch(() => [k, null])
+      )).then((pairs) => setAm(Object.fromEntries(pairs))).catch(() => setAm({ error: true }));
+    }
     if (tab === 'consultant' && !cons) fetch(CONS_URL).then((r) => r.json()).then(setCons).catch(() => setCons({ error: true }));
     if (tab === 'credit' && !credit) fetch(CREDIT_URL).then((r) => r.json()).then(setCredit).catch(() => setCredit({ error: true }));
   }, [tab, am, cons, credit]);
@@ -133,6 +142,7 @@ export default function CommandCenter() {
         <h1 className="text-xl font-bold text-slate-800">Command Center</h1>
         <div className="flex gap-1.5 flex-wrap">
           <TabBtn id="overview" label="Overview" />
+          <TabBtn id="journey" label="Journey" />
           <TabBtn id="csr" label="CSR" />
           <TabBtn id="am" label="Account Managers" />
           <TabBtn id="consultant" label="Consultants" />
@@ -142,7 +152,7 @@ export default function CommandCenter() {
       </div>
 
       {/* RANGE PILLS (drive Overview funnel + reviews) */}
-      {(tab === 'overview') && (
+      {(tab === 'overview' || tab === 'journey') && (
         <div className="flex flex-wrap items-center gap-2">
           {[['today', 'Today'], ['yesterday', 'Yesterday'], ['week', 'Last 7 days'], ['twoweeks', 'Last 14 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['custom', 'Custom']].map(([k, lbl]) => (
             <button key={k} onClick={() => setRangeKey(k)}
@@ -192,6 +202,47 @@ export default function CommandCenter() {
         </>
       )}
 
+      {/* ===== JOURNEY ===== */}
+      {tab === 'journey' && cc && cc.journey && (() => {
+        const j = cc.journey;
+        const steps = [
+          ['Leads In', j.leadsIn, 'created in range'],
+          ['Claimed', j.claimed, 'CSR took the lead'],
+          ['Reports', j.reachedReports, 'spoken to - moved past New Leads'],
+          ['Quoted', j.reachedQuoted, 'received a quote'],
+          ['Closed', j.closed, 'in Sold or C.R.S.'],
+          ['Doc fee', j.docFeePaid, 'first payment collected'],
+          ['Round 1', j.round1Started, 'disputes started'],
+          ['Round 3', j.round3Started, 'final standard round'],
+          ['Round 4+', j.round4Started, 'extended disputes'],
+        ];
+        return (
+          <div>
+            <h2 className="text-sm font-semibold text-slate-600 mb-2">Full client journey &mdash; deals created in range, how far each stage reached</h2>
+            <div className="space-y-1.5">
+              {steps.map(([label, val, sub], i) => {
+                const prev = i === 0 ? null : steps[i - 1][1];
+                const p = prev ? Math.round(((val || 0) / prev) * 100) : null;
+                const width = j.leadsIn ? Math.max(2, Math.round(((val || 0) / j.leadsIn) * 100)) : 2;
+                return (
+                  <div key={label} className="flex items-center gap-2">
+                    <div className="w-24 text-xs font-medium text-slate-600 text-right shrink-0">{label}</div>
+                    <div className="flex-1 bg-slate-100 rounded-full h-6 overflow-hidden">
+                      <div className="h-6 rounded-full bg-indigo-500 flex items-center px-2" style={{ width: width + '%' }}>
+                        <span className="text-[11px] font-bold text-white">{val}</span>
+                      </div>
+                    </div>
+                    <div className="w-28 text-[10px] text-slate-400 shrink-0">{p != null ? p + '% of prev \u00b7 ' : ''}{sub}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {!j.roundsAvailable && <div className="text-[11px] text-amber-600 mt-2">Dispute-round stages show 0: the round-dates cache was not readable - flag this and we wire it.</div>}
+            <div className="text-[11px] text-slate-400 mt-2">Tip: pick an older range (e.g. custom: March) to see a cohort that has had time to reach the dispute rounds. This month's cohort is naturally early-stage.</div>
+          </div>
+        );
+      })()}
+
       {/* ===== CSR ===== */}
       {tab === 'csr' && (
         <div>
@@ -232,15 +283,50 @@ export default function CommandCenter() {
       {tab === 'am' && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-600">Account Manager KPIs &mdash; this month</h2>
-          {!am && <div className="text-xs text-slate-400">Loading (this one pulls live from Pipedrive - up to a minute)&hellip;</div>}
-          {am?.error && <div className="text-xs text-rose-600">AM metrics failed to load.</div>}
-          {am?.departmentMetrics && (<><div className="text-xs font-medium text-slate-500">Department</div><KpiGrid obj={am.departmentMetrics} /></>)}
-          {am?.metricsByAM && Object.entries(am.metricsByAM).map(([name, m]) => (
-            <div key={name}>
-              <div className="text-xs font-medium text-slate-500 mt-2">{name}</div>
-              <KpiGrid obj={m} />
-            </div>
-          ))}
+          {!am && <div className="text-xs text-slate-400">Loading&hellip;</div>}
+          {am && (() => {
+            const names = new Set();
+            const val = (o, n) => { const e = o?.byAM?.[n]; if (e == null) return null; return typeof e === 'object' ? (e.value ?? e.score ?? e.count ?? e.total ?? JSON.stringify(e)) : e; };
+            Object.keys(am.csat?.byAM || {}).forEach((n) => names.add(n));
+            Object.keys(am.referrals?.byAM || {}).forEach((n) => names.add(n));
+            Object.keys(am.rounds?.byAM || {}).forEach((n) => names.add(n));
+            const stallArr = Array.isArray(am.stall?.accountManagers) ? am.stall.accountManagers : [];
+            stallArr.forEach((x) => { const n = x.name || x.am || x.accountManager; if (n) names.add(n); });
+            const stallFor = (n) => {
+              const x = stallArr.find((e) => (e.name || e.am || e.accountManager) === n);
+              if (!x) return null;
+              return x.stallRate ?? x.stall_pct ?? x.pct ?? (x.stalled != null && x.evaluated ? Math.round((x.stalled / x.evaluated) * 100) : x.stalled ?? null);
+            };
+            const rows = [...names].map((n) => ({
+              name: n, csat: val(am.csat, n), referrals: val(am.referrals, n),
+              stall: stallFor(n), ars: val(am.rounds, n),
+            }));
+            return rows.length === 0 ? <div className="text-xs text-slate-400">No AM data returned.</div> : (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500"><tr>
+                    <th className="text-left font-medium px-3 py-2">Account Manager</th>
+                    <th className="text-right font-medium px-3 py-2" title="CSAT survey average this month">CSAT</th>
+                    <th className="text-right font-medium px-3 py-2">Referrals</th>
+                    <th className="text-right font-medium px-3 py-2" title="% of active clients stalled">Stall</th>
+                    <th className="text-right font-medium px-3 py-2" title="Additional rounds paid this month">ARs</th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map((x) => (
+                      <tr key={x.name} className="border-t border-slate-100">
+                        <td className="px-3 py-2 font-medium text-slate-800">{x.name}</td>
+                        <td className="px-3 py-2 text-right">{x.csat ?? '-'}</td>
+                        <td className="px-3 py-2 text-right">{x.referrals ?? '-'}</td>
+                        <td className="px-3 py-2 text-right">{x.stall != null ? x.stall + '%' : '-'}</td>
+                        <td className="px-3 py-2 text-right">{x.ars ?? '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {am.rounds?.pastDueRounds != null && <div className="px-3 py-2 text-[11px] text-rose-600 border-t border-slate-100">Past-due additional rounds: {Array.isArray(am.rounds.pastDueRounds) ? am.rounds.pastDueRounds.length : am.rounds.pastDueRounds}</div>}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -249,30 +335,70 @@ export default function CommandCenter() {
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-600">Consultant KPIs &mdash; this month</h2>
           {!cons && <div className="text-xs text-slate-400">Loading&hellip;</div>}
-          {cons?.error && <div className="text-xs text-rose-600">Consultant metrics failed to load.</div>}
-          {cons?.teamTotals && (<><div className="text-xs font-medium text-slate-500">Team</div><KpiGrid obj={cons.teamTotals} /></>)}
-          {cons?.consultants && (Array.isArray(cons.consultants) ? cons.consultants : Object.values(cons.consultants)).map((c, i) => (
-            <div key={c.name || i}>
-              <div className="text-xs font-medium text-slate-500 mt-2">{c.name || `Consultant ${i + 1}`}</div>
-              <KpiGrid obj={c} skip={['name', 'details', 'deals', 'payments', 'list']} />
-            </div>
-          ))}
+          {cons && (() => {
+            const list = Array.isArray(cons.consultants) ? cons.consultants
+              : cons.consultants && typeof cons.consultants === 'object'
+                ? Object.entries(cons.consultants).map(([n, v]) => ({ name: n, ...(typeof v === 'object' ? v : {}) }))
+                : [];
+            if (!list.length) return <div className="text-xs text-slate-400">No consultant data returned.</div>;
+            const pick = (c, keys) => { for (const k of keys) { if (c[k] != null && typeof c[k] !== 'object') return c[k]; } return null; };
+            const rows = list.map((c) => ({
+              name: c.name || 'Unknown',
+              sales: pick(c, ['totalSales', 'mtdSales', 'sales']),
+              docs: pick(c, ['qualifiedDocs', 'docs', 'docFees', 'mtdDocs', 'totalDocs']),
+              todaySales: c.today && typeof c.today === 'object' ? (c.today.sales ?? null) : null,
+              closing: pick(c, ['closingRate', 'conversion', 'closeRate']),
+            }));
+            return (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500"><tr>
+                    <th className="text-left font-medium px-3 py-2">Consultant</th>
+                    <th className="text-right font-medium px-3 py-2">Sales (MTD)</th>
+                    <th className="text-right font-medium px-3 py-2">Today</th>
+                    <th className="text-right font-medium px-3 py-2">Qualified docs</th>
+                    <th className="text-right font-medium px-3 py-2">Closing</th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.sort((a, b) => (b.sales || 0) - (a.sales || 0)).map((x) => (
+                      <tr key={x.name} className="border-t border-slate-100">
+                        <td className="px-3 py-2 font-medium text-slate-800">{x.name}</td>
+                        <td className="px-3 py-2 text-right">{x.sales != null ? '$' + Number(x.sales).toLocaleString() : '-'}</td>
+                        <td className="px-3 py-2 text-right">{x.todaySales != null ? '$' + Number(x.todaySales).toLocaleString() : '-'}</td>
+                        <td className="px-3 py-2 text-right">{x.docs ?? '-'}</td>
+                        <td className="px-3 py-2 text-right">{x.closing != null ? x.closing + '%' : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
         </div>
       )}
 
       {/* ===== CREDIT ===== */}
       {tab === 'credit' && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <h2 className="text-sm font-semibold text-slate-600">Credit Team KPIs &mdash; this month</h2>
           {!credit && <div className="text-xs text-slate-400">Loading&hellip;</div>}
-          {credit?.error && <div className="text-xs text-rose-600">Credit metrics failed to load.</div>}
-          {credit?.metrics && (Array.isArray(credit.metrics) ? credit.metrics : Object.entries(credit.metrics).map(([k, v]) => ({ label: titleize(k), ...(typeof v === 'object' ? v : { value: v }) }))).map((m, i) => (
-            <div key={i} className="bg-white rounded-lg border border-slate-200 px-3 py-2 flex items-center justify-between">
-              <div className="text-sm text-slate-700">{m.label || m.name || `Metric ${i + 1}`}</div>
-              <div className="text-sm font-bold text-slate-800">{m.actual ?? m.value ?? ''}{m.standard != null && <span className="text-[10px] text-slate-400 font-normal ml-1.5">/ {m.standard} std</span>}</div>
+          {credit?.metrics && Object.entries(credit.metrics).map(([k, m]) => (
+            <div key={k}
+              onClick={() => {
+                const cl = m.detail?.clients || [];
+                setDrill({ label: `${titleize(k)} - detail (${cl.length})`, rows: cl.map((c) => ({
+                  title: c.name || 'Unknown',
+                  sub: [c.bucket, c.removed != null ? (c.removed ? 'removed items' : 'nothing removed') : null, c.days != null ? `${c.days} days` : null].filter(Boolean).join(' \u00b7 '),
+                  href: c.dealId ? DEAL_URL(c.dealId) : null,
+                })) });
+              }}
+              className={`bg-white rounded-lg border px-3 py-2 flex items-center justify-between cursor-pointer hover:border-indigo-300 ${m.met ? 'border-slate-200' : 'border-rose-300'}`}>
+              <div className="text-sm text-slate-700">{titleize(k)}</div>
+              <div className={`text-sm font-bold ${m.met ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {m.value}{m.unit}<span className="text-[10px] text-slate-400 font-normal ml-1.5">std {m.standard}{m.unit}</span>
+              </div>
             </div>
           ))}
-          {credit?.perMember && <><div className="text-xs font-medium text-slate-500 mt-2">Per member</div><KpiGrid obj={credit.perMember} /></>}
         </div>
       )}
 
