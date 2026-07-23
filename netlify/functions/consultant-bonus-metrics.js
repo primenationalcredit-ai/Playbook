@@ -526,7 +526,7 @@ exports.handler = async (event) => {
         const key = client.dealId || client.name;
         const mr = masterClientMap[key];
         const adv = mr && (mr.types.has('partial') || mr.types.has('final') || mr.types.has('paid_in_full'));
-        return { qualified: !!adv, reason: adv ? null : 'no partial or final payment on file', paid: 0, owed: 0 };
+        return { qualified: !!adv, month: null, reason: adv ? null : 'no partial or final payment on file', paid: 0, owed: 0 };
       }
 
       // Drop the doc-fee invoice (closest total to the doc payment; else the smallest invoice)
@@ -540,7 +540,7 @@ exports.handler = async (event) => {
       if (docIdx === -1 && !(invs.length === 1 && docAmt > 0)) { let min = Infinity; invs.forEach((inv, i) => { const t = parseFloat(inv.total) || 0; if (t < min) { min = t; docIdx = i; } }); }
       const nonDoc = invs.filter((_, i) => i !== docIdx);
 
-      if (nonDoc.length === 0) return { qualified: false, reason: 'doc fee only, no balance invoice yet', paid: 0, owed: 0 };
+      if (nonDoc.length === 0) return { qualified: false, month: null, reason: 'doc fee only, no balance invoice yet', paid: 0, owed: 0 };
 
       let paidInFull = 0, owed = 0, billed = 0;
       for (const inv of nonDoc) {
@@ -549,7 +549,22 @@ exports.handler = async (event) => {
         billed += total; owed += bal;
         if (bal <= EPS) paidInFull += total;
       }
-      const qualified = owed <= EPS ? true : paidInFull >= owed;
+      // RULE (Joe 7/23): qualified the moment ANY single balance invoice is paid
+      // in full - the partial invoice on a partial plan, the final invoice on a
+      // full plan. The rest of the balance being open does NOT block qualification.
+      const paidTotals = nonDoc.filter(inv => (parseFloat(inv.balance) || 0) <= EPS).map(inv => parseFloat(inv.total) || 0).filter(t => t > 0);
+      const qualified = paidTotals.length > 0 || owed <= EPS;
+      // MONTH (Joe 7/23): the doc counts in the month that invoice FINISHED. Walk
+      // the client's balance payments in date order until they cover the first
+      // completed invoice; the payment that crosses the line names the month.
+      let month = null;
+      if (qualified) {
+        const target = paidTotals.length ? Math.min(...paidTotals) : 0;
+        const pays = (client.payments || []).filter(p => p.payment_type !== 'doc_fee' && p.payment_date).sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
+        let cum = 0;
+        for (const p of pays) { cum += parseFloat(p.amount) || 0; if (cum >= target - EPS) { month = String(p.payment_date).slice(0, 7); break; } }
+        if (!month && pays.length) month = String(pays[pays.length - 1].payment_date).slice(0, 7);
+      }
       // Reason text credits the doc fee that was actually received. Without this, a client
       // who paid $149 against a $550 deal shows as "$550 of $550 balance still owed" because
       // we silently dropped one of the duplicate invoices as "the doc fee invoice" and the
@@ -560,7 +575,7 @@ exports.handler = async (event) => {
           ? `Doc fee paid ($${Math.round(docAmt)}). $${Math.round(owed)} balance still open.`
           : `$${Math.round(owed)} of $${Math.round(billed)} balance still owed`
       );
-      return { qualified, reason, paid: Math.round(docAmt + (billed - owed)), owed: Math.round(owed) };
+      return { qualified, month, reason, paid: Math.round(docAmt + (billed - owed)), owed: Math.round(owed) };
     }
 
     const results = {};
@@ -667,10 +682,10 @@ exports.handler = async (event) => {
 
       const clients = Object.values(clientMap);
       
-      // === QUALIFIED DOCS (invoice-amount rule; month = first balance-side payment) ===
-      // Policy (7/10, Joe): a doc counts toward the month the client's FIRST partial/
-      // final clears, regardless of the doc fee's month, with no time window between
-      // them. The balance qualification test (qualifyClient) is unchanged.
+      // === QUALIFIED DOCS (invoice-completion rule; month = when the plan invoice finished) ===
+      // Policy (7/23, Joe): a client qualifies when their first balance invoice is
+      // completed IN FULL (partial invoice on a partial plan / final invoice on a
+      // full plan), and the doc counts in THE MONTH THAT INVOICE FINISHED.
       let qualifiedDocs = 0;
       let docFeeOnlyCount = 0;
       const qualifiedClients = [];
@@ -679,13 +694,13 @@ exports.handler = async (event) => {
 
       for (const wc of Object.values(windowClientMap)) {
         if (!wc.hasDocFee) continue;
-        if (wc.firstAdvanceMonth !== targetMonth) continue; // belongs to the first advance's month
         const q = qualifyClient(wc);
-        if (q.qualified) {
-          qualifiedDocs++;
-          qualifiedClients.push(wc);
-          qualifiedKeySet.add(wc.key);
-        }
+        if (!q.qualified) continue;
+        const qMonth = q.month || wc.firstAdvanceMonth;
+        if (qMonth !== targetMonth) continue; // counts in the month the plan invoice finished
+        qualifiedDocs++;
+        qualifiedClients.push(wc);
+        qualifiedKeySet.add(wc.key);
       }
 
       // Chase list: this month's doc-fee clients not counted this month. If their first
@@ -696,12 +711,12 @@ exports.handler = async (event) => {
         if (qualifiedKeySet.has(key)) continue;
         const wc = windowClientMap[key];
         docFeeOnlyCount++;
-        if (wc && wc.firstAdvanceMonth && wc.firstAdvanceMonth !== targetMonth) {
-          const q2 = qualifyClient(wc);
-          notQualifiedClients.push({ name: client.name, dealId: client.dealId, reason: q2.qualified ? `Counts in ${wc.firstAdvanceMonth} (first partial landed that month)` : q2.reason, paid: q2.paid, owed: q2.owed });
+        const qc = qualifyClient(wc || client);
+        const qcMonth = qc.month || (wc && wc.firstAdvanceMonth) || null;
+        if (qc.qualified && qcMonth && qcMonth !== targetMonth) {
+          notQualifiedClients.push({ name: client.name, dealId: client.dealId, reason: `Counts in ${qcMonth} (plan payment completed that month)`, paid: qc.paid, owed: qc.owed });
         } else {
-          const q = qualifyClient(wc || client);
-          notQualifiedClients.push({ name: client.name, dealId: client.dealId, reason: q.reason, paid: q.paid, owed: q.owed });
+          notQualifiedClients.push({ name: client.name, dealId: client.dealId, reason: qc.reason, paid: qc.paid, owed: qc.owed });
         }
       }
 
