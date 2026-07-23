@@ -318,6 +318,7 @@ function Layout() {
   const adminItems = [
     { path: '/projects', icon: FolderKanban, label: 'Projects' },
     { path: '/admin/command-center', icon: BarChart3, label: 'Command Center' },
+    { path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' },
     { path: '/admin/tasks', icon: ListTodo, label: 'Manage Tasks' },
     { path: '/admin/users', icon: UserCog, label: 'Manage Users' },
     { path: '/admin/backups', icon: UserCheck, label: 'Backup Settings' },
