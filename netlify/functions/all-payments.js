@@ -28,6 +28,7 @@ exports.handler = async (event) => {
         payments = payments.concat(data);
         if (data.length < pageSize) break;
         offset += pageSize;
+        if (month === 'all' && offset >= 5000) break; // all-time capped: newest 5000 rows (full walk 502s past the fn time limit)
         if (offset > 200000) break;
       }
       return { statusCode: 200, headers, body: JSON.stringify({ payments }) };

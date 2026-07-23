@@ -24,7 +24,7 @@ const monthKey = (d) => d.toISOString().slice(0, 7);
 
 function AllPayments({ embedded = false }) {
   const now = new Date();
-  const [month, setMonth] = useState('all');
+  const [month, setMonth] = useState(monthKey(new Date())); // default = current month ('all' 502s at scale)
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
