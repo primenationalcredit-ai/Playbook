@@ -280,16 +280,44 @@ exports.handler = async (event) => {
     // Resolve a deal id for a payment row even when the row itself has no pipedrive_deal_id (Zoho
     // payments often store only the client name). Backfill by client name from any payment that does
     // carry an id, then from the consult deal metadata, so every client list can link to its deal.
-    const nameToDealId = {};
+    // RESOLUTION RULE (root fix for returning clients): collect EVERY deal id
+    // seen for a name, then resolve to the OPEN deal first (returning clients
+    // get a fresh open file - their old won/lost file must not claim their
+    // payments), tie-broken by newest. Statuses come from cs_deals in batch.
+    const nameDealCandidates = {};
     for (const p of allPayments) {
       if (p.pipedrive_deal_id && p.client_name) {
         const k = norm(p.client_name);
-        if (k && !nameToDealId[k]) nameToDealId[k] = p.pipedrive_deal_id;
+        if (k) (nameDealCandidates[k] = nameDealCandidates[k] || new Set()).add(String(p.pipedrive_deal_id));
       }
     }
     for (const id in dealMeta) {
       const nm = norm(dealMeta[id]?.name || '');
-      if (nm && !nameToDealId[nm]) nameToDealId[nm] = id;
+      if (nm) (nameDealCandidates[nm] = nameDealCandidates[nm] || new Set()).add(String(id));
+    }
+    const nameToDealId = {};
+    {
+      const _SU = process.env.SUPABASE_URL, _SK = process.env.SUPABASE_SERVICE_KEY;
+      const statusById = {};
+      const allIds = new Set();
+      for (const k in nameDealCandidates) { if (nameDealCandidates[k].size > 1) { for (const id of nameDealCandidates[k]) allIds.add(id); } }
+      const idArr = [...allIds];
+      for (let i = 0; i < idArr.length && _SU && _SK; i += 200) {
+        const chunk = idArr.slice(i, i + 200);
+        try {
+          const rows = await fetch(`${_SU}/rest/v1/cs_deals?deal_id=in.(${chunk.join(',')})&select=deal_id,deal_status,deal_created_at`, { headers: { apikey: _SK, Authorization: `Bearer ${_SK}` } }).then(r => r.json());
+          for (const r of (Array.isArray(rows) ? rows : [])) statusById[String(r.deal_id)] = r;
+        } catch (e) {}
+      }
+      const rank = (id) => {
+        const r = statusById[id];
+        return [(r && r.deal_status === 'open') ? 2 : (r ? 1 : 0), r && r.deal_created_at ? new Date(r.deal_created_at).getTime() : 0];
+      };
+      for (const k in nameDealCandidates) {
+        const ids = [...nameDealCandidates[k]];
+        if (ids.length > 1) ids.sort((a, b) => { const ra = rank(a), rb = rank(b); return (rb[0] - ra[0]) || (rb[1] - ra[1]); });
+        nameToDealId[k] = ids[0];
+      }
     }
     const resolveDealId = (p) => p.pipedrive_deal_id || nameToDealId[norm(p.client_name || p.name)] || null;
 
