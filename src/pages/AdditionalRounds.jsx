@@ -34,11 +34,15 @@ export default function AdditionalRounds() {
   };
   useEffect(load, []);
 
-  const confirmZelle = async (dealId) => {
-    if (!window.confirm(`Confirm the Zelle money for deal ${dealId} is IN the teamelite account? This releases the invoice, agreement, and scheduling.`)) return;
+  const confirmZelle = async (dealId, currentConf) => {
+    const entered = window.prompt(
+      `Verify the Zelle for deal ${dealId} is IN the teamelite account.\n\nConfirmation number below - correct it or add it if the client's was wrong or missing, then press OK to release the invoice, agreement, and scheduling. Cancel aborts.`,
+      currentConf && currentConf !== 'no-conf' ? currentConf : ''
+    );
+    if (entered === null) return;
     setBusy(dealId);
     try {
-      const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'confirm_zelle', deal_id: dealId }) });
+      const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'confirm_zelle', deal_id: dealId, conf: entered.trim() }) });
       const d = await r.json();
       alert(d.success ? `Verified. Steps:\n- ${(d.notes || []).join('\n- ')}` : `Failed: ${d.error || 'unknown'}`);
       load();
@@ -113,7 +117,7 @@ export default function AdditionalRounds() {
                     <td className="px-3 py-2 text-xs text-slate-500">{o.agreement ? (o.agreement.signed_at ? `signed ${String(o.agreement.signed_at).slice(0, 10)}` : o.agreement.status) : '-'}</td>
                     <td className="px-3 py-2 text-right">
                       {o.status === 'zelle_pending' && (
-                        <button disabled={busy === o.deal_id} onClick={() => confirmZelle(o.deal_id)}
+                        <button disabled={busy === o.deal_id} onClick={() => confirmZelle(o.deal_id, o.zelle_conf)}
                           className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50">
                           {busy === o.deal_id ? 'Verifying\u2026' : 'Verify Zelle received'}
                         </button>

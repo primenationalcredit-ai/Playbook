@@ -23,7 +23,7 @@ exports.handler = async (event) => {
       if (body.action === 'confirm_zelle') {
         const r = await fetch(`${PROCESSOR}/.netlify/functions/ar-zelle-confirm`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': AR_KEY },
-          body: JSON.stringify({ deal_id: dealId })
+          body: JSON.stringify({ deal_id: dealId, conf: body.conf || undefined })
         });
         return respond(r.status, await r.json().catch(() => ({ error: 'bad response' })));
       }
