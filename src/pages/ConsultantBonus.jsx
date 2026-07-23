@@ -407,8 +407,13 @@ export default function ConsultantBonus() {
         const parsePct = (r) => (parseFloat(String(r || '').replace('%', '')) || 0) / 100;
         const orgComm = (c.organicSales || 0) * parsePct(c.baseRate);
         const affComm = (c.affiliateSales || 0) * parsePct(c.affiliateRate);
-        const totalEarn = c.totalEarnings ?? ((c.totalCommission || 0) + (c.totalBonus || 0));
-        const over = Math.max(0, totalEarn - draw);
+        const earn = c.totalEarnings != null ? c.totalEarnings : ((c.totalCommission || 0) + (c.totalBonus || 0));
+        const half = draw / 2;
+        const shortfall = Math.max(0, draw - earn);
+        const overage = Math.max(0, earn - draw);
+        const payout15 = half - shortfall + overage;
+        const isUnder = earn < draw;
+        const fmtAmt = (v) => '$' + Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
         return (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -424,7 +429,7 @@ export default function ConsultantBonus() {
                 <p className="text-xs font-medium text-slate-500 mb-2">Total bonuses</p>
                 <p className="text-2xl font-bold text-slate-800">{fmt(c.totalBonus)}</p>
                 {draw > 0 && (
-                  <p className="text-xs text-slate-500 mt-3">${draw.toLocaleString()} draw &mdash; $2,000 on the 1st + $2,000 on the 15th</p>
+                  <p className="text-xs text-slate-500 mt-3">${draw.toLocaleString()} draw &mdash; ${half.toLocaleString()} on the 1st + ${half.toLocaleString()} on the 15th</p>
                 )}
               </div>
             </div>
@@ -433,7 +438,7 @@ export default function ConsultantBonus() {
                 <div>
                   <p className={`text-xs font-semibold ${isUnder ? 'text-red-800' : 'text-emerald-800'}`}>Projected 15th payout</p>
                   {isUnder
-                    ? <p className="text-xs text-red-600 mt-0.5">{fmtAmt(shortfall)} owed back — deducted from the {fmtAmt(half)} 15th draw</p>
+                    ? <p className="text-xs text-red-600 mt-0.5">{fmtAmt(shortfall)} owed back — deducted from the 15th draw</p>
                     : <p className="text-xs text-emerald-700 mt-0.5">{fmtAmt(half)} draw + {fmtAmt(overage)} earnings over ${draw.toLocaleString()}</p>
                   }
                 </div>
