@@ -10,7 +10,6 @@ const DEAL_URL = (id) => `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/deal/${id}`;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const RESTRICTED_LEADER_IDS = [
   'f7b8bc3a-74e6-46c2-a378-d19d204d7133', // Mariana Navarro
-  '3ae5ad73-46eb-404f-8dc9-6d5cf53e9df0', // Kim Sanchez
 ];
 
 const fmtMoney = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
@@ -65,6 +64,12 @@ function loadAcceptJs() {
   return _acceptJsPromise;
 }
 
+// We do not accept Discover. Detect by card-number prefix before tokenizing.
+function isDiscoverCard(num) {
+  if (/^6011/.test(num) || /^65/.test(num) || /^64[4-9]/.test(num)) return true;
+  const six = parseInt(num.substring(0, 6), 10);
+  return six >= 622126 && six <= 622925;
+}
 // Tokenize a card via Accept.js -> resolves opaqueData {dataDescriptor, dataValue}.
 function tokenizeCard({ cardNumber, expMonth, expYear, cardCode, zip, fullName }) {
   return new Promise((resolve, reject) => {
@@ -764,7 +769,7 @@ function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
   const isUpdate = mode === 'update';
   const [form, setForm] = useState({
     cardholderName: info.client_name || '',
-    cardNumber: '', expiry: '', cvv: '', zip: ''
+    cardNumber: '', expiry: '', cvv: '', zip: '', address: '', city: '', state: ''
   });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -788,6 +793,8 @@ function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
     if (exp.length !== 4) return setNotice({ type: 'error', text: 'Enter expiry as MMYY (e.g. 0828).' });
     if (form.cvv.length < 3) return setNotice({ type: 'error', text: 'Enter the card security code.' });
     if (!form.zip.trim()) return setNotice({ type: 'error', text: 'Billing ZIP is required.' });
+    if (!form.address.trim()) return setNotice({ type: 'error', text: 'Billing street address is required.' });
+    if (isDiscoverCard(num)) return setNotice({ type: 'error', text: 'We do not accept Discover cards, unfortunately. Please use a Visa, Mastercard, or American Express.' });
 
     setBusy(true);
     try {
@@ -803,7 +810,7 @@ function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
         deal_id: info.deal_id,
         opaqueData,
         cardholderName: form.cardholderName,
-        billingAddress: { zip: form.zip, country: 'USA' }
+        billingAddress: { address: form.address, city: form.city, state: form.state, zip: form.zip, country: 'USA' }
       });
       setNotice({ type: 'success', text: isUpdate
         ? 'Card updated. Upcoming scheduled payments will use the new card.'
@@ -861,6 +868,27 @@ function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
           </div>
         </div>
 
+        <div className="mb-3">
+          <label className="block text-xs font-semibold text-slate-500 mb-1">Billing street address</label>
+          <input type="text" autoComplete="street-address" placeholder="123 Main St"
+            value={form.address} onChange={e => set('address', e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">City</label>
+            <input type="text" autoComplete="address-level2" placeholder="Houston"
+              value={form.city} onChange={e => set('city', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">State</label>
+            <input type="text" autoComplete="address-level1" placeholder="TX" maxLength={2}
+              value={form.state} onChange={e => set('state', e.target.value.toUpperCase())}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+          </div>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">We do not accept Discover cards, unfortunately.</p>
         {notice && (
           <div className={`p-2 rounded text-sm mb-3 ${notice.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
             {notice.text}
