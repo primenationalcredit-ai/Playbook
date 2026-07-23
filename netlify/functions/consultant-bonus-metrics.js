@@ -345,14 +345,11 @@ exports.handler = async (event) => {
       const due = String(owing[0].due_date).slice(0, 10);
       return { dueDate: due, overdue: due < dueTodayStr };
     };
-    // Invoices store only the client name (no deal id), so map name -> deal id from payments to link them.
+    // Invoices store only the client name (no deal id). This map now INHERITS
+    // the open-first/newest-first resolution from nameToDealId above, so a
+    // returning client's dead won/lost file can never claim their invoices.
     const dealByClientName = {};
-    for (const p of allPayments) {
-      if (p.client_name && p.pipedrive_deal_id) {
-        const k = norm(p.client_name);
-        if (!dealByClientName[k]) dealByClientName[k] = String(p.pipedrive_deal_id);
-      }
-    }
+    for (const k in nameToDealId) dealByClientName[k] = String(nameToDealId[k]);
     // Total actually collected per deal (excluding additional rounds). Payments are the accurate
     // source of truth, so we reconcile invoices against this instead of trusting stale invoice balances.
     const paidByDeal = {};
