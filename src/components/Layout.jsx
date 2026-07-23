@@ -300,6 +300,14 @@ function Layout() {
 
   // Red pill on Refund Tracking: refunds awaiting leadership action.
   const [refundActionCount, setRefundActionCount] = useState(0);
+  const [arPendingCount, setArPendingCount] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    fetch('/.netlify/functions/ar-tracker').then((r) => r.json()).then((d) => {
+      if (alive) setArPendingCount(((d && d.offers) || []).filter((o) => o.status === 'zelle_pending').length);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     if (currentUser?.department !== 'leadership') return;
     let alive = true;
@@ -577,6 +585,9 @@ function Layout() {
                     >
                       <item.icon size={20} />
                       <span>{item.label}</span>
+                      {item.path === '/admin/additional-rounds' && arPendingCount > 0 && (
+                        <span className="ml-auto bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">{arPendingCount}</span>
+                      )}
                       {item.path === '/admin/refunds' && refundActionCount > 0 && (
                         <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px] text-center">{refundActionCount}</span>
                       )}
