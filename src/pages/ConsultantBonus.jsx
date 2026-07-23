@@ -409,7 +409,7 @@ export default function ConsultantBonus() {
       {/* Draw reconciliation (draw consultants only) */}
       {drawFor(c.name) > 0 && (() => {
         const draw = drawFor(c.name);
-        const comm = c.totalCommission || 0;
+        const comm = c.totalEarnings ?? ((c.totalCommission || 0) + (c.totalBonus || 0));
         const over = Math.max(0, comm - draw);
         const cleared = comm >= draw;
         return (
@@ -420,18 +420,18 @@ export default function ConsultantBonus() {
                 <p className="text-sm text-slate-700 mt-1">Monthly draw <b>${draw.toLocaleString()}</b> &mdash; paid $2,000 on the 1st + $2,000 on the 15th</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-slate-500">Commission MTD</p>
+                <p className="text-xs text-slate-500">Earnings MTD (commission + bonuses)</p>
                 <p className="text-lg font-bold text-slate-800">{fmt(comm)}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-slate-500">Commission over draw</p>
+                <p className="text-xs text-slate-500">Earnings over draw</p>
                 <p className={`text-lg font-bold ${cleared ? 'text-emerald-600' : 'text-slate-400'}`}>{fmt(over)}</p>
                 {!cleared && <p className="text-[11px] text-slate-400">building toward the ${draw.toLocaleString()} draw</p>}
               </div>
               <div className={`rounded-xl px-4 py-3 ${cleared ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-200'}`}>
                 <p className="text-xs text-slate-500">Projected 15th payout</p>
                 <p className={`text-xl font-bold ${cleared ? 'text-emerald-700' : 'text-slate-700'}`}>{fmt(2000 + over)}</p>
-                <p className="text-[11px] text-slate-400">$2,000 draw + commission over ${draw.toLocaleString()}</p>
+                <p className="text-[11px] text-slate-400">$2,000 draw + earnings over ${draw.toLocaleString()}</p>
               </div>
             </div>
           </div>
