@@ -429,12 +429,15 @@ export default function ConsultantBonus() {
               </div>
             </div>
             {draw > 0 && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center justify-between">
+              <div className={`rounded-2xl p-5 flex items-center justify-between border ${isUnder ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
                 <div>
-                  <p className="text-xs font-semibold text-emerald-800">Projected 15th payout</p>
-                  <p className="text-3xl font-bold mt-0.5 text-emerald-900">{fmt(2000 + over)}</p>
+                  <p className={`text-xs font-semibold ${isUnder ? 'text-red-800' : 'text-emerald-800'}`}>Projected 15th payout</p>
+                  {isUnder
+                    ? <p className="text-xs text-red-600 mt-0.5">{fmtAmt(shortfall)} owed back — deducted from the {fmtAmt(half)} 15th draw</p>
+                    : <p className="text-xs text-emerald-700 mt-0.5">{fmtAmt(half)} draw + {fmtAmt(overage)} earnings over ${draw.toLocaleString()}</p>
+                  }
                 </div>
-                <p className="text-xs text-emerald-700 text-right">$2,000 draw + earnings over ${draw.toLocaleString()}</p>
+                <p className={`text-3xl font-bold ${isUnder ? 'text-red-700' : 'text-emerald-900'}`}>{fmt(payout15)}</p>
               </div>
             )}
           </>
