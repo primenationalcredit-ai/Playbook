@@ -185,6 +185,12 @@ function DrillButton({ onClick, label }) {
   return <button onClick={onClick} className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1 mt-1"><Eye size={12} /> {label || 'View clients'}</button>;
 }
 
+// In-house draw: $4,000/mo advance against commission, paid $2,000 on the
+// 1st + $2,000 on the 15th. The 15th check adds any commission over the draw.
+// Keyed by FIRST NAME (lowercase). Add a consultant here to give them a draw.
+const CONSULTANT_DRAW = { eric: 4000, cindy: 4000 };
+const drawFor = (name) => CONSULTANT_DRAW[String(name || '').toLowerCase().split(/\s+/)[0]] || 0;
+
 export default function ConsultantBonus() {
   const { currentUser, users } = useApp();
   const [data, setData] = useState(null);
@@ -400,6 +406,37 @@ export default function ConsultantBonus() {
         </div>
       </div>
 
+      {/* Draw reconciliation (draw consultants only) */}
+      {drawFor(c.name) > 0 && (() => {
+        const draw = drawFor(c.name);
+        const comm = c.totalCommission || 0;
+        const over = Math.max(0, comm - draw);
+        const cleared = comm >= draw;
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-xs font-medium text-slate-500">Draw Reconciliation</p>
+                <p className="text-sm text-slate-700 mt-1">Monthly draw <b>${draw.toLocaleString()}</b> &mdash; paid $2,000 on the 1st + $2,000 on the 15th</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-500">Commission MTD</p>
+                <p className="text-lg font-bold text-slate-800">{fmt(comm)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-500">Commission over draw</p>
+                <p className={`text-lg font-bold ${cleared ? 'text-emerald-600' : 'text-slate-400'}`}>{fmt(over)}</p>
+                {!cleared && <p className="text-[11px] text-slate-400">building toward the ${draw.toLocaleString()} draw</p>}
+              </div>
+              <div className={`rounded-xl px-4 py-3 ${cleared ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-200'}`}>
+                <p className="text-xs text-slate-500">Projected 15th payout</p>
+                <p className={`text-xl font-bold ${cleared ? 'text-emerald-700' : 'text-slate-700'}`}>{fmt(2000 + over)}</p>
+                <p className="text-[11px] text-slate-400">$2,000 draw + commission over ${draw.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* Tabs */}
       <div className="flex bg-slate-100 rounded-lg p-1 w-fit">
         <button onClick={() => setTab('bonuses')} className={`px-5 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${tab === 'bonuses' ? 'bg-white shadow text-slate-800' : 'text-slate-600'}`}>
