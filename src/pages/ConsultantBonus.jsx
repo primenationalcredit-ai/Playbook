@@ -189,7 +189,8 @@ function DrillButton({ onClick, label }) {
 // 1st + $2,000 on the 15th. The 15th check adds any commission over the draw.
 // Keyed by FIRST NAME (lowercase). Add a consultant here to give them a draw.
 const CONSULTANT_DRAW = { eric: 4000, cindy: 4000 };
-const drawFor = (name) => CONSULTANT_DRAW[String(name || '').toLowerCase().split(/\s+/)[0]] || 0;
+const VA_DRAW = 1700;
+const drawFor = (name, isVA) => isVA ? VA_DRAW : (CONSULTANT_DRAW[String(name || '').toLowerCase().split(/\s+/)[0]] || 0);
 
 export default function ConsultantBonus() {
   const { currentUser, users } = useApp();
@@ -402,7 +403,7 @@ export default function ConsultantBonus() {
 
       {/* Commission + bonus breakdown (Astrid redesign) */}
       {(() => {
-        const draw = drawFor(c.name);
+        const draw = drawFor(c.name, c.isVA);
         const parsePct = (r) => (parseFloat(String(r || '').replace('%', '')) || 0) / 100;
         const orgComm = (c.organicSales || 0) * parsePct(c.baseRate);
         const affComm = (c.affiliateSales || 0) * parsePct(c.affiliateRate);
@@ -428,12 +429,12 @@ export default function ConsultantBonus() {
               </div>
             </div>
             {draw > 0 && (
-              <div className="bg-gradient-to-r from-emerald-600 to-green-700 rounded-2xl p-5 text-white flex items-center justify-between">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex items-center justify-between">
                 <div>
-                  <p className="text-emerald-200 text-sm">Projected 15th payout</p>
-                  <p className="text-3xl font-bold mt-0.5">{fmt(2000 + over)}</p>
+                  <p className="text-xs font-semibold text-emerald-800">Projected 15th payout</p>
+                  <p className="text-3xl font-bold mt-0.5 text-emerald-900">{fmt(2000 + over)}</p>
                 </div>
-                <p className="text-emerald-200 text-xs text-right">$2,000 draw + earnings over ${draw.toLocaleString()}</p>
+                <p className="text-xs text-emerald-700 text-right">$2,000 draw + earnings over ${draw.toLocaleString()}</p>
               </div>
             )}
           </>
