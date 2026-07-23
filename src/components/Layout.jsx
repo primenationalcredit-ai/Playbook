@@ -108,8 +108,7 @@ function Layout() {
   // Using IDs to prevent bypass via name change
   const RESTRICTED_LEADER_IDS = [
     'f7b8bc3a-74e6-46c2-a378-d19d204d7133', // Mariana Navarro
-    '3ae5ad73-46eb-404f-8dc9-6d5cf53e9df0', // Kim Sanchez
-  ];
+    ];
   const isRestrictedLeader = RESTRICTED_LEADER_IDS.includes(currentUser?.id);
   
   // Check if user is leadership (show More menu with hidden items)
