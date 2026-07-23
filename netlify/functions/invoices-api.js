@@ -88,6 +88,31 @@ async function verifyPlaybookUser(authHeader) {
   } catch (err) { console.error('playbook auth verify error:', err); return null; }
 }
 
+// Account managers only see THEIR clients on the invoices page. We match the
+// signed-in user to cs_deals.account_manager_name (pipedrive_name overrides
+// the display name when they differ). Admins, leadership, and consultants
+// keep the full company view.
+async function scopeInvoicesForAM(data, email) {
+  const SU = process.env.SUPABASE_URL, SK = process.env.SUPABASE_SERVICE_KEY;
+  if (!SU || !SK) return data;
+  const H = { apikey: SK, Authorization: `Bearer ${SK}` };
+  try {
+    const uRows = await fetch(`${SU}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=name,department,role,pipedrive_name`, { headers: H }).then(r => r.json());
+    const u = Array.isArray(uRows) ? uRows[0] : null;
+    if (!u) return data;
+    const isAdminish = u.role === 'admin' || u.department === 'leadership';
+    if (isAdminish || u.department !== 'account_managers') return data;
+    const amName = String(u.pipedrive_name || u.name || '').trim();
+    if (!amName) return data;
+    const deals = await fetch(`${SU}/rest/v1/cs_deals?account_manager_name=ilike.${encodeURIComponent(amName)}&select=deal_id&limit=10000`, { headers: H }).then(r => r.json());
+    const mine = new Set((Array.isArray(deals) ? deals : []).map(d => String(d.deal_id)));
+    data.tokens = (data.tokens || []).filter(t => mine.has(String(t.pipedrive_deal_id)));
+    data.charges = (data.charges || []).filter(c => mine.has(String(c.pipedrive_deal_id)));
+    data.scoped_to = amName;
+    data.scoped_deal_count = mine.size;
+  } catch (e) { console.error('AM scope filter failed (returning unscoped):', e); }
+  return data;
+}
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ error: 'POST only' }) };
@@ -123,6 +148,15 @@ exports.handler = async (event) => {
       body: JSON.stringify(body)
     });
     const text = await upstream.text();
+    // AM scoping: filter the invoice browse list down to the signed-in AM's clients.
+    if (action === 'list_recent_invoices' && upstream.ok && playbookUser && playbookUser.email) {
+      let listData = null;
+      try { listData = JSON.parse(text); } catch (e) {}
+      if (listData && Array.isArray(listData.tokens)) {
+        listData = await scopeInvoicesForAM(listData, playbookUser.email);
+        return { statusCode: 200, headers, body: JSON.stringify(listData) };
+      }
+    }
     // Split orchestration: carry the split into Zoho, then charge today's piece.
     if (action === 'split_charge' && upstream.ok) {
       let data = null;
