@@ -526,7 +526,14 @@ exports.handler = async (event) => {
         const key = client.dealId || client.name;
         const mr = masterClientMap[key];
         const adv = mr && (mr.types.has('partial') || mr.types.has('final') || mr.types.has('paid_in_full'));
-        return { qualified: !!adv, month: null, reason: adv ? null : 'no partial or final payment on file', paid: 0, owed: 0 };
+        let fbMonth = null;
+        if (adv) {
+          const pays = (client.payments || []).filter(p => p.payment_type !== 'doc_fee' && p.payment_date).sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
+          const fin = pays.find(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+          const pick = fin || pays[0];
+          if (pick) fbMonth = String(pick.payment_date).slice(0, 7);
+        }
+        return { qualified: !!adv, month: fbMonth, reason: adv ? null : 'no partial or final payment on file', paid: 0, owed: 0 };
       }
 
       // Drop the doc-fee invoice (closest total to the doc payment; else the smallest invoice)
