@@ -396,45 +396,47 @@ export default function ConsultantBonus() {
           <div>
             <p className="text-emerald-200 text-sm">Projected Total Earnings — {data.month}</p>
             <p className="text-4xl font-bold mt-1">{fmt(c.totalEarnings)}</p>
-            <p className="text-emerald-200 text-sm mt-2">Commission: {fmt(c.totalCommission)} + Bonuses: {fmt(c.totalBonus)}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-emerald-200 text-sm">{c.isVA ? 'VA' : 'In-House'}</p>
-            <p className="text-lg font-semibold">{c.baseRate} / {c.affiliateRate}</p>
-            <p className="text-emerald-200 text-xs">Google / Affiliate rates</p>
           </div>
         </div>
       </div>
 
-      {/* Draw reconciliation (draw consultants only) */}
-      {drawFor(c.name) > 0 && (() => {
+      {/* Commission + bonus breakdown (Astrid redesign) */}
+      {(() => {
         const draw = drawFor(c.name);
-        const comm = c.totalEarnings ?? ((c.totalCommission || 0) + (c.totalBonus || 0));
-        const over = Math.max(0, comm - draw);
-        const cleared = comm >= draw;
+        const parsePct = (r) => (parseFloat(String(r || '').replace('%', '')) || 0) / 100;
+        const orgComm = (c.organicSales || 0) * parsePct(c.baseRate);
+        const affComm = (c.affiliateSales || 0) * parsePct(c.affiliateRate);
+        const totalEarn = c.totalEarnings ?? ((c.totalCommission || 0) + (c.totalBonus || 0));
+        const over = Math.max(0, totalEarn - draw);
         return (
-          <div className="bg-white rounded-2xl border border-slate-200 p-5">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <p className="text-xs font-medium text-slate-500">Draw Reconciliation</p>
-                <p className="text-sm text-slate-700 mt-1">Monthly draw <b>${draw.toLocaleString()}</b> &mdash; paid $2,000 on the 1st + $2,000 on the 15th</p>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <p className="text-xs font-medium text-slate-500 mb-2">Total commissions</p>
+                <div className="space-y-1 text-sm text-slate-700">
+                  <div className="flex justify-between"><span>Organic {c.baseRate}</span><span>{fmt(orgComm)}</span></div>
+                  <div className="flex justify-between"><span>Affiliate {c.affiliateRate}</span><span>{fmt(affComm)}</span></div>
+                  <div className="flex justify-between pt-1 border-t font-bold text-slate-800"><span>Total</span><span>{fmt(c.totalCommission)}</span></div>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-500">Earnings MTD (commission + bonuses)</p>
-                <p className="text-lg font-bold text-slate-800">{fmt(comm)}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-500">Earnings over draw</p>
-                <p className={`text-lg font-bold ${cleared ? 'text-emerald-600' : 'text-slate-400'}`}>{fmt(over)}</p>
-                {!cleared && <p className="text-[11px] text-slate-400">building toward the ${draw.toLocaleString()} draw</p>}
-              </div>
-              <div className={`rounded-xl px-4 py-3 ${cleared ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-200'}`}>
-                <p className="text-xs text-slate-500">Projected 15th payout</p>
-                <p className={`text-xl font-bold ${cleared ? 'text-emerald-700' : 'text-slate-700'}`}>{fmt(2000 + over)}</p>
-                <p className="text-[11px] text-slate-400">$2,000 draw + earnings over ${draw.toLocaleString()}</p>
+              <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                <p className="text-xs font-medium text-slate-500 mb-2">Total bonuses</p>
+                <p className="text-2xl font-bold text-slate-800">{fmt(c.totalBonus)}</p>
+                {draw > 0 && (
+                  <p className="text-xs text-slate-500 mt-3">${draw.toLocaleString()} draw &mdash; $2,000 on the 1st + $2,000 on the 15th</p>
+                )}
               </div>
             </div>
-          </div>
+            {draw > 0 && (
+              <div className="bg-gradient-to-r from-emerald-600 to-green-700 rounded-2xl p-5 text-white flex items-center justify-between">
+                <div>
+                  <p className="text-emerald-200 text-sm">Projected 15th payout</p>
+                  <p className="text-3xl font-bold mt-0.5">{fmt(2000 + over)}</p>
+                </div>
+                <p className="text-emerald-200 text-xs text-right">$2,000 draw + earnings over ${draw.toLocaleString()}</p>
+              </div>
+            )}
+          </>
         );
       })()}
       {/* Tabs */}
