@@ -529,8 +529,8 @@ exports.handler = async (event) => {
         let fbMonth = null;
         if (adv) {
           const pays = (client.payments || []).filter(p => p.payment_type !== 'doc_fee' && p.payment_date).sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
-          const fin = pays.find(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
-          const pick = fin || pays[0];
+          const fins = pays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+          const pick = fins.length ? fins[fins.length - 1] : pays[0];
           if (pick) fbMonth = String(pick.payment_date).slice(0, 7);
         }
         return { qualified: !!adv, month: fbMonth, reason: adv ? null : 'no partial or final payment on file', paid: 0, owed: 0 };
