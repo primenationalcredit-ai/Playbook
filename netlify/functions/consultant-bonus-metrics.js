@@ -195,7 +195,7 @@ exports.handler = async (event) => {
 
     // Full affiliate payment history (all time, small subset, few columns) so the reactivation kicker
     // and new-affiliate-launch can measure dormancy beyond the rolling window.
-    const affiliateHistory = await supaGet('consultant_payments', `is_affiliate_deal=eq.true&select=referrer_org,payment_date,payment_month,consultant_name&order=payment_date.asc`);
+    const affiliateHistory = await supaGet('consultant_payments', `is_affiliate_deal=eq.true&select=referrer_org,payment_date,payment_month,consultant_name,client_name,amount&order=payment_date.asc`);
 
     // Build a master client map: deal_id → all payment types ever
     const masterClientMap = {};
@@ -795,7 +795,7 @@ exports.handler = async (event) => {
         if (pFirst !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
 
         if (!orgPaymentHistory[p.referrer_org]) orgPaymentHistory[p.referrer_org] = [];
-        orgPaymentHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month });
+        orgPaymentHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month, client: p.client_name || null, amount: p.amount || null });
       }
 
       for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
@@ -1017,9 +1017,13 @@ exports.handler = async (event) => {
           const due = status !== 'qualified' ? resolveDue(c.dealId, c.name) : null;
           return { name: c.name, dealId: c.dealId, qualified, status, dueDate: due?.dueDate || null, overdue: due?.overdue || false, owed: due?.owed || 0, dueReason: due?.dueReason || null };
         }).sort((a, b) => Number(b.qualified) - Number(a.qualified) || a.name.localeCompare(b.name));
+        const lastPriorPay = priorPays[priorPays.length - 1];
         reactivationProgress.push({
           name: orgName, kind, daysDormant, lastActive: lastPrior,
+          lastClient: lastPriorPay.client || null,
+          lastAmount: lastPriorPay.amount || null,
           reactivatedOn: kind === 'reactivated' ? thisMonthPays[0].date : null,
+          revivedBy: kind === 'reactivated' ? (thisMonthPays[0].client || null) : null,
           alreadyAwarded: awardedOrgs.has(`reactivation_kicker:${orgName}`),
           clients: rosterClients
         });
