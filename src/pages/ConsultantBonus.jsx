@@ -65,21 +65,21 @@ function ReferredClientRow({ cl }) {
     : 'text-slate-500';
   let label;
   if (cl.status === 'qualified') {
-    label = 'âœ“ Qualified';
+    label = '✓ Qualified';
   } else if (cl.status === 'needs_advance') {
     label = cl.dueDate
-      ? (cl.overdue ? `Partial/final past due ${fmtDate(cl.dueDate)} â€” call` : `Needs partial/final Â· due ${fmtDate(cl.dueDate)}`)
-      : (owes ? `Needs partial/final Â· ${owes}` : (cl.dueReason ? `Needs partial/final Â· ${cl.dueReason}` : 'Paid doc fee, needs a partial or final'));
+      ? (cl.overdue ? `Partial/final past due ${fmtDate(cl.dueDate)} — call` : `Needs partial/final · due ${fmtDate(cl.dueDate)}`)
+      : (owes ? `Needs partial/final · ${owes}` : (cl.dueReason ? `Needs partial/final · ${cl.dueReason}` : 'Paid doc fee, needs a partial or final'));
   } else { // needs_doc
     label = cl.dueDate
-      ? (cl.overdue ? `Doc fee past due ${fmtDate(cl.dueDate)} â€” call` : `Needs doc fee Â· due ${fmtDate(cl.dueDate)}`)
-      : (owes ? `Needs doc fee Â· ${owes}` : (cl.dueReason ? `Needs doc fee Â· ${cl.dueReason}` : 'Referred, needs to pay doc fee'));
+      ? (cl.overdue ? `Doc fee past due ${fmtDate(cl.dueDate)} — call` : `Needs doc fee · due ${fmtDate(cl.dueDate)}`)
+      : (owes ? `Needs doc fee · ${owes}` : (cl.dueReason ? `Needs doc fee · ${cl.dueReason}` : 'Referred, needs to pay doc fee'));
   }
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
       <span className="text-slate-700">
         {cl.dealId
-          ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} â†—</a>
+          ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name} ↗</a>
           : cl.name}
       </span>
       <span className={colour}>{label}</span>
@@ -107,7 +107,7 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
               <div key={i} className={`bg-slate-50 rounded-lg p-3 border ${item.onClick ? 'hover:border-blue-300 cursor-pointer' : 'hover:border-blue-200'}`} onClick={item.onClick || undefined}>
                 <div className="flex justify-between items-start mb-1">
                   {item.dealId ? (
-                    <a href={DEAL_URL(item.dealId)} target="_blank" rel="noreferrer" className="font-medium text-blue-600 hover:underline">{item.name} â†—</a>
+                    <a href={DEAL_URL(item.dealId)} target="_blank" rel="noreferrer" className="font-medium text-blue-600 hover:underline">{item.name} ↗</a>
                   ) : (
                     <p className="font-medium text-slate-800">{item.name}</p>
                   )}
@@ -139,13 +139,13 @@ function ClientPanel({ title, items, columns, onClose, payments }) {
                           p.type === 'partial' ? 'bg-purple-100 text-purple-700' :
                           p.type === 'final' ? 'bg-green-100 text-green-700' : 'bg-slate-100'
                         }`}>
-                          {p.type === 'doc_fee' ? 'ðŸ“„ Doc' : p.type === 'partial' ? 'ðŸ’° Partial' : p.type === 'final' ? 'âœ… Final' : p.type} {fmt(p.amount)} â€¢ {fmtDate(p.date)}
+                          {p.type === 'doc_fee' ? '📄 Doc' : p.type === 'partial' ? '💰 Partial' : p.type === 'final' ? '✅ Final' : p.type} {fmt(p.amount)} • {fmtDate(p.date)}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
-                {item.onClick && <p className="text-xs text-blue-600 mt-2">View {item.clientCount != null ? item.clientCount : ''} client{item.clientCount === 1 ? '' : 's'} â†’</p>}
+                {item.onClick && <p className="text-xs text-blue-600 mt-2">View {item.clientCount != null ? item.clientCount : ''} client{item.clientCount === 1 ? '' : 's'} →</p>}
               </div>
             ))
           }
@@ -279,7 +279,7 @@ export default function ConsultantBonus() {
     .right{text-align:right}.bold{font-weight:700}
     .total-row{background:#f0fdf4;font-weight:700}
     @media print{body{padding:0}}</style></head><body>
-    <h1>ASAP Credit & Financial Services â€” Consultant Bonus Report</h1>
+    <h1>ASAP Credit & Financial Services — Consultant Bonus Report</h1>
     <p><strong>Period:</strong> ${data.month} | <strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
     ${cons.map(c => `
     <h2>${c.name}</h2>
@@ -360,7 +360,7 @@ export default function ConsultantBonus() {
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Bonus Tracker</h1>
             <AffiliateFollowUpsChip name={currentUser?.name} leadView={isAdmin} />
-            <p className="text-slate-500 text-sm">{data.month} â€¢ {data.totalPayments} payments from Zoho</p>
+            <p className="text-slate-500 text-sm">{data.month} • {data.totalPayments} payments from Zoho</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -395,7 +395,7 @@ export default function ConsultantBonus() {
       <div className="bg-gradient-to-r from-emerald-600 to-green-700 rounded-2xl p-6 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-emerald-200 text-sm">Projected Total Earnings â€” {data.month}</p>
+            <p className="text-emerald-200 text-sm">Projected Total Earnings — {data.month}</p>
             <p className="text-4xl font-bold mt-1">{fmt(c.totalEarnings)}</p>
           </div>
         </div>
@@ -438,7 +438,7 @@ export default function ConsultantBonus() {
                 <div>
                   <p className={`text-xs font-semibold ${isUnder ? 'text-red-800' : 'text-emerald-800'}`}>Projected 15th payout</p>
                   {isUnder
-                    ? <p className="text-xs text-red-600 mt-0.5">{fmtAmt(shortfall)} owed back â€” deducted from the 15th draw</p>
+                    ? <p className="text-xs text-red-600 mt-0.5">{fmtAmt(shortfall)} owed back — deducted from the 15th draw</p>
                     : <p className="text-xs text-emerald-700 mt-0.5">{fmtAmt(half)} draw + {fmtAmt(overage)} earnings over ${draw.toLocaleString()}</p>
                   }
                 </div>
@@ -546,7 +546,7 @@ export default function ConsultantBonus() {
               <tbody className="divide-y">
                 {cons.map((c, i) => (
                   <tr key={c.name} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setSelectedConsultant(c.name); setTab('bonuses'); }}>
-                    <td className="px-3 py-2.5">{i===0?'ðŸ¥‡':i===1?'ðŸ¥ˆ':i===2?'ðŸ¥‰':i+1}</td>
+                    <td className="px-3 py-2.5">{i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</td>
                     <td className="px-3 py-2.5 font-medium">{c.name} {(c.weeksWon||0)>0 && <span className="text-xs bg-orange-100 text-orange-700 px-1 rounded">{c.weeksWon}x Sprint</span>}</td>
                     <Cell v={fmtInt(c.today?.sales||0)} good={(c.today?.sales||0)>0} />
                     <Cell v={fmtInt(c.totalSales)} />
@@ -597,7 +597,7 @@ export default function ConsultantBonus() {
         {/* SALES */}
         {lbTab === 'sales' && (
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-          <div className="p-4 border-b"><h3 className="font-bold text-slate-800">Sales Performance â€” MTD vs YTD</h3></div>
+          <div className="p-4 border-b"><h3 className="font-bold text-slate-800">Sales Performance — MTD vs YTD</h3></div>
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-slate-50"><tr>
               <th className="text-left px-3 py-2">Consultant</th>
@@ -714,7 +714,7 @@ export default function ConsultantBonus() {
             </table></div>
           </div>
           <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-            <div className="p-4 border-b"><h3 className="font-bold text-slate-800">Client Source â€” New vs Prior Month</h3></div>
+            <div className="p-4 border-b"><h3 className="font-bold text-slate-800">Client Source — New vs Prior Month</h3></div>
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="bg-slate-50"><tr>
                 <th className="text-left px-3 py-2">Consultant</th>
@@ -826,9 +826,9 @@ export default function ConsultantBonus() {
           <p className="text-sm text-slate-500"><Tip text="Clients who paid a doc fee this month and either paid their balance in full, or paid a partial in full that is at least the final amount. A token partial against a still-open balance does not count. Drives the Accelerator and Doc Club.">Qualified Docs</Tip></p>
           <DrillButton onClick={() => setExpandedSection(expandedSection === 'qualified' ? null : 'qualified')} label="View clients" />
           {expandedSection === 'qualified' && c.clientDetail && (
-            <ClientPanel title="Qualified Docs â€” Payment Journey" items={[...(c.clientDetail.qualifiedList||[]), ...(c.clientDetail.notQualifiedList||[])]} onClose={() => setExpandedSection(null)} />
+            <ClientPanel title="Qualified Docs — Payment Journey" items={[...(c.clientDetail.qualifiedList||[]), ...(c.clientDetail.notQualifiedList||[])]} onClose={() => setExpandedSection(null)} />
           )}
-          {docsToNext > 0 && <p className="text-xs text-blue-500 mt-1">{c.qualifiedDocs} of {c.qualifiedDocs + docsToNext} â†’ {nextTierLabel}</p>}
+          {docsToNext > 0 && <p className="text-xs text-blue-500 mt-1">{c.qualifiedDocs} of {c.qualifiedDocs + docsToNext} → {nextTierLabel}</p>}
         </div>
         <div className="bg-white rounded-xl p-4 border shadow-sm">
           <DollarSign size={18} className="text-green-500 mb-2" />
@@ -836,7 +836,7 @@ export default function ConsultantBonus() {
           <p className="text-sm text-slate-500"><Tip text="Total payments received this month from all clients, pulled live from Zoho Invoice. Click to see every payment.">MTD Sales</Tip></p>
           <DrillButton onClick={() => setExpandedSection(expandedSection === 'mtd' ? null : 'mtd')} label="View payments" />
           {expandedSection === 'mtd' && c.clientDetail?.mtdList && (
-            <ClientPanel title={`MTD Sales â€” ${c.clientDetail.mtdList.length} payments = ${fmtInt(c.totalSales)}`} items={c.clientDetail.mtdList} onClose={() => setExpandedSection(null)} />
+            <ClientPanel title={`MTD Sales — ${c.clientDetail.mtdList.length} payments = ${fmtInt(c.totalSales)}`} items={c.clientDetail.mtdList} onClose={() => setExpandedSection(null)} />
           )}
         </div>
         <div className="bg-white rounded-xl p-4 border shadow-sm">
@@ -846,8 +846,8 @@ export default function ConsultantBonus() {
           <DrillButton onClick={() => setExpandedSection(expandedSection === 'affiliates' ? null : 'affiliates')} label="View affiliates" />
           {expandedSection === 'affiliates' && c.clientDetail?.affiliateOrgList && (
             <ClientPanel
-              title={`Affiliate Orgs â€” ${c.producingAffiliates} active (3+ qualified clients)`}
-              items={c.clientDetail.affiliateOrgList.map(o => ({ name: `${o.name} â€” ${o.clients} qualified client${o.clients !== 1 ? 's' : ''}`, type: o.producing ? 'final' : 'no_doc' }))}
+              title={`Affiliate Orgs — ${c.producingAffiliates} active (3+ qualified clients)`}
+              items={c.clientDetail.affiliateOrgList.map(o => ({ name: `${o.name} — ${o.clients} qualified client${o.clients !== 1 ? 's' : ''}`, type: o.producing ? 'final' : 'no_doc' }))}
               onClose={() => setExpandedSection(null)}
             />
           )}
@@ -863,8 +863,8 @@ export default function ConsultantBonus() {
           <DrillButton onClick={() => setExpandedSection(expandedSection === 'close' ? null : 'close')} label="View quoted deals" />
           {expandedSection === 'close' && c.closeDetail && (
             <ClientPanel
-              title={`Closing Rate â€” ${c.docsPaid} of ${c.consultCount} quoted paid a doc fee = ${c.closingPct}%`}
-              items={c.closeDetail.map(d => ({ name: d.matchBy === 'name (no deal id on invoice)' ? `${d.name}  âš  matched by name` : d.name, dealId: d.dealId, amount: d.amount, type: d.paidDocFee ? 'doc_fee' : 'no_doc' }))}
+              title={`Closing Rate — ${c.docsPaid} of ${c.consultCount} quoted paid a doc fee = ${c.closingPct}%`}
+              items={c.closeDetail.map(d => ({ name: d.matchBy === 'name (no deal id on invoice)' ? `${d.name}  ⚠ matched by name` : d.name, dealId: d.dealId, amount: d.amount, type: d.paidDocFee ? 'doc_fee' : 'no_doc' }))}
               onClose={() => setExpandedSection(null)}
             />
           )}
@@ -884,7 +884,7 @@ export default function ConsultantBonus() {
                   <p className="font-medium text-slate-800"><Tip text="Earn extra per qualified doc: $10 each at 51-60, $20 at 61-70, $30 at 71-80, $45 at 81+. Qualified doc = client with doc fee AND partial or final payment.">Doc Production Accelerator</Tip></p>
                   <p className="text-sm text-slate-500">
                     {c.qualifiedDocs <= 50 ? `${50 - c.qualifiedDocs} docs to unlock (need 51+)` :
-                    c.accelerator.breakdown.map(b => `${b.docs} docs Ã— $${b.perDoc}`).join(' + ')}
+                    c.accelerator.breakdown.map(b => `${b.docs} docs × $${b.perDoc}`).join(' + ')}
                   </p>
                 </div>
               </div>
@@ -931,7 +931,7 @@ export default function ConsultantBonus() {
                 <Zap size={20} className={c.pifCount > 0 ? 'text-green-500' : 'text-slate-300'} />
                 <div>
                   <p className="font-medium text-slate-800"><Tip text="$25 bonus for each client who pays doc fee AND final payment (no partial) within 5 business days. Client must skip the payment plan and pay in full quickly.">Paid-in-Full Fast Start</Tip></p>
-                  <p className="text-sm text-slate-500">{c.pifCount} clients Ã— $25</p>
+                  <p className="text-sm text-slate-500">{c.pifCount} clients × $25</p>
                 </div>
               </div>
               <p className={`text-lg font-bold ${c.pifBonus > 0 ? 'text-green-600' : 'text-slate-300'}`}>{fmt(c.pifBonus)}</p>
@@ -950,7 +950,7 @@ export default function ConsultantBonus() {
                 <RefreshCw size={20} className={c.reactivationCount > 0 ? 'text-teal-500' : 'text-slate-300'} />
                 <div>
                   <p className="font-medium text-slate-800"><Tip text="$75 one-time bonus for reviving a dormant affiliate. Dormant = affiliate org that has not sent a paying client in 90+ days, then sends a new one.">Reactivation Kicker</Tip></p>
-                  <p className="text-sm text-slate-500">{c.reactivationCount || 0} revived Ã— $75{(c.dormantReactivationCount || 0) > 0 ? ` Â· ${c.dormantReactivationCount} dormant to push` : ''}</p>
+                  <p className="text-sm text-slate-500">{c.reactivationCount || 0} revived × $75{(c.dormantReactivationCount || 0) > 0 ? ` · ${c.dormantReactivationCount} dormant to push` : ''}</p>
                 </div>
               </div>
               <p className={`text-lg font-bold ${c.reactivationBonus > 0 ? 'text-teal-600' : 'text-slate-300'}`}>{fmt(c.reactivationBonus || 0)}</p>
@@ -969,9 +969,9 @@ export default function ConsultantBonus() {
                       <span className="text-xs text-right">{
                         o.kind === 'reactivated'
                           ? (o.alreadyAwarded
-                              ? <span className="text-slate-400">Reactivation bonus already earned Â· pays once per affiliate</span>
-                              : <span className="text-green-600 font-medium">Reactivated â€” $75 added this month</span>)
-                          : <span className="text-amber-600 font-medium">Dormant {o.daysDormant} days â€” send a fresh client to earn $75</span>
+                              ? <span className="text-slate-400">Reactivation bonus already earned · pays once per affiliate</span>
+                              : <span className="text-green-600 font-medium">Reactivated — $75 added this month</span>)
+                          : <span className="text-amber-600 font-medium">Dormant {o.daysDormant} days — send a fresh client to earn $75</span>
                       }</span>
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
@@ -1001,7 +1001,7 @@ export default function ConsultantBonus() {
                 <Gift size={20} className={c.newAffiliateLaunchCount > 0 ? 'text-indigo-500' : 'text-slate-300'} />
                 <div>
                   <p className="font-medium text-slate-800"><Tip text="$75 one-time bonus when a brand new affiliate sends 3 or more qualified clients within their first 60 days. One-time per affiliate, never repeats. The list also shows new affiliates with 1-2 clients so far so you can reach out and ask for more referrals.">New Affiliate Launch</Tip></p>
-                  <p className="text-sm text-slate-500">{c.newAffiliateLaunchCount || 0} earning ($75 each){(c.newAffiliateAllOrgs?.length || 0) > (c.newAffiliateLaunchCount || 0) ? ` Â· ${(c.newAffiliateAllOrgs.length - (c.newAffiliateLaunchCount || 0))} new affiliate${(c.newAffiliateAllOrgs.length - (c.newAffiliateLaunchCount || 0)) === 1 ? '' : 's'} not yet at 3` : ''}</p>
+                  <p className="text-sm text-slate-500">{c.newAffiliateLaunchCount || 0} earning ($75 each){(c.newAffiliateAllOrgs?.length || 0) > (c.newAffiliateLaunchCount || 0) ? ` · ${(c.newAffiliateAllOrgs.length - (c.newAffiliateLaunchCount || 0))} new affiliate${(c.newAffiliateAllOrgs.length - (c.newAffiliateLaunchCount || 0)) === 1 ? '' : 's'} not yet at 3` : ''}</p>
                 </div>
               </div>
               <p className={`text-lg font-bold ${c.newAffiliateLaunchBonus > 0 ? 'text-indigo-600' : 'text-slate-300'}`}>{fmt(c.newAffiliateLaunchBonus || 0)}</p>
@@ -1010,7 +1010,7 @@ export default function ConsultantBonus() {
             {expandedSection === 'newaffiliate' && c.clientDetail?.newAffiliateProgress && (
               <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
                 <div className="flex items-center justify-between mb-1">
-                  <h4 className="font-semibold text-slate-700 text-sm">New affiliates â€” get 3 qualified clients (doc fee + a partial or final) in their first 60 days to earn $75</h4>
+                  <h4 className="font-semibold text-slate-700 text-sm">New affiliates — get 3 qualified clients (doc fee + a partial or final) in their first 60 days to earn $75</h4>
                   <button onClick={() => setExpandedSection(null)} className="text-slate-400 hover:text-slate-600 text-sm">Close</button>
                 </div>
                 {c.clientDetail.newAffiliateProgress.map((o, idx) => {
@@ -1023,16 +1023,16 @@ export default function ConsultantBonus() {
                       <span className="font-semibold text-slate-800">{o.name}</span>
                       <span className="text-xs text-right">{
                         o.alreadyAwarded
-                          ? <span className="text-slate-400">Launch bonus already earned Â· pays once per affiliate</span>
+                          ? <span className="text-slate-400">Launch bonus already earned · pays once per affiliate</span>
                           : (o.qualifies
-                              ? <span className="text-green-600 font-medium">Goal hit â€” $75 added this month</span>
+                              ? <span className="text-green-600 font-medium">Goal hit — $75 added this month</span>
                               : <span className="text-amber-600 font-medium">{need} more qualified client{need === 1 ? '' : 's'} to earn $75</span>)
                       }</span>
                     </div>
                     {/* Progress toward the 3 QUALIFIED clients that earn the $75 */}
                     <div className="mt-1.5">
                       <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span><span className="font-semibold text-slate-700">{Math.min(qual, 3)} of 3</span> qualified{(o.paidClients || 0) > qual ? ` Â· ${o.paidClients} paying so far` : ''}</span>
+                        <span><span className="font-semibold text-slate-700">{Math.min(qual, 3)} of 3</span> qualified{(o.paidClients || 0) > qual ? ` · ${o.paidClients} paying so far` : ''}</span>
                         <span>{o.alreadyAwarded || o.qualifies ? `${o.daysSinceCreated}d since they joined` : `${daysLeft} days left in their first 60`}</span>
                       </div>
                       <div className="mt-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
@@ -1090,13 +1090,13 @@ export default function ConsultantBonus() {
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-slate-800">{g.org}</span>
                       {g.producing
-                        ? <span className="text-xs font-medium text-green-700 bg-green-100 rounded-full px-2 py-0.5">Qualified Â· {g.qualifiedCount} qualified client{g.qualifiedCount === 1 ? '' : 's'}</span>
+                        ? <span className="text-xs font-medium text-green-700 bg-green-100 rounded-full px-2 py-0.5">Qualified · {g.qualifiedCount} qualified client{g.qualifiedCount === 1 ? '' : 's'}</span>
                         : <span className="text-xs text-slate-500 bg-slate-200 rounded-full px-2 py-0.5">{g.qualifiedCount} of 3 qualified</span>}
                     </div>
                     <div className="mt-1 space-y-0.5">
                       {g.clients.map((cl, i) => (
                         <div key={i} className={`flex items-center justify-between text-xs rounded px-1.5 py-1 ${cl.qualified ? 'bg-green-50' : ''}`}>
-                          <span className={cl.qualified ? 'text-green-800 font-medium' : 'text-slate-500'}>{cl.qualified ? 'âœ“ ' : ''}{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">â†—</a>}</span>
+                          <span className={cl.qualified ? 'text-green-800 font-medium' : 'text-slate-500'}>{cl.qualified ? '✓ ' : ''}{cl.name} {cl.dealId && <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">↗</a>}</span>
                           <span className={cl.qualified ? 'text-green-600 font-medium' : 'text-amber-600'}>{cl.qualified ? 'Qualified' : 'Needs partial'}</span>
                         </div>
                       ))}
@@ -1145,7 +1145,7 @@ export default function ConsultantBonus() {
               <div className="mt-2 ml-8 space-y-1">
                 {(data.weeklyWinners || []).map((w, i) => (
                   <div key={i} className="flex justify-between text-sm">
-                    <span className="text-slate-600">Week {w.week} ({fmtDate(w.start)} â€” {fmtDate(w.end)})</span>
+                    <span className="text-slate-600">Week {w.week} ({fmtDate(w.start)} — {fmtDate(w.end)})</span>
                     <span className={w.winner === c.name ? 'text-orange-600 font-bold' : 'text-slate-400'}>
                       {w.winner === c.name ? `ðŸ† Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs â€” ${w.winner?.split(' ')[0]} won (${w.docs})`}
                     </span>
@@ -1163,7 +1163,7 @@ export default function ConsultantBonus() {
               })} onClose={() => { setExpandedSection(null); setSprintWeek(null); }} />
             )}
             {sprintWeek && (
-              <ClientPanel title={`Week ${sprintWeek.week} Doc Fees (${fmtDate(sprintWeek.start)} â€” ${fmtDate(sprintWeek.end)})`}
+              <ClientPanel title={`Week ${sprintWeek.week} Doc Fees (${fmtDate(sprintWeek.start)} — ${fmtDate(sprintWeek.end)})`}
                 items={(sprintWeek.clients || []).map(cl => ({ name: cl.name, amount: cl.amount, dealId: cl.dealId, date: cl.date, type: 'doc_fee' }))}
                 onClose={() => setSprintWeek(null)} />
             )}
@@ -1194,7 +1194,7 @@ export default function ConsultantBonus() {
         </div>
       </div>
 
-      {/* Past Due Invoices â€” outreach list */}
+      {/* Past Due Invoices — outreach list */}
       <div className="bg-white rounded-xl border shadow-sm p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1222,7 +1222,7 @@ export default function ConsultantBonus() {
           return (
           <div className="mt-3 border-t pt-3 space-y-2 max-h-[28rem] overflow-y-auto">
             <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
-              <h4 className="font-semibold text-slate-700 text-sm">Past Due Invoices â€” Reach Out (newest first)</h4>
+              <h4 className="font-semibold text-slate-700 text-sm">Past Due Invoices — Reach Out (newest first)</h4>
               <div className="flex items-center gap-2">
                 <select value={pastDueMonth} onChange={e => setPastDueMonth(e.target.value)} className="text-xs border rounded px-2 py-1 text-slate-600">
                   <option value="all">All months</option>
@@ -1236,7 +1236,7 @@ export default function ConsultantBonus() {
               <div key={idx} className="bg-slate-50 rounded-lg p-3">
                 <div className="flex items-center justify-between">
                   {client.dealId ? (
-                    <a href={DEAL_URL(client.dealId)} target="_blank" rel="noreferrer" className="font-semibold text-blue-600 hover:underline">{client.name} â†—</a>
+                    <a href={DEAL_URL(client.dealId)} target="_blank" rel="noreferrer" className="font-semibold text-blue-600 hover:underline">{client.name} ↗</a>
                   ) : (
                     <span className="font-semibold text-slate-700">{client.name}</span>
                   )}
@@ -1245,7 +1245,7 @@ export default function ConsultantBonus() {
                 <div className="mt-1 space-y-0.5">
                   {(client.invoices || []).map((inv, i) => (
                     <div key={i} className="flex items-center justify-between text-xs text-slate-500">
-                      <span>${inv.balance} Â· due {inv.dueDate}</span>
+                      <span>${inv.balance} · due {inv.dueDate}</span>
                       <span className={inv.daysOverdue > 0 ? 'text-rose-500' : 'text-slate-400'}>{inv.daysOverdue > 0 ? `${inv.daysOverdue}d overdue` : 'due today'}</span>
                     </div>
                   ))}
@@ -1262,17 +1262,17 @@ export default function ConsultantBonus() {
         <h3 className="font-bold text-slate-800 mb-3">Commission Detail (Live from Zoho)</h3>
         <div className="space-y-2 text-sm">
           <div>
-            <div className="flex justify-between"><span className="text-slate-600"><Tip text="Clients from Google, website, direct calls. Commission at base rate.">Organic Sales ({c.baseRate})</Tip></span><span className="font-medium">{fmt(c.organicSales)} Ã— {c.baseRate} = {fmt(c.baseCommission)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-600"><Tip text="Clients from Google, website, direct calls. Commission at base rate.">Organic Sales ({c.baseRate})</Tip></span><span className="font-medium">{fmt(c.organicSales)} × {c.baseRate} = {fmt(c.baseCommission)}</span></div>
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'google' ? null : 'google')} label={`View ${c.clientDetail?.organicClients?.length || 0} clients`} />
             {expandedSection === 'google' && c.clientDetail && (
-              <ClientPanel title={`Organic Clients â€” ${c.baseRate}`} items={c.clientDetail.organicClients} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title={`Organic Clients — ${c.baseRate}`} items={c.clientDetail.organicClients} onClose={() => setExpandedSection(null)} />
             )}
           </div>
           <div>
-            <div className="flex justify-between"><span className="text-slate-600"><Tip text="Clients referred by affiliates with Consultant Referral label. Higher commission rate.">Affiliate Sales ({c.affiliateRate})</Tip></span><span className="font-medium">{fmt(c.affiliateSales)} Ã— {c.affiliateRate} = {fmt(c.affiliateCommission)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-600"><Tip text="Clients referred by affiliates with Consultant Referral label. Higher commission rate.">Affiliate Sales ({c.affiliateRate})</Tip></span><span className="font-medium">{fmt(c.affiliateSales)} × {c.affiliateRate} = {fmt(c.affiliateCommission)}</span></div>
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'affiliate' ? null : 'affiliate')} label={`View ${c.clientDetail?.affiliateClients?.length || 0} clients`} />
             {expandedSection === 'affiliate' && c.clientDetail && (
-              <ClientPanel title={`Affiliate Clients â€” ${c.affiliateRate}`} items={c.clientDetail.affiliateClients} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title={`Affiliate Clients — ${c.affiliateRate}`} items={c.clientDetail.affiliateClients} onClose={() => setExpandedSection(null)} />
             )}
           </div>
           {(c.refundDeduction || 0) > 0 && (
@@ -1296,7 +1296,7 @@ export default function ConsultantBonus() {
             <p className="text-xs text-slate-500"><Tip text="Doc fees collected divided by total Ready to Quote consults. Standard: 40% minimum.">Closing %</Tip></p>
             <p className="text-lg font-bold">{c.closingPct}%</p>
             <p className="text-xs">{c.meetsClosingStandard ? 'âœ… Above 40%' : 'âš ï¸ Below 40%'}</p>
-            <p className="text-xs text-blue-400 mt-1">ðŸ‘† {c.docsPaid}/{c.consultCount}</p>
+            <p className="text-xs text-blue-400 mt-1">👆 {c.docsPaid}/{c.consultCount}</p>
           </div>
           <div className={`p-3 rounded-lg ${c.meetsPayPastDocStandard ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className="text-xs text-slate-500"><Tip text="Of clients who paid doc fee this month, what percentage also made a partial or final payment? Standard: 84% minimum.">Pay-Past-Doc %</Tip></p>
@@ -1342,22 +1342,22 @@ export default function ConsultantBonus() {
           <div className="p-2 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100" onClick={() => setExpandedSection(expandedSection === 'allpay' ? null : 'allpay')}>
             <p className="text-2xl font-bold text-blue-600">{c.paymentCount || 0}</p>
             <p className="text-xs text-slate-500">Total Payments</p>
-            <p className="text-xs text-blue-400">ðŸ‘† View</p>
+            <p className="text-xs text-blue-400">👆 View</p>
           </div>
           <div className="p-2 bg-amber-50 rounded-lg cursor-pointer hover:bg-amber-100" onClick={() => setExpandedSection(expandedSection === 'docs' ? null : 'docs')}>
             <p className="text-2xl font-bold text-amber-600">{c.docFeeCount || 0}</p>
             <p className="text-xs text-slate-500">Doc Fees</p>
-            <p className="text-xs text-amber-400">ðŸ‘† View</p>
+            <p className="text-xs text-amber-400">👆 View</p>
           </div>
           <div className="p-2 bg-purple-50 rounded-lg cursor-pointer hover:bg-purple-100" onClick={() => setExpandedSection(expandedSection === 'partials' ? null : 'partials')}>
             <p className="text-2xl font-bold text-purple-600">{c.partialCount || 0}</p>
             <p className="text-xs text-slate-500">Partials</p>
-            <p className="text-xs text-purple-400">ðŸ‘† View</p>
+            <p className="text-xs text-purple-400">👆 View</p>
           </div>
           <div className="p-2 bg-green-50 rounded-lg cursor-pointer hover:bg-green-100" onClick={() => setExpandedSection(expandedSection === 'finals' ? null : 'finals')}>
             <p className="text-2xl font-bold text-green-600">{c.finalCount || 0}</p>
             <p className="text-xs text-slate-500">Finals{(c.paidInFullCount || 0) > 0 ? ` (${c.paidInFullCount} full pay)` : ''}</p>
-            <p className="text-xs text-green-400">ðŸ‘† View</p>
+            <p className="text-xs text-green-400">👆 View</p>
           </div>
         </div>
         {expandedSection === 'allpay' && c.clientDetail && (
@@ -1372,7 +1372,7 @@ export default function ConsultantBonus() {
         {expandedSection === 'finals' && c.clientDetail && (
           <ClientPanel title="Final Payments" items={c.clientDetail.finalList} onClose={() => setExpandedSection(null)} />
         )}
-        <p className="text-xs text-slate-400 text-right mt-2">Data source: Zoho Invoice API â€¢ {data.totalPayments || 0} payments this month</p>
+        <p className="text-xs text-slate-400 text-right mt-2">Data source: Zoho Invoice API • {data.totalPayments || 0} payments this month</p>
       </div>
       </>)}
 
@@ -1381,7 +1381,7 @@ export default function ConsultantBonus() {
           <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-slate-800">Past due â€” {pendingDrill.consultant}</h3>
+                <h3 className="font-bold text-slate-800">Past due — {pendingDrill.consultant}</h3>
                 <p className="text-xs text-slate-500">{pendingDrill.clients.length} client{pendingDrill.clients.length === 1 ? '' : 's'} with unpaid invoices (last 120 days)</p>
               </div>
               <button onClick={() => setPendingDrill(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
@@ -1395,7 +1395,7 @@ export default function ConsultantBonus() {
                     <div className="flex items-center justify-between mb-2">
                       <div className="font-medium text-slate-800">
                         {cl.dealId
-                          ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name || 'Unknown'} â†—</a>
+                          ? <a href={DEAL_URL(cl.dealId)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{cl.name || 'Unknown'} ↗</a>
                           : (cl.name || 'Unknown')}
                       </div>
                       <div className="text-sm font-semibold text-red-600">${(cl.totalOwed||0).toLocaleString()} owed</div>
