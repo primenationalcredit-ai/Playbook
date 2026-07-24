@@ -1121,7 +1121,7 @@ export default function ConsultantBonus() {
             </div>
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'reviews' ? null : 'reviews')} label={`View ${c.reviewCount} reviews`} />
             {expandedSection === 'reviews' && c.clientDetail?.reviewList && (
-              <ClientPanel title={`Assigned Reviews (${c.reviewCount} total, bonus starts after 10)`} items={c.clientDetail.reviewList.map(r => ({ name: r.reviewer, dealId: r.dealId, type: `â­ ${r.rating}/5`, date: r.date, payments: [{ type: 'review', amount: 0, date: `${r.location} — "${r.text}..."` }] }))} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title={`Assigned Reviews (${c.reviewCount} total, bonus starts after 10)`} items={c.clientDetail.reviewList.map(r => ({ name: r.reviewer, dealId: r.dealId, type: `⭐ ${r.rating}/5`, date: r.date, payments: [{ type: 'review', amount: 0, date: `${r.location} — "${r.text}..."` }] }))} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 
@@ -1147,7 +1147,7 @@ export default function ConsultantBonus() {
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-slate-600">Week {w.week} ({fmtDate(w.start)} — {fmtDate(w.end)})</span>
                     <span className={w.winner === c.name ? 'text-orange-600 font-bold' : 'text-slate-400'}>
-                      {w.winner === c.name ? `ðŸ† Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs — ${w.winner?.split(' ')[0]} won (${w.docs})`}
+                      {w.winner === c.name ? `🏆 Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs — ${w.winner?.split(' ')[0]} won (${w.docs})`}
                     </span>
                   </div>
                 ))}
@@ -1159,7 +1159,7 @@ export default function ConsultantBonus() {
                 const winner = data.weeklyWinners?.find(ww => ww.week === w.week);
                 const won = !!(winner?.complete && winner?.winner === c.name);
                 const leading = !!(!winner?.complete && winner?.leader === c.name);
-                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? 'ðŸ† Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
+                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
               })} onClose={() => { setExpandedSection(null); setSprintWeek(null); }} />
             )}
             {sprintWeek && (
@@ -1176,7 +1176,7 @@ export default function ConsultantBonus() {
               <div>
                 <p className="font-medium text-slate-800"><Tip text="$500 monthly award. Must lead in qualified docs AND have 5+ active affiliates AND meet the 10-review standard. All three criteria required.">Consultant of the Month</Tip></p>
                 <p className="text-sm text-slate-500">
-                  {data.consultantOfMonth === c.name ? 'ðŸ† You qualify!' :
+                  {data.consultantOfMonth === c.name ? '🏆 You qualify!' :
                   !c.meetsReviewStandard ? 'Need 10+ reviews' :
                   c.producingAffiliates < 5 ? 'Need 5+ active affiliates' :
                   'Need most qualified docs'}
@@ -1295,18 +1295,18 @@ export default function ConsultantBonus() {
           <div className={`p-3 rounded-lg cursor-pointer ${c.meetsClosingStandard ? 'bg-green-50 border border-green-200 hover:bg-green-100' : 'bg-red-50 border border-red-200 hover:bg-red-100'}`} onClick={() => setExpandedSection(expandedSection === 'closing' ? null : 'closing')}>
             <p className="text-xs text-slate-500"><Tip text="Doc fees collected divided by total Ready to Quote consults. Standard: 40% minimum.">Closing %</Tip></p>
             <p className="text-lg font-bold">{c.closingPct}%</p>
-            <p className="text-xs">{c.meetsClosingStandard ? 'âœ… Above 40%' : 'âš ï¸ Below 40%'}</p>
+            <p className="text-xs">{c.meetsClosingStandard ? '✅ Above 40%' : '⚠️ Below 40%'}</p>
             <p className="text-xs text-blue-400 mt-1">👆 {c.docsPaid}/{c.consultCount}</p>
           </div>
           <div className={`p-3 rounded-lg ${c.meetsPayPastDocStandard ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className="text-xs text-slate-500"><Tip text="Of clients who paid doc fee this month, what percentage also made a partial or final payment? Standard: 84% minimum.">Pay-Past-Doc %</Tip></p>
             <p className="text-lg font-bold">{c.payPastDocRate || 0}%</p>
-            <p className="text-xs">{c.meetsPayPastDocStandard ? 'âœ… Above 84%' : 'âš ï¸ Below 84%'}</p>
+            <p className="text-xs">{c.meetsPayPastDocStandard ? '✅ Above 84%' : '⚠️ Below 84%'}</p>
           </div>
           <div className={`p-3 rounded-lg ${c.refundCount === 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className="text-xs text-slate-500"><Tip text="Number of refunds processed for your clients this month.">Refunds</Tip></p>
             <p className="text-lg font-bold">{c.refundCount || 0}</p>
-            <p className="text-xs">{c.refundCount === 0 ? 'âœ… No refunds' : `âš ï¸ ${fmt(c.refundAmount)} refunded - ${fmt(c.refundDeduction || 0)} payroll deduction`}</p>
+            <p className="text-xs">{c.refundCount === 0 ? '✅ No refunds' : `⚠️ ${fmt(c.refundAmount)} refunded - ${fmt(c.refundDeduction || 0)} payroll deduction`}</p>
             {(c.refundClients || []).length > 0 && (
               <details className="mt-1">
                 <summary className="text-[11px] text-red-600 cursor-pointer hover:underline">View refunds</summary>
@@ -1319,21 +1319,21 @@ export default function ConsultantBonus() {
           <div className={`p-3 rounded-lg ${c.meetsReviewStandard ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className="text-xs text-slate-500"><Tip text="Client reviews assigned to you. Standard: 10 minimum per month.">Reviews</Tip></p>
             <p className="text-lg font-bold">{c.reviewCount}</p>
-            <p className="text-xs">{c.meetsReviewStandard ? 'âœ… Meets 10 standard' : `âš ï¸ ${10 - c.reviewCount} short`}</p>
+            <p className="text-xs">{c.meetsReviewStandard ? '✅ Meets 10 standard' : `⚠️ ${10 - c.reviewCount} short`}</p>
           </div>
           <div className={`p-3 rounded-lg ${c.producingAffiliates >= 5 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <p className="text-xs text-slate-500"><Tip text="Affiliate partners who sent 3+ clients this month. Standard: 5 minimum.">Active Affiliates</Tip></p>
             <p className="text-lg font-bold">{c.producingAffiliates}</p>
-            <p className="text-xs">{c.producingAffiliates >= 5 ? 'âœ… 5+ active' : `âš ï¸ ${5 - c.producingAffiliates} to minimum`}</p>
+            <p className="text-xs">{c.producingAffiliates >= 5 ? '✅ 5+ active' : `⚠️ ${5 - c.producingAffiliates} to minimum`}</p>
           </div>
           <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
             <p className="text-xs text-slate-500"><Tip text="Your doc fee count this week. Top closer wins $150.">Weekly Sprint</Tip></p>
             <p className="text-lg font-bold">{c.weeklyDocs} docs</p>
-            <p className="text-xs">{data.sprintWinner === c.name ? 'ðŸ† Leading' : `Leader: ${data.sprintMaxDocs}`}</p>
+            <p className="text-xs">{data.sprintWinner === c.name ? '🏆 Leading' : `Leader: ${data.sprintMaxDocs}`}</p>
           </div>
         </div>
         {expandedSection === 'closing' && c.clientDetail?.consultList && (
-          <ClientPanel title={`Closing % Detail — ${c.docsPaid} paid / ${c.consultCount} consults = ${c.closingPct}%`} items={c.clientDetail.consultList.map(cl => ({ name: cl.clientName, amount: cl.amount, type: cl.paid ? 'âœ… Paid Doc Fee' : 'âŒ Not Paid', date: cl.date }))} onClose={() => setExpandedSection(null)} />
+          <ClientPanel title={`Closing % Detail — ${c.docsPaid} paid / ${c.consultCount} consults = ${c.closingPct}%`} items={c.clientDetail.consultList.map(cl => ({ name: cl.clientName, amount: cl.amount, type: cl.paid ? '✅ Paid Doc Fee' : '❌ Not Paid', date: cl.date }))} onClose={() => setExpandedSection(null)} />
         )}
       </div>
       <div className="bg-white rounded-xl border shadow-sm p-4">
