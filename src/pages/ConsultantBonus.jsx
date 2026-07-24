@@ -1121,7 +1121,7 @@ export default function ConsultantBonus() {
             </div>
             <DrillButton onClick={() => setExpandedSection(expandedSection === 'reviews' ? null : 'reviews')} label={`View ${c.reviewCount} reviews`} />
             {expandedSection === 'reviews' && c.clientDetail?.reviewList && (
-              <ClientPanel title={`Assigned Reviews (${c.reviewCount} total, bonus starts after 10)`} items={c.clientDetail.reviewList.map(r => ({ name: r.reviewer, dealId: r.dealId, type: `â­ ${r.rating}/5`, date: r.date, payments: [{ type: 'review', amount: 0, date: `${r.location} â€” "${r.text}..."` }] }))} onClose={() => setExpandedSection(null)} />
+              <ClientPanel title={`Assigned Reviews (${c.reviewCount} total, bonus starts after 10)`} items={c.clientDetail.reviewList.map(r => ({ name: r.reviewer, dealId: r.dealId, type: `â­ ${r.rating}/5`, date: r.date, payments: [{ type: 'review', amount: 0, date: `${r.location} — "${r.text}..."` }] }))} onClose={() => setExpandedSection(null)} />
             )}
           </div>
 
@@ -1147,7 +1147,7 @@ export default function ConsultantBonus() {
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-slate-600">Week {w.week} ({fmtDate(w.start)} — {fmtDate(w.end)})</span>
                     <span className={w.winner === c.name ? 'text-orange-600 font-bold' : 'text-slate-400'}>
-                      {w.winner === c.name ? `ðŸ† Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs â€” ${w.winner?.split(' ')[0]} won (${w.docs})`}
+                      {w.winner === c.name ? `ðŸ† Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs — ${w.winner?.split(' ')[0]} won (${w.docs})`}
                     </span>
                   </div>
                 ))}
@@ -1159,7 +1159,7 @@ export default function ConsultantBonus() {
                 const winner = data.weeklyWinners?.find(ww => ww.week === w.week);
                 const won = !!(winner?.complete && winner?.winner === c.name);
                 const leading = !!(!winner?.complete && winner?.leader === c.name);
-                return { name: `Week ${w.week} (${fmtDate(w.start)} â€” ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' â€” Won $150' : leading ? ' â€” Leading' : ''}`, date: winner?.complete ? (won ? 'ðŸ† Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
+                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? 'ðŸ† Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
               })} onClose={() => { setExpandedSection(null); setSprintWeek(null); }} />
             )}
             {sprintWeek && (
@@ -1333,7 +1333,7 @@ export default function ConsultantBonus() {
           </div>
         </div>
         {expandedSection === 'closing' && c.clientDetail?.consultList && (
-          <ClientPanel title={`Closing % Detail â€” ${c.docsPaid} paid / ${c.consultCount} consults = ${c.closingPct}%`} items={c.clientDetail.consultList.map(cl => ({ name: cl.clientName, amount: cl.amount, type: cl.paid ? 'âœ… Paid Doc Fee' : 'âŒ Not Paid', date: cl.date }))} onClose={() => setExpandedSection(null)} />
+          <ClientPanel title={`Closing % Detail — ${c.docsPaid} paid / ${c.consultCount} consults = ${c.closingPct}%`} items={c.clientDetail.consultList.map(cl => ({ name: cl.clientName, amount: cl.amount, type: cl.paid ? 'âœ… Paid Doc Fee' : 'âŒ Not Paid', date: cl.date }))} onClose={() => setExpandedSection(null)} />
         )}
       </div>
       <div className="bg-white rounded-xl border shadow-sm p-4">
