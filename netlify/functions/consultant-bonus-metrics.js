@@ -274,7 +274,7 @@ exports.handler = async (event) => {
     // Build set of deal IDs that have doc_fee payments in Zoho, plus a name index
     // (some Zoho invoices have no deal ID on them, so we fall back to client name)
     const dealIdsWithDocFee = new Set();
-    const docFeeNames = new Set();
+    const docFeeNames = new Map(); // norm(client_name) -> Set of norm(consultant) who the orphan payment pays
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
     // Resolve a deal id for a payment row even when the row itself has no pipedrive_deal_id (Zoho
@@ -361,7 +361,11 @@ exports.handler = async (event) => {
     for (const p of allPayments) {
       if (p.payment_type === 'doc_fee') {
         if (p.pipedrive_deal_id) dealIdsWithDocFee.add(p.pipedrive_deal_id);
-        else if (p.client_name) docFeeNames.add(norm(p.client_name)); // name fallback ONLY for orphan payments with no deal id, so a linked payment can't be borrowed by a same-named different deal
+        else if (p.client_name) { // orphan (no deal id): remember WHICH consultant it pays, so only their deals can claim it (Astrid 7/24: repeat clients were crediting both old and new deal owners)
+          const nk = norm(p.client_name);
+          if (!docFeeNames.has(nk)) docFeeNames.set(nk, new Set());
+          docFeeNames.get(nk).add(norm(p.consultant_name || p.consultant || ''));
+        }
       }
     }
 
@@ -917,14 +921,20 @@ exports.handler = async (event) => {
       // Test rigs are invisible to bonus math (Cindy 7/24): title has 'test'/'(copy)' or known rig ids.
       const isTestDeal = (id) => { const nm = String(dealMeta[id]?.name || ''); return /\btest\b|\(copy\)/i.test(nm) || ['223802'].includes(String(id)); };
       const myConsultDealIds = myConsultData.flatMap(([_, v]) => v.dealIds).filter(id => !isTestDeal(id));
-      const isPaid = (id) => dealIdsWithDocFee.has(id) || docFeeNames.has(norm(dealMeta[id]?.name));
+      const orphanDocMine = (id) => {
+        const set = docFeeNames.get(norm(dealMeta[id]?.name));
+        if (!set) return false;
+        for (const e of set) { if (e && (e.split(' ')[0] === firstName || (lastName.length > 3 && e.includes(lastName)))) return true; }
+        return false;
+      };
+      const isPaid = (id) => dealIdsWithDocFee.has(id) || orphanDocMine(id);
       const myDocsPaid = myConsultDealIds.filter(isPaid).length;
       const closingPct = myConsultCount > 0 ? Math.round((myDocsPaid / myConsultCount) * 100) : 0;
 
       // Per-deal breakdown behind the closing % — which quoted deals paid a doc fee, and how they matched
       const closeDetail = myConsultDealIds.map(id => {
         const byId = dealIdsWithDocFee.has(id);
-        const byName = !byId && docFeeNames.has(norm(dealMeta[id]?.name));
+        const byName = !byId && orphanDocMine(id);
         const paidDocFee = byId || byName;
         // Show the doc fee actually paid. If no doc fee was paid, show 0, never the Pipedrive quote
         // value, which would read as a payment that never happened.
