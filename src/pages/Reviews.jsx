@@ -74,7 +74,7 @@ function Reviews() {
     if (currentUser) {
       loadAllReviewData();
       // Auto-refresh every 30s so newly-arrived reviews appear without a manual reload.
-      const id = setInterval(() => { loadAllReviewData(); }, 30000);
+      const id = setInterval(() => { loadAllReviewData(true); }, 30000);
       return () => clearInterval(id);
     }
   }, [currentUser]);
@@ -87,8 +87,8 @@ function Reviews() {
     }
   }, [allReviews, selectedMonth, viewMode, tableTimeframe, viewedUserId]);
 
-  const loadAllReviewData = async () => {
-    setLoading(true);
+  const loadAllReviewData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // Reviews now come from the claim flow: incoming_reviews assigned to a user.
       // We normalize each row to the shape the rest of this component already expects

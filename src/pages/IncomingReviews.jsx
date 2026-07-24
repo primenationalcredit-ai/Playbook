@@ -71,7 +71,7 @@ function IncomingReviews() {
   useEffect(() => {
     loadData();
     // Auto-refresh every 30s so newly-arrived reviews appear without a manual reload.
-    const id = setInterval(() => { loadData(); }, 30000);
+    const id = setInterval(() => { loadData(true); }, 30000);
     return () => clearInterval(id);
   }, [locationFilter]);
 
@@ -105,8 +105,8 @@ function IncomingReviews() {
     setRechecking(false);
   };
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       // Load ALL reviews (every status) so the Pending/Assigned/Completed counts are
