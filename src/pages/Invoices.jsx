@@ -1175,16 +1175,8 @@ export default function Invoices() {
         if (!form.first_date) throw new Error('Choose a date for the first payment');
         if (!form.remainder_date) throw new Error('Choose a date for the remainder');
         if (form.remainder_date < form.first_date) throw new Error('Remainder date must be on or after the first payment date');
-        // ===== SPLIT POLICY GUARDRAILS =====
+        // Date limits LIFTED (Joe 7/23): any dates may be submitted - approval is the gate.
         const origDue = String(modal.current_due_date || '').slice(0, 10);
-        if (origDue) {
-          if (form.first_date > origDue) throw new Error(`Payment 1 cannot be later than the original due date (${fmtDate(origDue)}). A split is not grounds to also extend the deadline; a date change is a separate approval.`);
-          const d45 = new Date(origDue + 'T00:00:00'); d45.setDate(d45.getDate() + 45);
-          const cap45 = d45.toISOString().slice(0, 10);
-          if (form.remainder_date > cap45) throw new Error(`Payment 2 must fall within 45 days of the original due date (by ${fmtDate(cap45)}). Beyond that this is an installment plan, not a split.`);
-        }
-        const splitGapDays = Math.round((new Date(form.remainder_date + 'T00:00:00') - new Date(form.first_date + 'T00:00:00')) / 86400000);
-        if (splitGapDays > 14) throw new Error(`Payments are ${splitGapDays} days apart. The gap between split payments is capped at 14 days; beyond that it is an installment plan, not a split.`);
         if (origDue && form.remainder_date.slice(0, 7) !== origDue.slice(0, 7) && !form.month_ack) throw new Error('This split crosses a month boundary, which affects qualified-doc and bonus timing. Check the acknowledgment box to confirm this has been reviewed.');
         const r = await callApi('split_charge', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date });
         const warnTxt = (r.warnings && r.warnings.length) ? ' \u26A0 ' + r.warnings.join(' ') : '';
@@ -1197,15 +1189,8 @@ export default function Invoices() {
         if (!form.first_date) throw new Error('Choose a date for the first payment');
         if (!form.remainder_date) throw new Error('Choose a date for the remainder');
         if (form.remainder_date < form.first_date) throw new Error('Remainder date must be on or after the first payment date');
+        // Date limits LIFTED (Joe 7/23): any dates may be submitted - approval is the gate.
         const rOrigDue = String(modal.current_due_date || '').slice(0, 10);
-        if (rOrigDue) {
-          if (form.first_date > rOrigDue) throw new Error(`Payment 1 cannot be later than the original due date (${fmtDate(rOrigDue)}). A split is not grounds to also extend the deadline; a date change is a separate request.`);
-          const rd45 = new Date(rOrigDue + 'T00:00:00'); rd45.setDate(rd45.getDate() + 45);
-          const rcap45 = rd45.toISOString().slice(0, 10);
-          if (form.remainder_date > rcap45) throw new Error(`Payment 2 must fall within 45 days of the original due date (by ${fmtDate(rcap45)}).`);
-        }
-        const rGap = Math.round((new Date(form.remainder_date + 'T00:00:00') - new Date(form.first_date + 'T00:00:00')) / 86400000);
-        if (rGap > 14) throw new Error(`Payments are ${rGap} days apart. The gap between split payments is capped at 14 days.`);
         if (rOrigDue && form.remainder_date.slice(0, 7) !== rOrigDue.slice(0, 7) && !form.month_ack) throw new Error('This split crosses a month boundary, which affects qualified-doc and bonus timing. Check the acknowledgment box.');
         if (!form.reason || form.reason.trim().length < 3) throw new Error('Add a short reason for the split request');
         const r = await callApi('request_split', { charge_id: modal.charge_id, partial_amount: partial, first_date: form.first_date, remainder_date: form.remainder_date, reason: form.reason.trim() });
@@ -1383,7 +1368,7 @@ export default function Invoices() {
                         className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
                     </div>
                   )}
-                  <p className="text-[11px] text-slate-500 mt-2">Policy: Payment 1 no later than the original due date. Gap between payments 14 days max. Full balance within 45 days of the original due date.</p>
+                  <p className="text-[11px] text-slate-500 mt-2">Any dates can be submitted with a reason - leadership approval is the gate. Splits past the original due date or across months affect qualified-doc / bonus timing.</p>
                   {(() => {
                     const origDue = String(modal.current_due_date || '').slice(0, 10);
                     const monthCross = origDue && form.remainder_date && form.remainder_date.slice(0, 7) !== origDue.slice(0, 7);
