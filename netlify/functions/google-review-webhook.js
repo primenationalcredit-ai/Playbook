@@ -94,7 +94,7 @@ exports.handler = async (event, context) => {
 
     // Check for duplicate using fetch
     if (review_id) {
-      const checkUrl = `${SUPABASE_URL}/rest/v1/incoming_reviews?google_review_id=eq.${encodeURIComponent(review_id)}&select=id`;
+      const checkUrl = `${SUPABASE_URL}/rest/v1/incoming_reviews?google_review_id=eq.${encodeURIComponent(review_id)}&select=id,rating,review_text`;
       const checkRes = await fetch(checkUrl, {
         headers: {
           'apikey': SUPABASE_ANON_KEY,
@@ -104,6 +104,19 @@ exports.handler = async (event, context) => {
       const existing = await checkRes.json();
       
       if (existing && existing.length > 0) {
+        // Reviews are editable on Google: when the stars or text changed,
+        // update the stored copy (claims/assignments untouched) instead of
+        // skipping - a 4->5 edit must reach the Playbook (Joe 7/24).
+        const changed = (numericRating != null && existing[0].rating !== numericRating) ||
+          (review_text && review_text !== existing[0].review_text);
+        if (changed) {
+          await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?id=eq.${existing[0].id}`, {
+            method: 'PATCH',
+            headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ rating: numericRating, review_text: review_text || existing[0].review_text, updated_at: new Date().toISOString() }),
+          });
+          return { statusCode: 200, headers, body: JSON.stringify({ message: 'Review updated (edited on Google)', id: existing[0].id }) };
+        }
         return {
           statusCode: 200,
           headers,
