@@ -976,8 +976,8 @@ export default function ConsultantBonus() {
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {o.kind === 'reactivated'
-                        ? `Quiet ${o.daysDormant} days, then a new client on ${fmtDate(o.reactivatedOn)}`
-                        : `Last paying client ${fmtDate(o.lastActive)}`}
+                        ? `Quiet ${o.daysDormant} days since ${o.lastClient || "the last client"}${o.lastAmount ? " ($" + o.lastAmount + ")" : ""} on ${fmtDate(o.lastActive)} - revived by ${o.revivedBy || "a new client"} on ${fmtDate(o.reactivatedOn)}`
+                        : `Last payment: ${o.lastClient || "unknown client"}${o.lastAmount ? " ($" + o.lastAmount + ")" : ""} on ${fmtDate(o.lastActive)}`}
                     </p>
                     {/* Referred clients for this affiliate: deal name, link, and what each needs */}
                     {o.clients && o.clients.length > 0 ? (
