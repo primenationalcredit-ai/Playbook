@@ -54,6 +54,11 @@ exports.handler = async (event) => {
     const PAGE = Math.min(parseInt(params.limit) || 40, 100);
     const baseUrl = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1`;
     const maps = await loadMaps(baseUrl);
+    if (!Object.keys(maps.ms).length) {
+      // GUARD (7/24): field-option map failed to load (PD throttle/outage).
+      // Writing now would null every monitoring_site - abort instead.
+      return { statusCode: 503, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'monitoring-site field map unavailable - sync aborted to protect report data' }) };
+    }
 
     // Fetch ONE page of deals from the filter
     const url = `${baseUrl}/deals?api_token=${PIPEDRIVE_API_KEY}&filter_id=${CS_DEALS_FILTER}&start=${startAt}&limit=${PAGE}`;
