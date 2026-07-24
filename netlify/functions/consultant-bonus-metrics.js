@@ -914,7 +914,9 @@ exports.handler = async (event) => {
         return kFirst === firstName || (lastName.length > 3 && k.toLowerCase().includes(lastName));
       });
       const myConsultCount = myConsultData.reduce((sum, [_, v]) => sum + v.total, 0);
-      const myConsultDealIds = myConsultData.flatMap(([_, v]) => v.dealIds);
+      // Test rigs are invisible to bonus math (Cindy 7/24): title has 'test'/'(copy)' or known rig ids.
+      const isTestDeal = (id) => { const nm = String(dealMeta[id]?.name || ''); return /\btest\b|\(copy\)/i.test(nm) || ['223802'].includes(String(id)); };
+      const myConsultDealIds = myConsultData.flatMap(([_, v]) => v.dealIds).filter(id => !isTestDeal(id));
       const isPaid = (id) => dealIdsWithDocFee.has(id) || docFeeNames.has(norm(dealMeta[id]?.name));
       const myDocsPaid = myConsultDealIds.filter(isPaid).length;
       const closingPct = myConsultCount > 0 ? Math.round((myDocsPaid / myConsultCount) * 100) : 0;
