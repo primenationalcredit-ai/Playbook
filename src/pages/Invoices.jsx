@@ -259,9 +259,9 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 <CalendarClock size={12} /> Edit Date
               </button>
               {SPLIT_ENABLED && (
-              <button onClick={() => onAction({ type: 'request_split', charge_id: c.id, amount: c.amount, current_due_date: c.due_date })}
+              <button onClick={() => onAction({ type: 'split_charge', charge_id: c.id, amount: c.amount, current_due_date: c.due_date })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded hover:bg-purple-700">
-                <Undo2 size={12} /> Request split
+                <Undo2 size={12} /> Split payment
               </button>
               )}
               <button onClick={() => onAction({ type: 'pause_admin', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
