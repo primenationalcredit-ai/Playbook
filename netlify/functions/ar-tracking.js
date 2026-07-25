@@ -46,7 +46,7 @@ async function activeUserIds() {
   for (const u of users) if (u.active_flag) ids.add(String(u.id));
   return ids;
 }
-async function buildInService(activeIds) {
+async function buildInService(activeIds, pfsShared) {
   // Temp deals filter: open + pipeline 65. The 'pipeline' field id is
   // account-specific - resolve it from dealFields like the person fields.
   const dfs = await pd('/dealFields?limit=500');
@@ -89,12 +89,12 @@ async function buildInService(activeIds) {
     }
   } finally { if (filt && filt.id) await pdDelete(`/filters/${filt.id}`); }
   // Live person status labels (CURRENT STATUS + UPDATE STATUS), parallel chunks of 20
-  const pfs2 = await pd('/personFields?limit=500');
+  const pfs2 = pfsShared || await pd('/personFields?limit=500');
   const mkOpts = (key) => { const f2 = (pfs2 || []).find(x => x.key === key); const m = {}; for (const o of ((f2 && f2.options) || [])) m[String(o.id)] = o.label; return m; };
   const usOpts = mkOpts(F_UPDATE_STATUS);
   const csOpts = mkOpts(F_CURRENT_STATUS);
-  for (let i = 0; i < rows.length; i += 20) {
-    await Promise.all(rows.slice(i, i + 20).map(async (r) => {
+  for (let i = 0; i < rows.length; i += 30) {
+    await Promise.all(rows.slice(i, i + 30).map(async (r) => {
       if (!r.person_id) return;
       try {
         const per = await pd(`/persons/${r.person_id}`);
@@ -110,8 +110,8 @@ async function buildInService(activeIds) {
   return rows;
 }
 
-async function buildInterested(activeIds) {
-  const pfs = await pd('/personFields?limit=500');
+async function buildInterested(activeIds, pfsShared) {
+  const pfs = pfsShared || await pd('/personFields?limit=500');
   const usId = (pfs || []).find(f => f.key === F_UPDATE_STATUS);
   const csId = (pfs || []).find(f => f.key === F_CURRENT_STATUS);
   if (!usId || !csId) throw new Error('person status fields not found');
@@ -238,7 +238,8 @@ exports.handler = async (event) => {
       }
     }
     const activeIds = await activeUserIds();
-    const [inService, interestedByAm] = [await buildInService(activeIds), await buildInterested(activeIds)];
+    const pfsShared = await pd('/personFields?limit=500');
+    const [inService, interestedByAm] = [await buildInService(activeIds, pfsShared), await buildInterested(activeIds, pfsShared)];
     const payload = JSON.stringify({
       built_at: new Date().toISOString(),
       in_service: inService,

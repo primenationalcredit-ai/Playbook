@@ -107,3 +107,6 @@
 # app_config.affiliate_engine_enabled - ships disabled, nothing sends until flipped.
 [functions."affiliate-cadence-runner"]
   schedule = "*/30 13-23 * * 1-5"
+
+[functions."ar-tracking"]
+  timeout = 26
