@@ -160,6 +160,41 @@ async function buildInterested() {
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   const params = event.queryStringParameters || {};
+  // --- per-client live profile ---
+  if (params.person_id) {
+    try {
+      const pid = String(params.person_id).replace(/[^0-9]/g, '');
+      const p = await pd(`/persons/${pid}`);
+      if (!p) return { statusCode: 404, headers, body: JSON.stringify({ error: 'person not found' }) };
+      const dealsAll = (await pd(`/persons/${pid}/deals?status=all_not_deleted&limit=50`)) || [];
+      const pipes = {};
+      for (const pl of ((await pd('/pipelines')) || [])) pipes[String(pl.id)] = pl.name;
+      let arc = null;
+      try {
+        const arcRow = await sb(`app_cache?cache_key=eq.arc:${pid}&select=cache_value`);
+        if (arcRow && arcRow[0]) arc = JSON.parse(arcRow[0].cache_value);
+      } catch (e) {}
+      const amRaw = p[F_ACCOUNT_MANAGER];
+      const am = (amRaw && typeof amRaw === 'object') ? (amRaw.name || null) : null;
+      const email = Array.isArray(p.email) && p.email[0] ? p.email[0].value : (p.email || null);
+      const phone = Array.isArray(p.phone) && p.phone[0] ? p.phone[0].value : (p.phone || null);
+      return { statusCode: 200, headers, body: JSON.stringify({
+        person_id: p.id, name: p.name, email, phone, am,
+        interested: String(p[F_UPDATE_STATUS]) === '1893',
+        quoted: String(p[F_CURRENT_STATUS]) === '1890',
+        sold: String(p[F_CURRENT_STATUS]) === '1901',
+        campaign: arc ? { status: arc.status, last_step: arc.last_step, last_action: arc.last_action || null, next_step_at: arc.next_step_at || null, track: arc.track, stop_reason: arc.stop_reason || null, am_name: arc.am_name || null } : null,
+        deals: dealsAll.map(d => ({
+          id: d.id, title: d.title, status: d.status,
+          pipeline: pipes[String(d.pipeline_id)] || String(d.pipeline_id),
+          added: d.add_time || null, updated: d.update_time || null,
+          days_open: d.add_time ? Math.floor((Date.now() - new Date(d.add_time).getTime()) / 86400000) : null
+        }))
+      }) };
+    } catch (e) {
+      return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
+    }
+  }
   try {
     if (!params.refresh) {
       const cached = await sb(`app_cache?cache_key=eq.${CACHE_KEY}&select=cache_value,updated_at`);

@@ -167,6 +167,7 @@ function ClientsBoard() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
   const [amFilter, setAmFilter] = useState('all');
+  const [profilePid, setProfilePid] = useState(null);
   const [building, setBuilding] = useState(false);
   const loadClients = (refresh) => {
     setErr(null); if (refresh) setBuilding(true);
@@ -196,8 +197,8 @@ function ClientsBoard() {
             </tr></thead>
             <tbody>
               {(d?.in_service || []).map((r) => (
-                <tr key={r.deal_id} className="border-t border-slate-100">
-                  <td className="px-3 py-2"><a className="font-medium text-slate-800 hover:text-indigo-600" target="_blank" rel="noreferrer" href={DEAL_URL(r.deal_id)}>{r.client}</a></td>
+                <tr key={r.deal_id} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => r.person_id && setProfilePid(r.person_id)}>
+                  <td className="px-3 py-2"><span className="font-medium text-slate-800 hover:text-indigo-600">{r.client}</span></td>
                   <td className="px-3 py-2 text-slate-600">{r.owner || '-'}</td>
                   <td className="px-3 py-2 text-right">{r.days_in_service ?? '-'}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">{String(r.entered || '').slice(0, 10)}</td>
@@ -222,8 +223,8 @@ function ClientsBoard() {
               <table className="w-full text-sm">
                 <tbody>
                   {(d.interested_by_am[a] || []).map((p) => (
-                    <tr key={p.person_id} className="border-t border-slate-100">
-                      <td className="px-3 py-2"><a className="font-medium text-slate-800 hover:text-indigo-600" target="_blank" rel="noreferrer" href={'https://asapcreditrepair.pipedrive.com/person/' + p.person_id}>{p.name}</a></td>
+                    <tr key={p.person_id} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => setProfilePid(p.person_id)}>
+                      <td className="px-3 py-2"><span className="font-medium text-slate-800 hover:text-indigo-600">{p.name}</span></td>
                       <td className="px-3 py-2 text-xs text-slate-600">{p.interested ? 'Interested' : ''}{p.interested && p.quoted ? ' + ' : ''}{p.quoted ? 'Quoted' : ''}</td>
                       <td className="px-3 py-2 text-xs text-slate-500">{p.campaign}</td>
                       <td className="px-3 py-2 text-xs text-slate-400 text-right">{String(p.last_update || '').slice(0, 10)}</td>
@@ -234,6 +235,77 @@ function ClientsBoard() {
             </div>
           </div>
         ))}
+      </div>
+      {profilePid && <ClientProfileModal personId={profilePid} onClose={() => setProfilePid(null)} />}
+    </div>
+  );
+}
+
+function ClientProfileModal({ personId, onClose }) {
+  const [p, setP] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    setP(null); setErr(null);
+    fetch('/.netlify/functions/ar-tracking?person_id=' + personId)
+      .then((r) => r.json())
+      .then((x) => { if (x.error) setErr(x.error); else setP(x); })
+      .catch((e) => setErr(String(e)));
+  }, [personId]);
+  const chip = (label, cls) => <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${cls}`}>{label}</span>;
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+        {!p && !err && <p className="text-sm text-slate-400">Loading client\u2026</p>}
+        {err && <p className="text-sm text-rose-600">{err}</p>}
+        {p && (
+          <>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">{p.name}</h2>
+                <div className="text-xs text-slate-500 space-y-0.5 mt-1">
+                  {p.email && <div>{p.email}</div>}
+                  {p.phone && <div>{p.phone}</div>}
+                  <div>AM: <span className="font-medium text-slate-700">{p.am || p.campaign?.am_name || 'Unassigned'}</span></div>
+                </div>
+              </div>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {p.sold && chip('SOLD', 'bg-emerald-100 text-emerald-800')}
+              {p.interested && chip('Interested Add Rounds', 'bg-indigo-100 text-indigo-700')}
+              {p.quoted && chip('AR Quoted', 'bg-amber-100 text-amber-800')}
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3">
+              <p className="text-xs font-semibold text-slate-500 mb-1">Campaign</p>
+              {p.campaign ? (
+                <div className="text-xs text-slate-700 space-y-0.5">
+                  <div>Status: <b>{p.campaign.status}</b>{p.campaign.stop_reason ? ` (${p.campaign.stop_reason})` : ''}</div>
+                  <div>Last: {p.campaign.last_action || (p.campaign.last_step >= 0 ? `step ${p.campaign.last_step}` : 'nothing sent yet')}</div>
+                  {p.campaign.status === 'active' && <div>Next touch: {p.campaign.next_step_at}</div>}
+                  <div>Track: {p.campaign.track}</div>
+                </div>
+              ) : <p className="text-xs text-slate-400">Not enrolled in the AR campaign.</p>}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1">Deals</p>
+              <div className="space-y-1.5">
+                {p.deals.map((d) => (
+                  <a key={d.id} href={DEAL_URL(d.id)} target="_blank" rel="noreferrer"
+                    className="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-3 py-2 hover:border-indigo-400">
+                    <div>
+                      <div className="text-sm font-medium text-slate-800">{d.title}</div>
+                      <div className="text-[11px] text-slate-400">{d.pipeline} \u00b7 {d.days_open != null ? d.days_open + ' days' : ''}</div>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${d.status === 'open' ? 'bg-emerald-100 text-emerald-800' : d.status === 'won' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>{d.status}</span>
+                  </a>
+                ))}
+                {p.deals.length === 0 && <p className="text-xs text-slate-400">No deals on file.</p>}
+              </div>
+            </div>
+            <a href={'https://asapcreditrepair.pipedrive.com/person/' + p.person_id} target="_blank" rel="noreferrer"
+              className="block text-center text-xs font-semibold text-indigo-600 hover:underline">Open full profile in Pipedrive \u2192</a>
+          </>
+        )}
       </div>
     </div>
   );
