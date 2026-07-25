@@ -38,13 +38,18 @@ async function pdPost(path, body) {
 async function pdDelete(path) { try { await fetch(`${PD_BASE}${path}?api_token=${PD_TOKEN}`, { method: 'DELETE' }); } catch (e) {} }
 
 async function buildInService() {
-  // Temp deals filter: open + pipeline 65 (same proven pattern as the backfills)
+  // Temp deals filter: open + pipeline 65. The 'pipeline' field id is
+  // account-specific - resolve it from dealFields like the person fields.
+  const dfs = await pd('/dealFields?limit=500');
+  const pipeField = (dfs || []).find(x => x.key === 'pipeline' || String(x.name || '').trim().toLowerCase() === 'pipeline');
+  if (!pipeField) throw new Error('pipeline dealField not found');
   const filt = await pdPost('/filters', {
     name: 'AR tracking temp (deals)', type: 'deals',
     conditions: { glue: 'and', conditions: [ { glue: 'and', conditions: [
-      { object: 'deal', field_id: '13', operator: '=', value: '65' } // pipeline
+      { object: 'deal', field_id: String(pipeField.id), operator: '=', value: '65' }
     ] } ] }
   });
+  if (!filt || !filt.id) throw new Error('deals filter create failed');
   const rows = [];
   try {
     let start = 0, more = true;
@@ -76,6 +81,7 @@ async function buildInterested() {
   const pfs = await pd('/personFields?limit=500');
   const usId = (pfs || []).find(f => f.key === F_UPDATE_STATUS);
   const csId = (pfs || []).find(f => f.key === F_CURRENT_STATUS);
+  if (!usId || !csId) throw new Error('person status fields not found');
   const filt = await pdPost('/filters', {
     name: 'AR tracking temp (people)', type: 'people',
     conditions: { glue: 'and', conditions: [ { glue: 'or', conditions: [
@@ -83,6 +89,7 @@ async function buildInterested() {
       { object: 'person', field_id: String(csId.id), operator: '=', value: '1890' }
     ] } ] }
   });
+  if (!filt || !filt.id) throw new Error('people filter create failed');
   const people = [];
   try {
     let start = 0, more = true;
