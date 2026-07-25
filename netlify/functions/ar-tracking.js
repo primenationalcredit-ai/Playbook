@@ -12,6 +12,8 @@ const PD_BASE = 'https://asapcreditrepairusa.pipedrive.com/api/v1';
 const F_UPDATE_STATUS = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad'; // 1893 INTERESTED ADD ROUNDS
 const F_CURRENT_STATUS = '612856f2221d04679c1809eadb77b30300936445'; // 1890 AR Quoted, 1901 SOLD
 const F_ACCOUNT_MANAGER = '0a2bceaec010dd949056d374970917a6b573f1dc'; // person's Account Manager
+const F_ADD_RD1 = '39ec0518ee030288f8ea6ddb9fb0ff62576d44c5'; // Additional RD 1 Start/End (daterange)
+const F_ADD_RD2 = 'f5b0498f6f458c1b400dccfd17c5a76436ca7405'; // Additional RD 2 Start/End (daterange)
 const CACHE_KEY = 'ar_tracking';
 const CACHE_TTL_MIN = 10;
 
@@ -75,6 +77,10 @@ async function buildInService(activeIds) {
           person_id: d.person_id && (d.person_id.value || d.person_id) || null,
           entered: d.add_time || null,
           days_in_service: added ? Math.floor((Date.now() - added.getTime()) / 86400000) : null,
+          add_rd1_start: d[F_ADD_RD1] || null,
+          add_rd1_end: d[F_ADD_RD1 + '_until'] || null,
+          add_rd2_start: d[F_ADD_RD2] || null,
+          add_rd2_end: d[F_ADD_RD2 + '_until'] || null,
           deal_value: d.value || 0
         });
       }
@@ -82,6 +88,24 @@ async function buildInService(activeIds) {
       more = p && p.more_items_in_collection; start = p ? p.next_start : 0;
     }
   } finally { if (filt && filt.id) await pdDelete(`/filters/${filt.id}`); }
+  // Live person status labels (CURRENT STATUS + UPDATE STATUS), parallel chunks of 20
+  const pfs2 = await pd('/personFields?limit=500');
+  const mkOpts = (key) => { const f2 = (pfs2 || []).find(x => x.key === key); const m = {}; for (const o of ((f2 && f2.options) || [])) m[String(o.id)] = o.label; return m; };
+  const usOpts = mkOpts(F_UPDATE_STATUS);
+  const csOpts = mkOpts(F_CURRENT_STATUS);
+  for (let i = 0; i < rows.length; i += 20) {
+    await Promise.all(rows.slice(i, i + 20).map(async (r) => {
+      if (!r.person_id) return;
+      try {
+        const per = await pd(`/persons/${r.person_id}`);
+        if (per) {
+          const us = per[F_UPDATE_STATUS], cs = per[F_CURRENT_STATUS];
+          r.current_status = (cs !== null && cs !== undefined && cs !== '') ? (csOpts[String(cs)] || String(cs)) : null;
+          r.update_status = (us !== null && us !== undefined && us !== '') ? (usOpts[String(us)] || String(us)) : null;
+        }
+      } catch (e) {}
+    }));
+  }
   rows.sort((a, b) => (b.days_in_service || 0) - (a.days_in_service || 0));
   return rows;
 }
