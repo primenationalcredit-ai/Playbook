@@ -86,6 +86,9 @@ async function buildInterested() {
   const amField = (pfs || []).find(f => f.key === F_ACCOUNT_MANAGER);
   const amOpts = {};
   for (const opt of ((amField && amField.options) || [])) amOpts[String(opt.id)] = opt.label;
+  const pdUsers = await pd('/users?limit=500');
+  const userMap = {};
+  for (const u of (pdUsers || [])) userMap[String(u.id)] = u.name;
   const filt = await pdPost('/filters', {
     name: 'AR tracking temp (people)', type: 'people',
     conditions: { glue: 'and', conditions: [ { glue: 'or', conditions: [
@@ -106,7 +109,7 @@ async function buildInterested() {
         const amId = (amRaw && typeof amRaw === 'object') ? (amRaw.id ?? amRaw.value) : amRaw;
         people.push({
           person_id: p.id, name: p.name,
-          am_label: (amId !== null && amId !== undefined && amId !== '') ? (amOpts[String(amId)] || String(amId)) : null,
+          am_label: (amId !== null && amId !== undefined && amId !== '') ? (userMap[String(amId)] || amOpts[String(amId)] || String(amId)) : null,
           interested: String(p[F_UPDATE_STATUS]) === '1893',
           quoted: String(p[F_CURRENT_STATUS]) === '1890',
           last_update: p.update_time || null
