@@ -268,7 +268,17 @@ function ClientProfileModal({ personId, onClose }) {
                   <div>AM: <span className="font-medium text-slate-700">{p.am || p.campaign?.am_name || 'Unassigned'}</span></div>
                 </div>
               </div>
-              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const best = p.deals.find((d) => d.status === 'open' && /c\.r\.s|additional/i.test(d.pipeline))
+                    || p.deals.find((d) => d.status === 'open') || p.deals[0];
+                  return best ? (
+                    <a href={DEAL_URL(best.id)} target="_blank" rel="noreferrer"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Open Deal \u2192</a>
+                  ) : null;
+                })()}
+                <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+              </div>
             </div>
             <div className="flex gap-1.5 flex-wrap">
               {p.sold && chip('SOLD', 'bg-emerald-100 text-emerald-800')}

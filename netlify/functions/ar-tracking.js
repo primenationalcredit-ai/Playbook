@@ -38,7 +38,13 @@ async function pdPost(path, body) {
 }
 async function pdDelete(path) { try { await fetch(`${PD_BASE}${path}?api_token=${PD_TOKEN}`, { method: 'DELETE' }); } catch (e) {} }
 
-async function buildInService() {
+async function activeUserIds() {
+  const users = (await pd('/users?limit=500')) || [];
+  const ids = new Set();
+  for (const u of users) if (u.active_flag) ids.add(String(u.id));
+  return ids;
+}
+async function buildInService(activeIds) {
   // Temp deals filter: open + pipeline 65. The 'pipeline' field id is
   // account-specific - resolve it from dealFields like the person fields.
   const dfs = await pd('/dealFields?limit=500');
@@ -59,6 +65,8 @@ async function buildInService() {
       const j = await pg.json().catch(() => null);
       const data = (j && j.data) || [];
       for (const d of data) {
+        const ownerId = d.user_id && (d.user_id.id || d.user_id.value);
+        if (activeIds && ownerId && !activeIds.has(String(ownerId))) continue; // old-staff deals hidden
         const added = d.add_time ? new Date(d.add_time) : null;
         rows.push({
           deal_id: d.id,
@@ -78,7 +86,7 @@ async function buildInService() {
   return rows;
 }
 
-async function buildInterested() {
+async function buildInterested(activeIds) {
   const pfs = await pd('/personFields?limit=500');
   const usId = (pfs || []).find(f => f.key === F_UPDATE_STATUS);
   const csId = (pfs || []).find(f => f.key === F_CURRENT_STATUS);
@@ -109,6 +117,7 @@ async function buildInterested() {
         const amId = (amRaw && typeof amRaw === 'object') ? (amRaw.id ?? amRaw.value) : amRaw;
         people.push({
           person_id: p.id, name: p.name,
+          am_id: (amId !== null && amId !== undefined && amId !== '') ? String(amId) : null,
           am_label: (amId !== null && amId !== undefined && amId !== '') ? (userMap[String(amId)] || amOpts[String(amId)] || String(amId)) : null,
           interested: String(p[F_UPDATE_STATUS]) === '1893',
           quoted: String(p[F_CURRENT_STATUS]) === '1890',
@@ -142,6 +151,7 @@ async function buildInterested() {
   const byAm = {};
   for (const p of people) {
     const am = p.am_label || amMap[String(p.person_id)] || 'Unassigned';
+    if (am !== 'Unassigned' && p.am_id && activeIds && !activeIds.has(String(p.am_id))) continue; // old-staff AMs hidden
     const arc = arcState[String(p.person_id)] || null;
     let campaign = 'not enrolled';
     if (arc) {
@@ -203,7 +213,8 @@ exports.handler = async (event) => {
         if (age < CACHE_TTL_MIN) return { statusCode: 200, headers, body: cached[0].cache_value };
       }
     }
-    const [inService, interestedByAm] = [await buildInService(), await buildInterested()];
+    const activeIds = await activeUserIds();
+    const [inService, interestedByAm] = [await buildInService(activeIds), await buildInterested(activeIds)];
     const payload = JSON.stringify({
       built_at: new Date().toISOString(),
       in_service: inService,
