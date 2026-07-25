@@ -72,7 +72,7 @@ export default function AdditionalRounds() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-bold text-slate-800">Additional Rounds &mdash; ComplianceStrike&trade;</h1>
         <div className="flex gap-1.5">
-          {[['tracker', 'Tracker'], ['send', 'Send Offer']].map(([k, l]) => (
+          {[['tracker', 'Tracker'], ['clients', 'Clients'], ['send', 'Send Offer']].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${tab === k ? 'bg-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-600'}`}>{l}</button>
           ))}
@@ -137,6 +137,7 @@ export default function AdditionalRounds() {
         </>
       )}
 
+      {tab === 'clients' && <ClientsBoard />}
       {tab === 'send' && (
         <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-3 max-w-lg">
           <p className="text-sm text-slate-700">Send the ComplianceStrike&trade; offer to a client: email (your template) + text + PD note with the team payment link. The left side is never touched; status moves only when they pay.</p>
@@ -158,6 +159,82 @@ export default function AdditionalRounds() {
           <p className="text-[11px] text-slate-400">Before launch, sends only work for allow-listed test deals (everything else is refused by the launch gate). An automatic list of clients finishing round 3 lands here next.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function ClientsBoard() {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState(null);
+  const [amFilter, setAmFilter] = useState('all');
+  const [building, setBuilding] = useState(false);
+  const loadClients = (refresh) => {
+    setErr(null); if (refresh) setBuilding(true);
+    fetch('/.netlify/functions/ar-tracking' + (refresh ? '?refresh=1' : ''))
+      .then((r) => r.json())
+      .then((x) => { if (x.error) setErr(x.error); else setD(x); setBuilding(false); })
+      .catch((e) => { setErr(String(e)); setBuilding(false); });
+  };
+  useEffect(() => { loadClients(false); }, []);
+  const ams = d ? Object.keys(d.interested_by_am || {}).sort() : [];
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] text-slate-400">Data built {d ? String(d.built_at).replace('T', ' ').slice(0, 16) + ' UTC' : '\u2026'} (auto-refreshes every 10 min)</p>
+        <button onClick={() => loadClients(true)} disabled={building} className="text-xs text-indigo-600 hover:underline disabled:opacity-50">{building ? 'Rebuilding\u2026 (up to 1 min)' : 'Rebuild now'}</button>
+      </div>
+      {err && <div className="text-sm text-rose-600">{err}</div>}
+      <div>
+        <h2 className="text-sm font-bold text-slate-700 mb-2">In Service &mdash; Additional C.R.S. ({d?.in_service_count ?? '\u2026'})</h2>
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-slate-500 sticky top-0"><tr>
+              <th className="text-left font-medium px-3 py-2">Client</th>
+              <th className="text-left font-medium px-3 py-2">Owner</th>
+              <th className="text-right font-medium px-3 py-2">Days in service</th>
+              <th className="text-left font-medium px-3 py-2">Entered</th>
+            </tr></thead>
+            <tbody>
+              {(d?.in_service || []).map((r) => (
+                <tr key={r.deal_id} className="border-t border-slate-100">
+                  <td className="px-3 py-2"><a className="font-medium text-slate-800 hover:text-indigo-600" target="_blank" rel="noreferrer" href={DEAL_URL(r.deal_id)}>{r.client}</a></td>
+                  <td className="px-3 py-2 text-slate-600">{r.owner || '-'}</td>
+                  <td className="px-3 py-2 text-right">{r.days_in_service ?? '-'}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500">{String(r.entered || '').slice(0, 10)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <h2 className="text-sm font-bold text-slate-700">Interested / Quoted ({d?.interested_count ?? '\u2026'})</h2>
+          <select value={amFilter} onChange={(e) => setAmFilter(e.target.value)} className="text-xs border border-slate-300 rounded-lg px-2 py-1">
+            <option value="all">All AMs</option>
+            {ams.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+        {ams.filter((a) => amFilter === 'all' || a === amFilter).map((a) => (
+          <div key={a} className="mb-4">
+            <h3 className="text-xs font-semibold text-slate-500 mb-1">{a} ({(d.interested_by_am[a] || []).length})</h3>
+            <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+              <table className="w-full text-sm">
+                <tbody>
+                  {(d.interested_by_am[a] || []).map((p) => (
+                    <tr key={p.person_id} className="border-t border-slate-100">
+                      <td className="px-3 py-2"><a className="font-medium text-slate-800 hover:text-indigo-600" target="_blank" rel="noreferrer" href={'https://asapcreditrepair.pipedrive.com/person/' + p.person_id}>{p.name}</a></td>
+                      <td className="px-3 py-2 text-xs text-slate-600">{p.interested ? 'Interested' : ''}{p.interested && p.quoted ? ' + ' : ''}{p.quoted ? 'Quoted' : ''}</td>
+                      <td className="px-3 py-2 text-xs text-slate-500">{p.campaign}</td>
+                      <td className="px-3 py-2 text-xs text-slate-400 text-right">{String(p.last_update || '').slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

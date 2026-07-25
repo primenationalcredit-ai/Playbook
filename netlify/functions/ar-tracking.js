@@ -11,6 +11,7 @@ const PD_TOKEN = process.env.PIPEDRIVE_API_KEY || process.env.PIPEDRIVE_API_TOKE
 const PD_BASE = 'https://asapcreditrepairusa.pipedrive.com/api/v1';
 const F_UPDATE_STATUS = '6381d902f9c164217fbb0b5a6b98f10f1bce7fad'; // 1893 INTERESTED ADD ROUNDS
 const F_CURRENT_STATUS = '612856f2221d04679c1809eadb77b30300936445'; // 1890 AR Quoted, 1901 SOLD
+const F_ACCOUNT_MANAGER = '0a2bceaec010dd949056d374970917a6b573f1dc'; // person's Account Manager
 const CACHE_KEY = 'ar_tracking';
 const CACHE_TTL_MIN = 10;
 
@@ -82,6 +83,9 @@ async function buildInterested() {
   const usId = (pfs || []).find(f => f.key === F_UPDATE_STATUS);
   const csId = (pfs || []).find(f => f.key === F_CURRENT_STATUS);
   if (!usId || !csId) throw new Error('person status fields not found');
+  const amField = (pfs || []).find(f => f.key === F_ACCOUNT_MANAGER);
+  const amOpts = {};
+  for (const opt of ((amField && amField.options) || [])) amOpts[String(opt.id)] = opt.label;
   const filt = await pdPost('/filters', {
     name: 'AR tracking temp (people)', type: 'people',
     conditions: { glue: 'and', conditions: [ { glue: 'or', conditions: [
@@ -98,8 +102,11 @@ async function buildInterested() {
       const j = await pg.json().catch(() => null);
       for (const p of ((j && j.data) || [])) {
         if (String(p[F_CURRENT_STATUS]) === '1901') continue; // SOLD - not interested anymore
+        const amRaw = p[F_ACCOUNT_MANAGER];
+        const amId = (amRaw && typeof amRaw === 'object') ? (amRaw.id ?? amRaw.value) : amRaw;
         people.push({
           person_id: p.id, name: p.name,
+          am_label: (amId !== null && amId !== undefined && amId !== '') ? (amOpts[String(amId)] || String(amId)) : null,
           interested: String(p[F_UPDATE_STATUS]) === '1893',
           quoted: String(p[F_CURRENT_STATUS]) === '1890',
           last_update: p.update_time || null
@@ -131,7 +138,7 @@ async function buildInterested() {
 
   const byAm = {};
   for (const p of people) {
-    const am = amMap[String(p.person_id)] || 'Unassigned';
+    const am = p.am_label || amMap[String(p.person_id)] || 'Unassigned';
     const arc = arcState[String(p.person_id)] || null;
     let campaign = 'not enrolled';
     if (arc) {
