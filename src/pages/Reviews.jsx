@@ -338,6 +338,7 @@ function Reviews() {
       loadAllReviewData();
     } catch (error) {
       console.error('Error adding review:', error);
+      alert('Error adding review - it was NOT saved: ' + (error && error.message ? error.message : error) + ' -- please try again, and report it if it keeps happening.');
     }
   };
 
