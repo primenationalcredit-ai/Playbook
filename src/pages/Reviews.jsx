@@ -287,7 +287,6 @@ function Reviews() {
       const nowIso = new Date().toISOString();
       const creditedName = (Array.isArray(users) ? users.find(u => u.id === targetUserId)?.name : null) || currentUser?.name || null;
       const reviewData = {
-        platform: formData.platform,
         reviewer_name: formData.client_name,
         review_date: formData.review_date,
         review_text: formData.notes || null,
@@ -304,7 +303,7 @@ function Reviews() {
       const result = await supabasePost('incoming_reviews', reviewData);
 
       // Check for errors
-      if (result && result.error) {
+      if (result && (result.error || result.code)) {
         console.error('Error adding review:', result);
         alert('Error adding review: ' + (result.message || result.error || 'Unknown error'));
         return;
