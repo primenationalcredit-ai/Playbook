@@ -30,7 +30,7 @@ exports.handler = async (event) => {
       if (body.action === 'send_offer') {
         const r = await fetch(`${PROCESSOR}/.netlify/functions/ar-offer`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': AR_KEY },
-          body: JSON.stringify({ deal_id: dealId, skip_status_update: true })
+          body: JSON.stringify({ deal_id: dealId, skip_status_update: true, force: body.force === true })
         });
         return respond(r.status, await r.json().catch(() => ({ error: 'bad response' })));
       }

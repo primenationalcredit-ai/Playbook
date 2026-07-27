@@ -57,7 +57,11 @@ export default function AdditionalRounds() {
     setSendResult(null);
     try {
       const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_offer', deal_id: id }) });
-      const d = await r.json();
+      let d = await r.json();
+      if (d && !d.success && String(d.error || '').includes('already exists') && window.confirm('An offer/invoice already exists for this deal:\n\n' + String(d.error) + '\n\nVoid the old invoice and resend a fresh offer?')) {
+        const r2 = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_offer', deal_id: id, force: true }) });
+        d = await r2.json();
+      }
       setSendResult(d);
       if (d.success) { setSendDeal(''); load(); }
     } catch (e) { setSendResult({ error: String(e) }); }
