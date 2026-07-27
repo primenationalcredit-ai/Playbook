@@ -537,7 +537,8 @@ exports.handler = async (event) => {
           const pick = fins.length ? fins[fins.length - 1] : pays[0];
           if (pick) fbMonth = String(pick.payment_date).slice(0, 7);
         }
-        return { qualified: !!adv, month: fbMonth, reason: adv ? null : 'no partial or final payment on file', paid: 0, owed: 0 };
+        const paidAll = Math.round(docAmt + (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0));
+        return { qualified: !!adv, month: fbMonth, reason: adv ? null : 'no partial or final payment on file', paid: paidAll, owed: 0 };
       }
 
       // Drop the doc-fee invoice (closest total to the doc payment; else the smallest invoice)
