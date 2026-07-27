@@ -141,6 +141,7 @@ exports.handler = async (event) => {
     // use the webhook's `previous` snapshot below only to detect that a change occurred.
     const freshDeal = await pipedriveGet(`/deals/${dealId}`);
     const dealData = freshDeal || current; // fall back to payload if the fetch fails
+    const existing = await getExistingRow(dealId);
 
     // Resolve monitoring site from the freshly fetched deal (option id -> label).
     const msRaw = dealData[MONITORING_SITE_FIELD];
@@ -187,7 +188,7 @@ exports.handler = async (event) => {
     const pipelineLower = (pipelineName || '').trim().toLowerCase();
     const inCreditPipeline = CREDIT_PIPELINES.some(p => pipelineLower === p || pipelineLower.includes(p));
 
-    const existing = await getExistingRow(dealId);
+    // (existing is loaded earlier, right after dealData - it is used by the site guard above)
 
     let monitoringSiteSetAt = existing && existing.monitoring_site_set_at ? existing.monitoring_site_set_at : null;
     let monitoringSiteSetPipeline = existing && existing.monitoring_site_set_pipeline ? existing.monitoring_site_set_pipeline : null;
