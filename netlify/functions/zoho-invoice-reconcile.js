@@ -79,7 +79,24 @@ exports.handler = async (event) => {
       `&select=id,zoho_invoice_id,customer_name,balance,due_date&order=id.asc&limit=${limit}` +
       (after ? `&id=gt.${after}` : '')
     );
-    const invoices = rows.json || [];
+    let invoices = rows.json || [];
+    if (invoices.length === 0 && after) {
+      // End of the treadmill - or a cursor parked past every open row, which UUID
+      // ids under id.asc make easy. Either way: clear the cursor and restart from
+      // the top IN THIS RUN, so a stale cursor can never blind the reconcile again.
+      after = null;
+      try {
+        await supa('app_config?on_conflict=key', {
+          method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify([{ key: 'zoho_reconcile_cursor', value: '' }])
+        });
+      } catch (e) {}
+      const again = await supa(
+        `consultant_invoices?balance=gt.1&due_date=gte.${cutoff}&zoho_invoice_id=not.is.null` +
+        `&select=id,zoho_invoice_id,customer_name,balance,due_date&order=id.asc&limit=${limit}`
+      );
+      invoices = again.json || [];
+    }
     if (invoices.length === 0) return respond(200, { checked: 0, deleted: 0, updated: 0, hasMore: false, message: 'Nothing open in window' });
 
     const token = await getZohoToken();
