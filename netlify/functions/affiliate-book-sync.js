@@ -79,10 +79,9 @@ exports.handler = async (event) => {
         for (const p of rows) {
           const key = norm(p.referrer_org);
           if (!key) continue;
-          if (!soldByOrg[key]) soldByOrg[key] = { clients: new Set(), lastDate: null };
-          soldByOrg[key].clients.add(String(p.pipedrive_deal_id || p.client_name));
+          if (!soldByOrg[key]) soldByOrg[key] = { items: [] };
           const dt = String(p.payment_date || '').slice(0, 10);
-          if (dt && (!soldByOrg[key].lastDate || dt > soldByOrg[key].lastDate)) soldByOrg[key].lastDate = dt;
+          soldByOrg[key].items.push({ c: String(p.pipedrive_deal_id || p.client_name), d: dt || null });
         }
         if (rows.length < 1000) break;
         from += 1000;
@@ -115,9 +114,13 @@ exports.handler = async (event) => {
       const phone = ((o[K_CELL] || '').trim() || (o[K_WORK] || '').trim()) || null;
       const first = (o[K_FIRST] || '').trim();
       const last = (o[K_LAST] || '').trim();
-      const sold = soldByOrg[norm(o.name)] || null;
-      const soldCount = sold ? sold.clients.size : 0;
-      const lastRef = sold ? sold.lastDate : null;
+      // Date guard: a payment can only be this affiliate's sale if it happened
+      // after the affiliate existed. Kills retro-attribution from lead imports.
+      const orgBorn = o.add_time ? String(o.add_time).slice(0, 10) : null;
+      const soldAll = soldByOrg[norm(o.name)] || null;
+      const soldItems = soldAll ? soldAll.items.filter((x) => !orgBorn || !x.d || x.d >= orgBorn) : [];
+      const soldCount = new Set(soldItems.map((x) => x.c)).size;
+      const lastRef = soldItems.reduce((m, x) => (x.d && (!m || x.d > m) ? x.d : m), null);
       const refDays = lastRef ? Math.floor((today - new Date(lastRef + 'T12:00:00Z')) / 86400000) : null;
       const ageDays = daysSince(o.add_time) ?? 99999;
       const referred = (o.open_deals_count || 0) + (o.closed_deals_count || 0);
