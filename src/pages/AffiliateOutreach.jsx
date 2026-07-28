@@ -429,6 +429,9 @@ export default function AffiliateOutreach() {
                                   <div>
                                     <div className="font-bold text-lg">{a.org_name}</div>
                                     <div className="text-xs text-gray-500">Referred clients {'\u00b7'} pulled live from Pipedrive</div>
+                                    {refData[a.id] && refData[a.id].contact && (refData[a.id].contact.name || refData[a.id].contact.email || refData[a.id].contact.phone) && (
+                                      <div className="text-xs text-gray-600 mt-1">{refData[a.id].contact.name || ''}{refData[a.id].contact.email ? ` \u00b7 ${refData[a.id].contact.email}` : ''}{refData[a.id].contact.phone ? ` \u00b7 ${refData[a.id].contact.phone}` : ''}</div>
+                                    )}
                                   </div>
                                   <button onClick={() => setRefOpen(null)} className="text-gray-400 hover:text-gray-700 text-xl leading-none">{'\u00d7'}</button>
                                 </div>

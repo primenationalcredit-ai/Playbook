@@ -15,7 +15,7 @@ exports.handler = async (event) => {
     const id = (event.queryStringParameters || {}).id;
     if (!id) return { statusCode: 400, headers, body: JSON.stringify({ error: 'missing id' }) };
 
-    const affRes = await fetch(`${SUPABASE_URL}/rest/v1/affiliate_orgs?id=eq.${encodeURIComponent(id)}&select=id,org_name,pipedrive_org_id`, {
+    const affRes = await fetch(`${SUPABASE_URL}/rest/v1/affiliate_orgs?id=eq.${encodeURIComponent(id)}&select=id,org_name,pipedrive_org_id,contact_name,contact_email,contact_phone,portal_link,pipedrive_add_time,org_created_at`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
     const aff = ((await affRes.json()) || [])[0];
@@ -35,9 +35,28 @@ exports.handler = async (event) => {
     }
 
     const CS_KEY = '612856f2221d04679c1809eadb77b30300936445'; // CURRENT STATUS field; 1901 = SOLD
+    // Sales truth lives in payment records, not on referral deals. Match by deal
+    // id or client name, date-guarded: a payment only counts if it happened after
+    // the affiliate existed (same rule as the book-sync).
+    const normName = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const soldDealIds = new Set();
+    const soldNames = new Set();
+    try {
+      const born = String(aff.pipedrive_add_time || aff.org_created_at || '').slice(0, 10) || null;
+      const pRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?referrer_org=ilike.${encodeURIComponent(aff.org_name)}&select=pipedrive_deal_id,client_name,payment_date`, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+      });
+      const pays = pRes.ok ? await pRes.json() : [];
+      for (const p of (Array.isArray(pays) ? pays : [])) {
+        const d = String(p.payment_date || '').slice(0, 10);
+        if (born && d && d < born) continue;
+        if (p.pipedrive_deal_id) soldDealIds.add(String(p.pipedrive_deal_id));
+        if (p.client_name) soldNames.add(normName(p.client_name));
+      }
+    } catch (e) {}
     const list = deals.map((d) => ({
       deal_id: d.id,
-      sold: d.status === 'won' || String(d[CS_KEY] ?? '') === '1901',
+      sold: d.status === 'won' || String(d[CS_KEY] ?? '') === '1901' || soldDealIds.has(String(d.id)) || soldNames.has(normName((d.person_id && d.person_id.name) || d.person_name || '')),
       client: (d.person_id && d.person_id.name) || d.person_name || d.title || 'Unknown',
       title: d.title || null,
       status: d.status,                       // open | won | lost
@@ -58,7 +77,7 @@ exports.handler = async (event) => {
       last_sale: sold.length ? sold.map((x) => x.won || x.added).sort().reverse()[0] : null
     };
 
-    return { statusCode: 200, headers, body: JSON.stringify({ org: aff.org_name, pipedrive_org_id: aff.pipedrive_org_id, stats, deals: list }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ org: aff.org_name, pipedrive_org_id: aff.pipedrive_org_id, contact: { name: aff.contact_name || null, email: aff.contact_email || null, phone: aff.contact_phone || null, portal_link: aff.portal_link || null }, stats, deals: list }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: String((e && e.message) || e) }) };
   }
