@@ -35,6 +35,7 @@ const AffiliateProfileModal = ({ data, onClose, fallbackName }) => (
             <div><div className="text-gray-400 text-xs">Occupation</div><div>{data.profile.occupation || '—'}</div></div>
             <div><div className="text-gray-400 text-xs">Industry</div><div>{data.profile.industry || '—'}</div></div>
             <div><div className="text-gray-400 text-xs">Relationship owner</div><div>{data.profile.owner || '—'}</div></div>
+            <div><div className="text-gray-400 text-xs">Came from (super affiliate)</div><div>{data.profile.is_super ? 'Is a super affiliate' : (data.profile.recruited_by_super || 'Direct / unknown')}</div></div>
           </div>
         )}
         {data && data.stats && (

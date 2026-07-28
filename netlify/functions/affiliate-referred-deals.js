@@ -15,7 +15,7 @@ exports.handler = async (event) => {
     const id = (event.queryStringParameters || {}).id;
     if (!id) return { statusCode: 400, headers, body: JSON.stringify({ error: 'missing id' }) };
 
-    const affRes = await fetch(`${SUPABASE_URL}/rest/v1/affiliate_orgs?id=eq.${encodeURIComponent(id)}&select=id,org_name,pipedrive_org_id,contact_name,contact_email,contact_phone,portal_link,pipedrive_add_time,org_created_at,company,occupation,industry,owner_name,segment,referred_deals,sold_clients,last_referral_date,pipedrive_fu_notes`, {
+    const affRes = await fetch(`${SUPABASE_URL}/rest/v1/affiliate_orgs?id=eq.${encodeURIComponent(id)}&select=id,org_name,pipedrive_org_id,contact_name,contact_email,contact_phone,portal_link,pipedrive_add_time,org_created_at,company,occupation,industry,owner_name,segment,referred_deals,sold_clients,last_referral_date,pipedrive_fu_notes,recruited_by_super,super_affiliate`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
     const aff = ((await affRes.json()) || [])[0];
@@ -88,7 +88,7 @@ exports.handler = async (event) => {
       last_sale: sold.length ? sold.map((x) => x.won || x.added).sort().reverse()[0] : null
     };
 
-    return { statusCode: 200, headers, body: JSON.stringify({ org: aff.org_name, pipedrive_org_id: aff.pipedrive_org_id, contact: { name: aff.contact_name || null, email: aff.contact_email || null, phone: aff.contact_phone || null, portal_link: aff.portal_link || null }, profile: { company: aff.company || null, occupation: aff.occupation || null, industry: aff.industry || null, owner: aff.owner_name || null, segment: aff.segment || null }, fu_notes: fuNotes, stats, deals: list }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ org: aff.org_name, pipedrive_org_id: aff.pipedrive_org_id, contact: { name: aff.contact_name || null, email: aff.contact_email || null, phone: aff.contact_phone || null, portal_link: aff.portal_link || null }, profile: { company: aff.company || null, occupation: aff.occupation || null, industry: aff.industry || null, owner: aff.owner_name || null, segment: aff.segment || null, recruited_by_super: aff.recruited_by_super || null, is_super: !!aff.super_affiliate }, fu_notes: fuNotes, stats, deals: list }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: String((e && e.message) || e) }) };
   }
