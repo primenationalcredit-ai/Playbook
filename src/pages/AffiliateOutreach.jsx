@@ -13,6 +13,69 @@ const sbHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}
 const sbGet = async (q) => { const r = await fetch(`${SUPABASE_URL}/rest/v1/${q}`, { headers: sbHeaders }); return r.ok ? r.json() : []; };
 const sbPatch = async (q, body) => fetch(`${SUPABASE_URL}/rest/v1/${q}`, { method: 'PATCH', headers: { ...sbHeaders, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
 const sbPost = async (q, body) => fetch(`${SUPABASE_URL}/rest/v1/${q}`, { method: 'POST', headers: { ...sbHeaders, Prefer: 'return=minimal' }, body: JSON.stringify(body) });
+
+const AffiliateProfileModal = ({ data, onClose, fallbackName }) => (
+  <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col text-left" onClick={(e) => e.stopPropagation()}>
+      <div className="px-5 py-4 border-b flex items-start justify-between">
+        <div>
+          <div className="font-bold text-lg">{(data && data.org) || fallbackName}</div>
+          {data && data.contact && (
+            <div className="text-xs text-gray-600 mt-0.5">{data.contact.name || ''}{data.contact.email ? ` · ${data.contact.email}` : ''}{data.contact.phone ? ` · ${data.contact.phone}` : ''}</div>
+          )}
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">{'×'}</button>
+      </div>
+      <div className="p-5 overflow-y-auto space-y-4">
+        {!data && <div className="text-sm text-gray-500">Loading profile{'…'}</div>}
+        {data && data.error && <div className="text-sm text-red-600">{data.error}</div>}
+        {data && data.profile && (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <div><div className="text-gray-400 text-xs">Company</div><div>{data.profile.company || '—'}</div></div>
+            <div><div className="text-gray-400 text-xs">Occupation</div><div>{data.profile.occupation || '—'}</div></div>
+            <div><div className="text-gray-400 text-xs">Industry</div><div>{data.profile.industry || '—'}</div></div>
+            <div><div className="text-gray-400 text-xs">Relationship owner</div><div>{data.profile.owner || '—'}</div></div>
+          </div>
+        )}
+        {data && data.stats && (
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="px-2 py-1 rounded-lg bg-gray-100">Referred: <b>{data.stats.total_referred}</b></span>
+            <span className="px-2 py-1 rounded-lg bg-green-100 text-green-800">Sold: <b>{data.stats.total_sold}</b></span>
+            <span className="px-2 py-1 rounded-lg bg-blue-100 text-blue-800">Open: <b>{data.stats.open_now}</b></span>
+            {data.stats.last_referral && <span className="px-2 py-1 rounded-lg bg-gray-100">Last referral: <b>{data.stats.last_referral}</b></span>}
+            {data.stats.last_sale && <span className="px-2 py-1 rounded-lg bg-gray-100">Last sale: <b>{data.stats.last_sale}</b></span>}
+          </div>
+        )}
+        {data && (
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Previous call notes (Additional F/U Notes, live from Pipedrive)</div>
+            {data.fu_notes
+              ? <pre className="text-xs bg-amber-50 border border-amber-100 rounded-lg p-3 whitespace-pre-wrap font-sans text-gray-700 max-h-48 overflow-y-auto">{data.fu_notes}</pre>
+              : <div className="text-xs text-gray-400">No previous notes on record.</div>}
+          </div>
+        )}
+        {data && Array.isArray(data.deals) && (
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Referred clients</div>
+            {data.deals.length === 0 && <div className="text-xs text-gray-400">No referred deals found.</div>}
+            <div className="divide-y">
+              {data.deals.map((d) => (
+                <div key={d.deal_id} className="py-2 flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{d.client}</div>
+                    <div className="text-xs text-gray-400">added {d.added || '?'}{d.won ? ` · sold ${d.won}` : ''}{d.lost ? ` · lost ${d.lost}` : ''}</div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${d.sold ? 'bg-green-100 text-green-700' : d.status === 'lost' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-700'}`}>{d.sold ? 'SOLD' : d.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
 const sbUpsertConfig = async (key, value) => fetch(`${SUPABASE_URL}/rest/v1/app_config?on_conflict=key`, {
   method: 'POST', headers: { ...sbHeaders, Prefer: 'resolution=merge-duplicates,return=minimal' },
   body: JSON.stringify([{ key, value: String(value) }])
@@ -659,6 +722,8 @@ export default function AffiliateOutreach() {
                       <div className="text-xs text-gray-500 mt-1">
                         {t.contact_phone || 'no phone'} · {t.stats_line} · assigned to {t.assigned_to || 'anyone'} · due {t.due_date}
                       </div>
+                      <button onClick={() => openReferred({ id: t.affiliate_org_id })} className="mt-1 text-xs text-blue-600 hover:underline font-medium">View affiliate profile {'→'}</button>
+                      {refOpen === t.affiliate_org_id && <AffiliateProfileModal data={refData[t.affiliate_org_id]} onClose={() => setRefOpen(null)} fallbackName={t.org_name} />}
                     </div>
                     {t.status === 'open' ? (
                       <button onClick={() => setCompletingTask(completingTask === t.id ? null : t.id)}
