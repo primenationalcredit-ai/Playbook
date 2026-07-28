@@ -452,7 +452,7 @@ export default function AffiliateOutreach() {
                                               <div className="font-medium truncate">{d.client}</div>
                                               <div className="text-xs text-gray-400">added {d.added || '?'}{d.won ? ` · sold ${d.won}` : ''}{d.lost ? ` · lost ${d.lost}${d.lost_reason ? ` (${d.lost_reason})` : ''}` : ''}</div>
                                             </div>
-                                            <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${d.status === 'won' ? 'bg-green-100 text-green-700' : d.status === 'lost' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-700'}`}>{d.status === 'won' ? 'SOLD' : d.status}</span>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${d.sold ? 'bg-green-100 text-green-700' : d.status === 'lost' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-700'}`}>{d.sold ? 'SOLD' : d.status}</span>
                                           </div>
                                         ))}
                                       </div>

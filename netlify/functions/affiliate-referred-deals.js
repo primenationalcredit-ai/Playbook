@@ -34,8 +34,10 @@ exports.handler = async (event) => {
       start = d.additional_data.pagination.next_start;
     }
 
+    const CS_KEY = '612856f2221d04679c1809eadb77b30300936445'; // CURRENT STATUS field; 1901 = SOLD
     const list = deals.map((d) => ({
       deal_id: d.id,
+      sold: d.status === 'won' || String(d[CS_KEY] ?? '') === '1901',
       client: (d.person_id && d.person_id.name) || d.person_name || d.title || 'Unknown',
       title: d.title || null,
       status: d.status,                       // open | won | lost
@@ -47,13 +49,13 @@ exports.handler = async (event) => {
       lost_reason: d.lost_reason || null
     }));
 
-    const sold = list.filter((x) => x.status === 'won');
+    const sold = list.filter((x) => x.sold);
     const stats = {
       total_referred: list.length,
       total_sold: sold.length,
       open_now: list.filter((x) => x.status === 'open').length,
       last_referral: list.length ? list[0].added : null,
-      last_sale: sold.length ? sold.map((x) => x.won).sort().reverse()[0] : null
+      last_sale: sold.length ? sold.map((x) => x.won || x.added).sort().reverse()[0] : null
     };
 
     return { statusCode: 200, headers, body: JSON.stringify({ org: aff.org_name, pipedrive_org_id: aff.pipedrive_org_id, stats, deals: list }) };
