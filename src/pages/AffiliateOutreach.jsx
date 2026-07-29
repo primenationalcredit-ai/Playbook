@@ -723,11 +723,17 @@ export default function AffiliateOutreach() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="font-semibold flex items-center gap-2">
-                        <PhoneCall className="w-4 h-4 text-blue-600" /> {t.org_name}
+                        <PhoneCall className="w-4 h-4 text-blue-600" />
+                        {t.pipedrive_org_id ? (
+                          <a href={`https://asapcreditrepair.pipedrive.com/organization/${t.pipedrive_org_id}`} target="_blank" rel="noopener noreferrer"
+                            className="hover:underline text-blue-700" title="Open in Pipedrive">{t.org_name}</a>
+                        ) : t.org_name}
                         <span className={`text-xs px-2 py-0.5 rounded-full ${segMeta(t.segment).color}`}>{segMeta(t.segment).label}</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {t.contact_phone || 'no phone'} · {t.stats_line} · assigned to {t.assigned_to || 'anyone'} · due {t.due_date}
+                        {t.contact_phone ? (
+                          <a href={`tel:${String(t.contact_phone).replace(/[^0-9+]/g, '')}`} className="text-blue-600 hover:underline">{t.contact_phone}</a>
+                        ) : 'no phone'} · {t.stats_line} · assigned to {t.assigned_to || 'anyone'} · due {t.due_date}
                       </div>
                       <button onClick={() => openReferred({ id: t.affiliate_org_id })} className="mt-1 text-xs text-blue-600 hover:underline font-medium">View affiliate profile {'→'}</button>
                       {refOpen === t.affiliate_org_id && <AffiliateProfileModal data={refData[t.affiliate_org_id]} onClose={() => setRefOpen(null)} fallbackName={t.org_name} />}
