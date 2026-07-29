@@ -274,7 +274,7 @@ exports.handler = async (event) => {
     let results = null, resultsSource = 'manual', resultsDetail = {};
     try {
       const r3 = await fetchRound3ResultsRate(month, (event.queryStringParameters && event.queryStringParameters.debug_names ? String(event.queryStringParameters.debug_names).toLowerCase().split(',').map(x => decodeURIComponent(x).trim()).filter(Boolean) : null));
-      if (r3) { results = r3.rate; resultsSource = 'auto'; resultsDetail = { gotResults: r3.num, completed: r3.den, clients: (r3.clients || []).slice(0, 300) }; }
+      if (r3) { results = r3.rate; resultsSource = 'auto'; resultsDetail = { gotResults: r3.num, completed: r3.den, clients: (r3.clients || []).slice(0, 300), debugRows: r3.debugRows }; }
     } catch (e) {}
     if (results == null && resultsSource === 'manual') {
       try {
