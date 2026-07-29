@@ -20,8 +20,12 @@ exports.handler = async (event) => {
     
     // Validate required fields
     if (!body.client_name || !body.amount || !body.consultant_name) {
-      return { statusCode: 400, headers, body: JSON.stringify({ 
-        error: 'Missing required fields: client_name, amount, consultant_name',
+      // Acknowledge with 200 so Zoho doesn't count this as a webhook failure and
+      // deactivate us (7/29 warning email). Test invoices and events without a
+      // consultant field land here; they're logged and skipped, not errors.
+      console.log('[payment-webhook] skipped - missing fields', JSON.stringify({ received: Object.keys(body), client: body.client_name || null, amount: body.amount || null }));
+      return { statusCode: 200, headers, body: JSON.stringify({
+        skipped: true, reason: 'Missing required fields: client_name, amount, consultant_name',
         received: Object.keys(body)
       })};
     }
