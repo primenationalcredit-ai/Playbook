@@ -62,7 +62,7 @@ async function supaGet(pathQuery) {
 // Round 3 Results Rate from the Master Dispute Tracking sheet (Data tab).
 // A row where column C ("Starting Rounds and Round Result") = 3 records that client's Round 3 result;
 // column N ("Total Items Removed from this letter") > 0 means results were achieved.
-async function fetchRound3ResultsRate(month) {
+async function fetchRound3ResultsRate(month, debugNames) {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   let key = process.env.GOOGLE_PRIVATE_KEY;
   const keyB64 = process.env.GOOGLE_PRIVATE_KEY_B64;
@@ -79,6 +79,7 @@ async function fetchRound3ResultsRate(month) {
   const rows = data.values || [];
   let den = 0, num = 0;
   const clients = [];
+  const debugRows = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || Number(r[2]) !== 3) continue;       // Round 3 result row
@@ -91,7 +92,15 @@ async function fetchRound3ResultsRate(month) {
     if (removed) num++;
     clients.push({ name: r[1] || 'Unknown', removed });
   }
-  return { rate: den > 0 ? Math.round((num / den) * 100) : null, num, den, clients };
+  // Debug: dump raw rows for named clients across ALL months (row index, date, name, col C, col N)
+  if (debugNames && debugNames.length) {
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i] || [];
+      const nm = String(r[1] || '').toLowerCase();
+      if (debugNames.some((q) => nm.includes(q))) debugRows.push({ row: i + 1, date: r[0], name: r[1], roundCol: r[2], removedCol: r[13] });
+    }
+  }
+  return { rate: den > 0 ? Math.round((num / den) * 100) : null, num, den, clients, debugRows: debugRows.length ? debugRows : undefined };
 }
 
 exports.handler = async (event) => {
@@ -264,7 +273,7 @@ exports.handler = async (event) => {
     // --- Round 3 Results Rate (live from the Master Dispute Tracking sheet; manual fallback) ---
     let results = null, resultsSource = 'manual', resultsDetail = {};
     try {
-      const r3 = await fetchRound3ResultsRate(month);
+      const r3 = await fetchRound3ResultsRate(month, (event.queryStringParameters && event.queryStringParameters.debug_names ? String(event.queryStringParameters.debug_names).toLowerCase().split(',').map(x => decodeURIComponent(x).trim()).filter(Boolean) : null));
       if (r3) { results = r3.rate; resultsSource = 'auto'; resultsDetail = { gotResults: r3.num, completed: r3.den, clients: (r3.clients || []).slice(0, 300) }; }
     } catch (e) {}
     if (results == null && resultsSource === 'manual') {
