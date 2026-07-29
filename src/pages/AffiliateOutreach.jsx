@@ -195,8 +195,10 @@ export default function AffiliateOutreach() {
   const PAGE_SIZE = 50;
 
   const loadSummary = useCallback(async () => {
+    const myFirst = String(currentUser?.name || '').trim().toLowerCase().split(/\s+/)[0];
+    const ownerQ = (isLeadership || !myFirst) ? '' : `&owner_name=ilike.${encodeURIComponent(myFirst)}*`;
     const [orgs, cfg] = await Promise.all([
-      sbGet('affiliate_orgs?select=segment,paused,opted_out,super_affiliate,missing_contact'),
+      sbGet(`affiliate_orgs?select=segment,paused,opted_out,super_affiliate,missing_contact${ownerQ}`),
       sbGet('app_config?select=key,value'),
     ]);
     const c = { total: orgs.length, paused: 0, opted_out: 0, supers: 0, missing: 0 };
@@ -212,12 +214,14 @@ export default function AffiliateOutreach() {
     const cf = {};
     for (const row of cfg) cf[row.key] = row.value;
     setConfig(cf);
-  }, []);
+  }, [isLeadership, currentUser]);
 
   const loadBook = useCallback(async () => {
     setLoading(true);
     let q = `affiliate_orgs?select=*&order=pipedrive_add_time.desc&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`;
     const filters = [];
+    const myFirst = String(currentUser?.name || '').trim().toLowerCase().split(/\s+/)[0];
+    if (!isLeadership && myFirst) filters.push(`owner_name=ilike.${encodeURIComponent(myFirst)}*`);
     if (segFilter === 'paused') filters.push('paused=eq.true');
     else if (segFilter === 'opted_out') filters.push('opted_out=eq.true');
     else if (segFilter === 'supers') filters.push('super_affiliate=eq.true');
@@ -227,7 +231,7 @@ export default function AffiliateOutreach() {
     const data = await sbGet(q);
     setRows(Array.isArray(data) ? data : []);
     setLoading(false);
-  }, [segFilter, search, page]);
+  }, [segFilter, search, page, isLeadership, currentUser]);
 
   const loadCalls = useCallback(async () => {
     const status = callView === 'open' ? 'eq.open' : 'not.in.(open,queued)';
@@ -476,10 +480,12 @@ export default function AffiliateOutreach() {
                           {a.recruited_by_super && <div className="text-gray-400">via {a.recruited_by_super}</div>}
                         </td>
                         <td className="px-4 py-2 text-right whitespace-nowrap">
+                          {isLeadership && (
                           <button onClick={() => togglePause(a)} title={a.paused ? 'Resume cadence' : 'Pause cadence'}
                             className="p-1.5 rounded hover:bg-gray-200 mr-1">
                             {a.paused ? <Play className="w-4 h-4 text-green-600" /> : <Pause className="w-4 h-4 text-gray-500" />}
                           </button>
+                          )}
                           <button onClick={() => openReferred(a)} title="Referred clients history" className="p-1.5 rounded hover:bg-gray-200 mr-1">
                             <Users className="w-4 h-4 text-blue-600" />
                           </button>
