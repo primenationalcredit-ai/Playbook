@@ -269,6 +269,7 @@ function Layout() {
 
   // Core department items (Payment Dashboard & Paysheet - shown in main nav)
   const coreDepartmentItems = [
+    ...((isConsultant && !isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue, unread: affiliateCallsOverdue }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     ...((isAM || isConsultant) ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
     ...((isAM || isConsultant) ? [{ path: '/agreements', icon: FileText, label: 'Agreements' }] : []),
