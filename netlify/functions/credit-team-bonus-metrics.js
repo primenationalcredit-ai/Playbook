@@ -80,6 +80,7 @@ async function fetchRound3ResultsRate(month, debugNames) {
   let den = 0, num = 0;
   const clients = [];
   const debugRows = [];
+  const byClient = new Map(); // one verdict per client per month (sheet rows get double-entered)
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || Number(r[2]) !== 3) continue;       // Round 3 result row
@@ -87,10 +88,17 @@ async function fetchRound3ResultsRate(month, debugNames) {
     if (Number.isNaN(d.getTime())) continue;
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     if (ym !== month) continue;
+    const nmKey = String(r[1] || 'Unknown').trim().toLowerCase();
+    const removedN = Number(String(r[13] == null ? '' : r[13]).replace(/[^0-9.\-]/g, ''));
+    const removed = Number.isFinite(removedN) && removedN > 0;
+    const prev = byClient.get(nmKey);
+    if (prev) { prev.entries++; if (removed) prev.removed = true; }
+    else byClient.set(nmKey, { name: r[1] || 'Unknown', removed, entries: 1 });
+  }
+  for (const c of byClient.values()) {
     den++;
-    const removed = Number(r[13]) > 0;
-    if (removed) num++;
-    clients.push({ name: r[1] || 'Unknown', removed });
+    if (c.removed) num++;
+    clients.push({ name: c.name, removed: c.removed, entries: c.entries > 1 ? c.entries : undefined });
   }
   // Debug: dump raw rows for named clients across ALL months (row index, date, name, col C, col N)
   if (debugNames && debugNames.length) {
