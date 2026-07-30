@@ -16,7 +16,22 @@ exports.handler = async (event) => {
   }
 
   try {
-    const body = JSON.parse(event.body || '{}');
+    // Zoho's webhook may deliver JSON or form-encoded (JSONString=... / raw params).
+    // Parse permissively; a format we can't read is logged and skipped (200), never a 5xx.
+    let body = {};
+    const raw = event.body || '';
+    try { body = JSON.parse(raw || '{}'); }
+    catch (e1) {
+      try {
+        const params = new URLSearchParams(raw);
+        const js = params.get('JSONString') || params.get('jsonstring');
+        if (js) body = JSON.parse(js);
+        else { body = {}; for (const [k, v] of params.entries()) body[k] = v; }
+      } catch (e2) {
+        console.log('[payment-webhook] unparseable body, skipping. first 300 chars:', String(raw).slice(0, 300));
+        return { statusCode: 200, headers, body: JSON.stringify({ skipped: true, reason: 'unparseable body' }) };
+      }
+    }
     
     // Validate required fields
     if (!body.client_name || !body.amount || !body.consultant_name) {
