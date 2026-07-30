@@ -30,6 +30,9 @@ exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body || '{}');
     const dealId = String(body.deal_id || '');
+    // kind: 'final' (default) or 'partial'. Rule (Joe): qualified doc = doc fee
+    // + (partial OR final) - so a partial clearing must credit instantly too.
+    const kind = body.kind === 'partial' ? 'partial' : 'final';
     if (!dealId) return { statusCode: 200, headers, body: JSON.stringify({ skipped: true, reason: 'no deal_id' }) };
     const now = new Date();
     const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -38,13 +41,15 @@ exports.handler = async (event) => {
     const deal = (await dr.json().catch(() => ({}))).data;
     if (!deal) return { statusCode: 200, headers, body: JSON.stringify({ skipped: true, reason: 'deal fetch failed', deal: dealId }) };
     const actions = [];
-    // Stamp FINAL_1 from payment truth (caller asserts a final just cleared)
-    if (!fieldIs(deal[F.FINAL_1], YES.FINAL_1)) {
+    // Stamp the checkbox that matches the money that just cleared
+    const stampField = kind === 'partial' ? F.PARTIAL_1 : F.FINAL_1;
+    const stampYes = kind === 'partial' ? YES.PARTIAL_1 : YES.FINAL_1;
+    if (!fieldIs(deal[stampField], stampYes)) {
       await fetch(`https://api.pipedrive.com/v1/deals/${dealId}?api_token=${PD_KEY}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [F.FINAL_1]: YES.FINAL_1 })
+        body: JSON.stringify({ [stampField]: stampYes })
       });
-      actions.push('stamped FINAL_1');
+      actions.push(`stamped ${kind === 'partial' ? 'PARTIAL_1' : 'FINAL_1'}`);
     }
     const doc1 = fieldIs(deal[F.DOC_1], YES.DOC_1);
     const partial1 = fieldIs(deal[F.PARTIAL_1], YES.PARTIAL_1);
@@ -53,14 +58,16 @@ exports.handler = async (event) => {
       deal_value: deal.value || 0, owner_name: deal.owner_name || 'Unassigned',
       owner_id: (deal.user_id && deal.user_id.id) || deal.user_id || null,
       org_name: deal.org_name || null, is_affiliate: false,
-      doc1, partial1, final1: true,
+      doc1, partial1: kind === 'partial' ? true : partial1, final1: kind === 'final' ? true : fieldIs(deal[F.FINAL_1], YES.FINAL_1),
       deal_add_time: deal.add_time || null, deal_won_time: deal.won_time || null,
       pipeline_id: deal.pipeline_id || null, stage_id: deal.stage_id || null,
       event_month: month, event_date: now.toISOString().split('T')[0]
     };
-    const toWrite = [{ ...base, event_type: bizDaysSince(deal.add_time, now) <= 5 ? 'pif_fast_start' : 'pif' }];
+    const toWrite = [];
+    if (kind === 'final') toWrite.push({ ...base, event_type: bizDaysSince(deal.add_time, now) <= 5 ? 'pif_fast_start' : 'pif' });
     if (doc1) toWrite.push({ ...base, event_type: 'qualified_doc' });
     else actions.push('DOC_1 not set - qualified_doc withheld, watchdog will flag');
+    if (!toWrite.length) return { statusCode: 200, headers, body: JSON.stringify({ success: true, deal: dealId, client: deal.title, actions, note: 'nothing to write' }) };
     const ins = await fetch(`${SUPABASE_URL}/rest/v1/consultant_bonus_events?on_conflict=deal_id,event_type,event_month`, {
       method: 'POST',
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal,resolution=merge-duplicates' },
