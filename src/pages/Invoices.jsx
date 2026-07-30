@@ -1034,7 +1034,7 @@ function DeclineOutreachBar({ r }) {
         </button>
         {r.pipedrive_deal_id && (
           <a href={`https://asapcreditrepair.pipedrive.com/deal/${r.pipedrive_deal_id}`} target="_blank" rel="noreferrer"
-            className="text-[11px] font-semibold text-blue-700 hover:underline whitespace-nowrap">Deal \u2197</a>
+            className="text-[11px] font-semibold text-blue-700 hover:underline whitespace-nowrap">Deal ↗</a>
         )}
       </div>
     </div>
