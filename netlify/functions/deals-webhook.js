@@ -13,6 +13,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // Pipedrive custom field keys
 const FIELDS = {
   DOC_1: '314d267ebc05d3623ffd8aab701baae7bea29aa8',
+  PARTIAL_1: '35c626c805984517bacdba0b20aa20ab7ee3c48a',
   FINAL_1: '6a56ae5c67b53d1d25f0182790d7d84953a860c4',
   RD1_START_END_DATES: '6979c70df67f42c28dfcff39284ae17d564d600f',
   CALL_CENTER_REP: 'fee42f0cb3d515239d602de62533887bfd58d384',
@@ -97,6 +98,8 @@ exports.handler = async (event, context) => {
 
     // 3. Build the new deal object
     const newDoc1 = normalizeDoc1(fullDeal[FIELDS.DOC_1]);
+    const newFinal1 = normalizeYesNo(fullDeal[FIELDS.FINAL_1]);
+    const newPartial1 = normalizeYesNo(fullDeal[FIELDS.PARTIAL_1]);
     const newPipeline = fullDeal.pipeline?.name || getPipelineName(fullDeal.pipeline_id);
     
     // Get stage name - Pipedrive returns stage_id, need to fetch stage name
@@ -115,7 +118,8 @@ exports.handler = async (event, context) => {
       "Deal - Status": fullDeal.status,
       "Deal - Value": fullDeal.value || 0,
       "Deal - Doc (1)": newDoc1,
-      "Deal - Final (1)": normalizeYesNo(fullDeal[FIELDS.FINAL_1]),
+      "Deal - Final (1)": newFinal1,
+      "Deal - Partial (1)": newPartial1,
       "Deal - RD 1 Start/End Dates": fullDeal[FIELDS.RD1_START_END_DATES] || null,
       "Deal - Quick Buttons": fullDeal[FIELDS.QUICK_BUTTONS] || null,
       "Person - Call Center Rep ": extractName(fullDeal[FIELDS.CALL_CENTER_REP]),
@@ -152,6 +156,35 @@ exports.handler = async (event, context) => {
         // Preserve existing timestamp
         deal["Doc (1) Changed At"] = existingDeal["Doc (1) Changed At"];
       }
+      // EVENT-DRIVEN VERIFY (Joe 7/30): a bonus checkbox flipping to Yes triggers
+      // an immediate check against payment truth. Real payment on record -> heal
+      // via the credit hook (idempotent: events + cache). NO payment on record ->
+      // flag it on the deal; a checkbox click alone never invents a bonus event.
+      try {
+        const SB_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+        const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const PDK = process.env.PIPEDRIVE_API_KEY;
+        const verifies = [];
+        if (existingDeal["Deal - Final (1)"] !== newFinal1 && newFinal1 === 'Yes') verifies.push(['final', 'final,paid_in_full']);
+        if (existingDeal["Deal - Partial (1)"] !== newPartial1 && newPartial1 === 'Yes') verifies.push(['partial', 'partial']);
+        for (const [vk, types] of verifies) {
+          const pr = await fetch(`${SB_URL}/rest/v1/consultant_payments?pipedrive_deal_id=eq.${dealId}&payment_type=in.(${types})&refunded_at=is.null&select=id&limit=1`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } });
+          const pays = pr.ok ? await pr.json() : [];
+          if (Array.isArray(pays) && pays.length) {
+            const hr = await fetch('https://cute-cat-d9631c.netlify.app/.netlify/functions/final-credit-hook', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': PDK || '' },
+              body: JSON.stringify({ deal_id: dealId, kind: vk, source: 'pd-checkbox-verify' })
+            });
+            console.log(`[pd-verify ${vk}] deal ${dealId}:`, JSON.stringify(await hr.json().catch(() => ({}))).slice(0, 150));
+          } else if (PDK) {
+            await fetch(`https://api.pipedrive.com/v1/notes?api_token=${PDK}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ deal_id: Number(dealId), content: `\u26a0\ufe0f <b>VERIFY</b>: ${vk === 'final' ? 'Final (1)' : 'Partial (1)'} was just set to Yes but no matching ${vk} payment is on record. Either the payment was not logged or the box was clicked early - please confirm before this counts toward bonuses. (Auto-posted change verifier)` })
+            });
+            console.log(`[pd-verify ${vk}] deal ${dealId}: checkbox Yes but NO payment - flagged on deal`);
+          }
+        }
+      } catch (e) { console.error(`[pd-verify] deal ${dealId} failed:`, e.message); }
 
       // Check if QUICK_BUTTONS changed TO "Consultant Send Intro Text"
       const oldQuickButtons = existingDeal["Deal - Quick Buttons"];
