@@ -61,7 +61,7 @@ exports.handler = async (event) => {
     const toWrite = [{ ...base, event_type: bizDaysSince(deal.add_time, now) <= 5 ? 'pif_fast_start' : 'pif' }];
     if (doc1) toWrite.push({ ...base, event_type: 'qualified_doc' });
     else actions.push('DOC_1 not set - qualified_doc withheld, watchdog will flag');
-    const ins = await fetch(`${SUPABASE_URL}/rest/v1/consultant_bonus_events`, {
+    const ins = await fetch(`${SUPABASE_URL}/rest/v1/consultant_bonus_events?on_conflict=deal_id,event_type,event_month`, {
       method: 'POST',
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal,resolution=merge-duplicates' },
       body: JSON.stringify(toWrite)
