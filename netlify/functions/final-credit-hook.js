@@ -75,6 +75,9 @@ exports.handler = async (event) => {
     });
     if (!ins.ok) return { statusCode: 200, headers, body: JSON.stringify({ deal: dealId, actions, insert_error: (await ins.text()).slice(0, 200) }) };
     actions.push('events: ' + toWrite.map(t => t.event_type).join(', '));
+    // Bust the bonus-metrics cache so dashboards reflect this credit immediately
+    // (the page serves a cached payload; browser refresh alone never rebuilds it).
+    fetch(`https://cute-cat-d9631c.netlify.app/.netlify/functions/consultant-bonus-metrics?month=${month}&refresh=1`).catch(() => {});
     console.log(`[final-credit-hook] deal ${dealId} (${deal.title}): ${actions.join(' | ')}`);
     return { statusCode: 200, headers, body: JSON.stringify({ success: true, deal: dealId, client: deal.title, owner: base.owner_name, actions }) };
   } catch (err) {

@@ -99,6 +99,10 @@ exports.handler = async (event) => {
       }
       report.healed.push({ deal: dealId, client: pay.client_name, events: toWrite.map(t => t.event_type), owner: base.owner_name });
     }
+    // 5.5) Anything healed -> bust the bonus-metrics cache so dashboards update
+    if (report.healed.length && !dryRun) {
+      fetch(`https://cute-cat-d9631c.netlify.app/.netlify/functions/consultant-bonus-metrics?month=${month}&refresh=1`).catch(() => {});
+    }
     // 6) Leave the morning report where humans and dashboards can read it
     const summary = { ranAt: now.toISOString(), ...report };
     if (!dryRun) {
