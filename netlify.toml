@@ -11,6 +11,10 @@
   schedule = "0 6 * * *"
 
 # Bonus tracking sync - runs hourly during business hours Mon-Sat
+# Qualified-doc watchdog: nightly self-heal at 3:30am MT (after 2am autobill+sync).
+# Verifies every recent final/PIF payment has its deal checkboxes + bonus events; fixes what is missing.
+[functions."qualified-doc-watchdog"]
+  schedule = "30 9 * * *"
 [functions."consultant-bonus-sync"]
   schedule = "0 12-23 * * 1-6"
 
