@@ -100,6 +100,20 @@ exports.handler = async (event) => {
     }
 
     console.log(`Payment recorded: ${record.client_name} - $${record.amount} - ${record.payment_type} - ${record.consultant_name}`);
+    // EVENT-DRIVEN VERIFY (Joe 7/30): a partial/final recorded in Zoho - via ANY
+    // channel (Zapier, portal, manual entry) - triggers the credit verification
+    // for that deal the moment it lands: checkbox stamped, events written,
+    // metrics cache rebuilt. No waiting for syncs or nightlies.
+    const vt = String(record.payment_type || '').toLowerCase();
+    const vkind = (vt === 'final' || vt === 'paid_in_full') ? 'final' : (vt === 'partial' ? 'partial' : null);
+    if (vkind && record.pipedrive_deal_id) {
+      fetch('https://cute-cat-d9631c.netlify.app/.netlify/functions/final-credit-hook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': process.env.PIPEDRIVE_API_KEY || '' },
+        body: JSON.stringify({ deal_id: record.pipedrive_deal_id, kind: vkind, source: 'zoho-payment-webhook' })
+      }).then(async r => console.log(`[event-verify ${vkind}] deal ${record.pipedrive_deal_id}:`, JSON.stringify(await r.json().catch(() => ({}))).slice(0, 150)))
+        .catch(e => console.error('[event-verify] failed:', e.message));
+    }
     
     return { statusCode: 200, headers, body: JSON.stringify({ 
       success: true, 
