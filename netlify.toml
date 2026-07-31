@@ -114,3 +114,6 @@
 
 [functions."ar-tracking"]
   timeout = 26
+
+[functions."payment-enrich-tick"]
+  schedule = "0 * * * *"
