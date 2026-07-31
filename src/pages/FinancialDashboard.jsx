@@ -516,7 +516,7 @@ export default function FinancialDashboard() {
     // Runs BEFORE learned categories so an old hand-taught 'facebook ->
     // Advertising' rule can't pull these back into the expenses.
     if (amount > 0) {
-      const OWNER_COST_PATTERNS = ['facebk', 'facebook', 'meta ads', 'metaplatforms', 'meta platforms', 'attorney', 'law office', 'law offices', 'law firm', 'lawyer', 'legal fee', 'legal fees'];
+      const OWNER_COST_PATTERNS = ['facebk', 'facebook', 'meta ads', 'metaplatforms', 'meta platforms', 'attorney', 'law office', 'law offices', 'law firm', 'lawyer', 'legal fee', 'legal fees', 'vsl queen', 'vslqueen', 'vsl-queen'];
       for (const pattern of OWNER_COST_PATTERNS) {
         if (combined.includes(pattern)) {
           return { category: 'Owner Cost (excluded)', transactionType: 'transfer', confidence: 0.97, source: 'rule' };

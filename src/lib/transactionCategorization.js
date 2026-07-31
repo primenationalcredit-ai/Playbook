@@ -41,7 +41,10 @@ const OWNER_EXCLUDED_PATTERNS = [
   'law firm',
   'lawyer',
   'legal fee',
-  'legal fees'
+  'legal fees',
+  'vsl queen',
+  'vslqueen',
+  'vsl-queen'
 ];
 // Payroll patterns
 const PAYROLL_PATTERNS = [
