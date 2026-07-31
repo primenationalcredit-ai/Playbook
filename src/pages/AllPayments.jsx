@@ -37,6 +37,20 @@ function AllPayments({ embedded = false }) {
   const [consultants, setConsultants] = useState([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  // Yesterday's sales strip (Joe 7/31): total + count at the top, click to filter.
+  const [yday, setYday] = useState(null);
+  const [dayFilter, setDayFilter] = useState('');
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        const res = await fetch(`/.netlify/functions/all-payments?month=${d.slice(0, 7)}`);
+        const data = await res.json().catch(() => ({}));
+        const rows = (Array.isArray(data.payments) ? data.payments : []).filter(p => String(p.payment_date || '').slice(0, 10) === d);
+        setYday({ date: d, count: rows.length, total: rows.reduce((t, p) => t + (Number(p.amount) || 0), 0) });
+      } catch (e) { /* strip just stays hidden */ }
+    })();
+  }, []);
   const [form, setForm] = useState({ client_name: '', amount: '', payment_type: 'doc_fee', payment_date: now.toISOString().slice(0, 10), consultant_name: '', pipedrive_deal_id: '' });
 
   const load = async () => {
@@ -210,7 +224,7 @@ function AllPayments({ embedded = false }) {
     setSaving(false);
   };
 
-  const filtered = payments.filter(p => !search || (p.client_name || '').toLowerCase().includes(search.toLowerCase()) || String(p.pipedrive_deal_id || '').includes(search));
+  const filtered = payments.filter(p => (!dayFilter || String(p.payment_date || '').slice(0, 10) === dayFilter) && (!search || (p.client_name || '').toLowerCase().includes(search.toLowerCase()) || String(p.pipedrive_deal_id || '').includes(search)));
   const total = filtered.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
   const monthOptions = ['all'];
@@ -244,6 +258,19 @@ function AllPayments({ embedded = false }) {
         </div>
       </div>
 
+      {yday && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800 text-white">
+          <DollarSign size={18} className="text-green-400" />
+          <div className="text-sm">
+            <span className="font-semibold">Yesterday ({fmtDate(yday.date)}):</span> {fmt(yday.total)} across {yday.count} payment{yday.count === 1 ? '' : 's'}
+          </div>
+          <button
+            onClick={() => { if (dayFilter) { setDayFilter(''); } else { setMonth(yday.date.slice(0, 7)); setDayFilter(yday.date); } }}
+            className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20">
+            {dayFilter ? 'Show all' : 'View payments'}
+          </button>
+        </div>
+      )}
       {msg && <div className={`mb-4 text-sm px-4 py-2 rounded-lg ${msg.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{msg.text}</div>}
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4">

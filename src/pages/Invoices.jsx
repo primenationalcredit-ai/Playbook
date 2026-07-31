@@ -1225,8 +1225,10 @@ export default function Invoices() {
         await callApi('resume', { charge_id: modal.charge_id });
         setNotice({ type: 'success', text: 'Charge resumed.' });
       } else if (modal.type === 'charge_now') {
-        await callApi('charge_now', { charge_id: modal.charge_id });
-        setNotice({ type: 'success', text: 'Charge submitted.' });
+        const r = await callApi('charge_now', { charge_id: modal.charge_id });
+        const txn = r.transaction_id || r.transactionId || (r.charge && r.charge.transaction_id) || null;
+        const amt = modal.amount ? ' $' + Number(modal.amount).toFixed(2) : '';
+        setNotice({ type: 'success', text: 'Payment collected' + amt + (txn ? ' - txn ' + txn : '') + '. Refresh the page to see it move to Paid.' });
       } else if (modal.type === 'refund_initial') {
         if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
         if (!form.passcode) throw new Error('Manager passcode required');
