@@ -26,6 +26,23 @@ const TRANSFER_PATTERNS = [
   'xfer to'
 ];
 
+// Owner-level costs (Joe 7/31): Meta/Facebook ad spend and attorney fees paid
+// through the company card are the owner's costs - they never touch the P&L
+// or the DOO compensation basis.
+const OWNER_EXCLUDED_PATTERNS = [
+  'facebk',
+  'facebook',
+  'meta ads',
+  'metaplatforms',
+  'meta platforms',
+  'attorney',
+  'law office',
+  'law offices',
+  'law firm',
+  'lawyer',
+  'legal fee',
+  'legal fees'
+];
 // Payroll patterns
 const PAYROLL_PATTERNS = [
   'paychex',
@@ -149,6 +166,19 @@ export const categorizeTransaction = (transaction) => {
     };
   }
 
+  // Owner-level costs: out of the P&L entirely (Joe 7/31)
+  {
+    const searchText = `${transaction.description || ''} ${transaction.merchant_name || ''}`.toLowerCase();
+    if (transaction.amount > 0 && OWNER_EXCLUDED_PATTERNS.some(p => searchText.includes(p))) {
+      return {
+        category: 'Owner Cost (excluded)',
+        transactionType: 'owner_excluded',
+        confidence: 0.97,
+        isAffiliateRevenue: false,
+        needsReview: false
+      };
+    }
+  }
   // Check for affiliate revenue (income that's excluded from DOO P&L)
   if (isAffiliateRevenue(transaction) && transaction.amount < 0) {
     return {
@@ -220,6 +250,11 @@ export const calculatePL = (transactions) => {
     // Skip transfers
     if (txn.transactionType === 'transfer') {
       summary.transfersExcluded += Math.abs(txn.amount);
+      return;
+    }
+    // Owner-level costs: excluded from P&L and DOO comp entirely (Joe 7/31)
+    if (txn.transactionType === 'owner_excluded') {
+      summary.ownerExcluded = (summary.ownerExcluded || 0) + Math.abs(txn.amount);
       return;
     }
 

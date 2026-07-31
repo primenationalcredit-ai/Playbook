@@ -131,6 +131,9 @@ export default function DOOPaysheet() {
     
     monthTransactions.forEach(t => {
       const categorized = categorizeTransaction(t, learnedCategories);
+      // The lib returns transactionType; the old .type reads below were dead
+      // code, which silently counted card-payment transfers as expenses.
+      const txType = categorized.transactionType || categorized.type;
       const amount = Math.abs(t.amount);
       
       // Income (negative amounts in Plaid = money coming in)
@@ -145,9 +148,9 @@ export default function DOOPaysheet() {
       // Expenses (positive amounts in Plaid = money going out)
       else if (t.amount > 0) {
         // Skip transfers
-        if (categorized.type === 'transfer') return;
+        if (txType === 'transfer' || txType === 'owner_excluded') return; // owner costs never touch Astrid's P&L (Joe 7/31)
         
-        if (categorized.type === 'cogs') {
+        if (txType === 'cogs') {
           cogs += amount;
         } else {
           operatingExpenses += amount;
