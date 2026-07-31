@@ -32,7 +32,7 @@ exports.handler = async (event) => {
       let from = 0;
       const page = 1000;
       while (true) {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${ym}&excluded_from_bonus=eq.false&select=client_name,consultant_name,payment_type,amount,payment_date,pipedrive_deal_id,referrer_org,is_affiliate_deal&order=payment_date.asc`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${ym}&excluded_from_bonus=eq.false&refunded_at=is.null&select=client_name,consultant_name,payment_type,amount,payment_date,pipedrive_deal_id,referrer_org,is_affiliate_deal&order=payment_date.asc`, {
           headers: { ...SB, Range: `${from}-${from + page - 1}`, 'Range-Unit': 'items' }
         });
         const batch = await res.json();
