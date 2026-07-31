@@ -168,7 +168,8 @@ const runWatchdog = async (event) => {
 exports.handler = async (event) => {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
   const key = (event.headers && (event.headers['x-api-key'] || event.headers['X-API-Key'])) || '';
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || key !== process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  const okKeys = [process.env.SUPABASE_SERVICE_ROLE_KEY, process.env.PIPEDRIVE_API_KEY].filter(Boolean);
+  if (!okKeys.length || !okKeys.includes(key)) {
     return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
   try { return await runWatchdog(event); }
