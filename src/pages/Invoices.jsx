@@ -1002,6 +1002,28 @@ function BillingList({ title, icon, rows, emptyText, showDecline = false, defaul
 function DeclineOutreachBar({ r }) {
   const [attempts, setAttempts] = useState(r.outreach_attempts || 0);
   const [busy, setBusy] = useState(false);
+  // Joe 7/31: charge the client straight from the declined card, and show how
+  // many card attempts have happened (auto retries + manual tries here).
+  const [charging, setCharging] = useState(false);
+  const [chargeTries, setChargeTries] = useState(r.retry_count || 0);
+  const [outcome, setOutcome] = useState(null);
+  const chargeNow = async () => {
+    if (charging) return;
+    if (!window.confirm(`Charge ${r.client_name || 'this client'} $${Number(r.amount).toFixed(2)} on the card on file right now?`)) return;
+    setCharging(true); setOutcome(null);
+    try {
+      const res = await callApi('charge_now', { charge_id: r.id });
+      const paid = !!(res && (res.charged || res.success === true || res.status === 'paid'));
+      setChargeTries(t => t + 1);
+      setOutcome(paid
+        ? { ok: true, text: `Collected $${Number((res && res.amount) || r.amount).toFixed(2)}` }
+        : { ok: false, text: (res && (res.decline_reason || res.message || res.error)) || 'Declined' });
+    } catch (e) {
+      setChargeTries(t => t + 1);
+      setOutcome({ ok: false, text: e.message || 'Charge failed' });
+    }
+    setCharging(false);
+  };
   const badge = attempts === 0
     ? { cls: 'bg-slate-100 text-slate-500', label: 'No attempts yet' }
     : attempts < 3
@@ -1025,6 +1047,12 @@ function DeclineOutreachBar({ r }) {
         {r.outreach_last_at && (
           <span className="text-[11px] text-slate-400">last {new Date(r.outreach_last_at).toLocaleDateString()} by {(r.outreach_last_by || '').split('@')[0]}</span>
         )}
+        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" title="Card charge attempts (auto retries + manual)">
+          card tries: {chargeTries}
+        </span>
+        {outcome && (
+          <span className={`text-[11px] font-semibold ${outcome.ok ? 'text-green-700' : 'text-red-600'}`}>{outcome.text}</span>
+        )}
       </div>
       <div className="flex items-center gap-2">
         {r.owner_name && (
@@ -1037,10 +1065,10 @@ function DeclineOutreachBar({ r }) {
           className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50">
           {busy ? 'Logging\u2026' : 'Log attempt'}
         </button>
-        {r.pipedrive_deal_id && (
-          <a href={`https://asapcreditrepair.pipedrive.com/deal/${r.pipedrive_deal_id}`} target="_blank" rel="noreferrer"
-            className="text-[11px] font-semibold text-blue-700 hover:underline whitespace-nowrap">Deal ↗</a>
-        )}
+        <button onClick={chargeNow} disabled={charging}
+          className="text-[11px] font-semibold px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 whitespace-nowrap">
+          {charging ? 'Charging...' : 'Charge card'}
+        </button>
       </div>
     </div>
   );
