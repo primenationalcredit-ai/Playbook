@@ -956,9 +956,9 @@ function BillingRow({ r, showDecline }) {
           {showDecline && r.next_retry_date ? ` · retries ${fmtDate(r.next_retry_date)}` : (showDecline ? ' · no more retries' : '')}
         </p>
       </div>
-      {r.zoho_invoice_id && (
-        <a href={`https://invoice.zoho.com/app#/invoices/${r.zoho_invoice_id}`} target="_blank" rel="noreferrer" className="shrink-0 text-emerald-700 hover:underline inline-flex items-center gap-1 text-xs font-semibold">
-          Invoice <ExternalLink size={11} />
+      {r.pipedrive_deal_id && (
+        <a href={`?deal=${r.pipedrive_deal_id}`} className="shrink-0 text-emerald-700 hover:underline inline-flex items-center gap-1 text-xs font-semibold">
+          Client page
         </a>
       )}
       {r.pipedrive_deal_id && (
