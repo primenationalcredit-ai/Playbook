@@ -1005,7 +1005,7 @@ function DeclineOutreachBar({ r }) {
   // Joe 7/31: charge the client straight from the declined card, and show how
   // many card attempts have happened (auto retries + manual tries here).
   const [charging, setCharging] = useState(false);
-  const [chargeTries, setChargeTries] = useState(r.retry_count || 0);
+  const [chargeTries, setChargeTries] = useState(r.charge_attempts != null ? r.charge_attempts : (r.retry_count || 0));
   const [outcome, setOutcome] = useState(null);
   const chargeNow = async () => {
     if (charging) return;
@@ -1040,7 +1040,7 @@ function DeclineOutreachBar({ r }) {
     } catch (e) { alert('Could not log attempt: ' + (e.message || e)); }
     setBusy(false);
   };
-  return (
+  return (<>
     <div className="flex items-center justify-between gap-2 mt-1 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-100">
       <div className="flex items-center gap-2">
         <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>{badge.label}</span>
@@ -1071,7 +1071,19 @@ function DeclineOutreachBar({ r }) {
         </button>
       </div>
     </div>
-  );
+    {Array.isArray(r.charge_log) && r.charge_log.length > 0 && (
+      <details className="mt-1 px-2">
+        <summary className="text-[11px] text-slate-500 cursor-pointer select-none">charge history ({r.charge_log.length})</summary>
+        <ul className="mt-1 space-y-0.5">
+          {r.charge_log.slice().reverse().map((h, i) => (
+            <li key={i} className={`text-[11px] ${h.result === 'collected' ? 'text-green-700' : 'text-red-600'}`}>
+              {new Date(h.at).toLocaleString()} - {h.result === 'collected' ? `collected $${Number(h.amount).toFixed(2)}` : `declined${h.reason ? ': ' + h.reason : ''}`} - {(h.by || '').split('@')[0]}
+            </li>
+          ))}
+        </ul>
+      </details>
+    )}
+  </>);
 }
 function BillingOverview() {
   const [data, setData] = useState(null);
