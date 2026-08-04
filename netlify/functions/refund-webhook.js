@@ -42,7 +42,7 @@ exports.handler = async (event) => {
   // Try to match the refund to a synced payment row: same deal, same amount, not already refunded.
   let matched = null;
   try {
-    const candidates = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(b.pipedrive_deal_id))}&refunded_at=is.null&select=id,amount,payment_month,client_name,consultant_name&order=payment_date.desc`);
+    const candidates = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(b.pipedrive_deal_id))}&refunded_at=is.null&select=id,amount,payment_month,client_name,consultant_name,is_va&order=payment_date.desc`);
     matched = (candidates || []).find(r => Math.abs((parseFloat(r.amount) || 0) - (parseFloat(b.amount) || 0)) < 0.01) || null;
   } catch (e) {}
 
@@ -81,10 +81,15 @@ exports.handler = async (event) => {
   // refunds table - every refund writes a ledger row so no surface misses it.
   try {
     let cName = (matched && matched.consultant_name) || null;
-    if (!cName) {
-      const anyRow = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(b.pipedrive_deal_id))}&select=consultant_name&order=payment_date.desc&limit=1`);
-      cName = (anyRow && anyRow[0] && anyRow[0].consultant_name) || 'Unknown';
+    let cVa = matched ? !!matched.is_va : null;
+    if (!cName || cVa === null) {
+      const anyRow = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(b.pipedrive_deal_id))}&select=consultant_name,is_va&order=payment_date.desc&limit=1`);
+      if (anyRow && anyRow[0]) { cName = cName || anyRow[0].consultant_name || null; if (cVa === null) cVa = !!anyRow[0].is_va; }
     }
+    cName = cName || 'Unknown'; cVa = !!cVa;
+    // House policy (Joe 8/4): payroll deduction = 10% VA / 14% regular of the refund
+    const dedPct = cVa ? 10 : 14;
+    const dedAmt = Math.round((parseFloat(b.amount) || 0) * dedPct) / 100;
     await supa('refunds', {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
@@ -93,8 +98,8 @@ exports.handler = async (event) => {
         refund_amount: parseFloat(b.amount) || 0,
         refund_date: new Date().toISOString().slice(0, 10),
         pipedrive_deal_id: String(b.pipedrive_deal_id),
-        deduction_amount: 0,
-        deduction_percentage: 0,
+        deduction_amount: dedAmt,
+        deduction_percentage: dedPct,
         refund_reason: b.reason || 'refund'
       })
     });

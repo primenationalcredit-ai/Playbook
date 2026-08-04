@@ -252,7 +252,7 @@ exports.handler = async (event) => {
         try {
           const target = Math.round((parseFloat(req.check_amount) || 0) * 100) / 100;
           let remaining2 = target;
-          const pays = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(req.pipedrive_deal_id))}&refunded_at=is.null&select=id,amount,payment_date&order=payment_date.asc`);
+          const pays = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(req.pipedrive_deal_id))}&refunded_at=is.null&select=id,amount,payment_date,is_va&order=payment_date.asc`);
           const marked = [];
           for (const p of (pays.json || [])) {
             const amt = Math.round((parseFloat(p.amount) || 0) * 100) / 100;
@@ -273,7 +273,9 @@ exports.handler = async (event) => {
                 pipedrive_deal_id: String(req.pipedrive_deal_id || ''), consultant_name: req.consultant_name || 'Unknown',
                 refund_amount: target, refund_reason: req.reason || `check refund #${String(b.check_number)}`,
                 refund_date: b.mailed_date || today3,
-                deduction_percentage: 0, deduction_amount: 0, status: 'approved',
+                deduction_percentage: (!!((pays.json || [])[0] || {}).is_va ? 10 : 14),
+                deduction_amount: Math.round(target * ((!!((pays.json || [])[0] || {}).is_va) ? 10 : 14)) / 100,
+                status: 'approved',
                 payroll_period: (b.mailed_date || today3).slice(0, 7),
                 notes: `Auto-recorded on check mailed (request ${req.id}); payments marked: ${marked.length}${remaining2 > 0.009 ? ` - UNALLOCATED $${remaining2.toFixed(2)}, review` : ''}`,
                 created_by: b.requested_by || null
