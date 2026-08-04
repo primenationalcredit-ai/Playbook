@@ -42,7 +42,7 @@ exports.handler = async (event) => {
   // Try to match the refund to a synced payment row: same deal, same amount, not already refunded.
   let matched = null;
   try {
-    const candidates = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(b.pipedrive_deal_id))}&refunded_at=is.null&select=id,amount,payment_month,client_name&order=payment_date.desc`);
+    const candidates = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(b.pipedrive_deal_id))}&refunded_at=is.null&select=id,amount,payment_month,client_name,consultant_name&order=payment_date.desc`);
     matched = (candidates || []).find(r => Math.abs((parseFloat(r.amount) || 0) - (parseFloat(b.amount) || 0)) < 0.01) || null;
   } catch (e) {}
 
@@ -77,6 +77,26 @@ exports.handler = async (event) => {
     })
   });
 
+  // Refund ledger (Joe 8/4): the Bonus Tracker's refund standard reads the
+  // refunds table - every refund writes a ledger row so no surface misses it.
+  try {
+    let cName = (matched && matched.consultant_name) || null;
+    if (!cName) {
+      const anyRow = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(b.pipedrive_deal_id))}&select=consultant_name&order=payment_date.desc&limit=1`);
+      cName = (anyRow && anyRow[0] && anyRow[0].consultant_name) || 'Unknown';
+    }
+    await supa('refunds', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        consultant_name: cName,
+        client_name: b.client_name || (matched && matched.client_name) || 'Unknown',
+        refund_amount: parseFloat(b.amount) || 0,
+        refund_date: new Date().toISOString().slice(0, 10),
+        pipedrive_deal_id: String(b.pipedrive_deal_id),
+        deduction_amount: 0
+      })
+    });
+  } catch (e) { console.error('refund ledger write failed (non-fatal):', e.message); }
   return respond(200, {
     success: true,
     matched_payment: matched ? matched.id : null,
