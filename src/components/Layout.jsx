@@ -274,6 +274,11 @@ function Layout() {
     ...((isAM || isConsultant) ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
     ...((isAM || isConsultant) ? [{ path: '/agreements', icon: FileText, label: 'Agreements' }] : []),
     ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: amApprovalsBadge, unread: approvalsUnread }] : []),
+    // AMs get Additional Rounds (Joe 8/4) - THIS array is what regular AMs
+    // actually render (departmentItems = isJoe ? [...] : coreDepartmentItems);
+    // the earlier inserts sat in leadership-only arrays and never showed.
+    ...(isAccountManagerDept ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
+    ...(isAccountManagerDept ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isConsultant && !hideExtras ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
   ];
