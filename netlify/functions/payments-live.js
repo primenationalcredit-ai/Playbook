@@ -62,7 +62,7 @@ exports.handler = async (event) => {
       try {
         const [ry, rm] = ym.split('-').map(Number);
         const nextYm = rm === 12 ? `${ry + 1}-01` : `${ry}-${String(rm + 1).padStart(2, '0')}`;
-        const rres = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?refunded_at=gte.${ym}-01&refunded_at=lt.${nextYm}-01&excluded_from_bonus=eq.false&select=client_name,consultant_name,amount,refunded_at,pipedrive_deal_id`, { headers: SB });
+        const rres = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?refunded_at=gte.${ym}-01&refunded_at=lt.${nextYm}-01&payment_month=eq.${ym}&excluded_from_bonus=eq.false&select=client_name,consultant_name,amount,refunded_at,pipedrive_deal_id`, { headers: SB });
         const refs = await rres.json();
         if (Array.isArray(refs)) for (const p of refs) {
           rows.push({
