@@ -94,6 +94,7 @@ exports.handler = async (event) => {
         refund_date: new Date().toISOString().slice(0, 10),
         pipedrive_deal_id: String(b.pipedrive_deal_id),
         deduction_amount: 0,
+        deduction_percentage: 0,
         refund_reason: b.reason || 'refund'
       })
     });
