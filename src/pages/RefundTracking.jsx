@@ -281,7 +281,12 @@ export default function RefundTracking() {
                     <span className="ml-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">&#10003; No release required - OK to pay</span>
                   )}
                   <p className="text-xs text-gray-500 mt-0.5">
-                    By {r.requested_by_name || r.requested_by || 'unknown'}: {r.reason}
+                    Requested by <span className="font-semibold text-gray-700">{r.requested_by_name || (r.requested_by || 'unknown').split('@')[0]}</span>
+                    {' \u00b7 '}Approved by <span className="font-semibold text-gray-700">{r.decided_by ? String(r.decided_by).split('@')[0] : (r.status === 'pending' ? 'awaiting approval' : 'unknown')}</span>
+                    {' \u00b7 '}Consultant: <span className="font-semibold text-gray-700">{r.consultant_name || 'unknown'}</span>
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Reason: {r.reason}
                     {r.rounds_started ? ' (rounds started - release required)' : ''}
                   </p>
                 </div>
