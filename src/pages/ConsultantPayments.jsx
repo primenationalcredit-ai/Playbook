@@ -596,21 +596,23 @@ function ConsultantPayments() {
               <h3 className="text-blue-100 text-sm font-medium mb-1">MTD Breakdown</h3>
               <p className="text-3xl font-bold mb-1">{formatCurrency(mtdStats.sales)}</p>
               <p className="text-sm text-blue-100 mb-2">Projection: <span className="font-semibold text-white">{formatCurrency(mtdStats.projection)}</span></p>
-              <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="grid grid-cols-5 gap-2 text-xs">
                 <div><span className="block text-blue-200">Docs</span><span className="font-bold">{mtdStats.docs}</span></div>
                 <div><span className="block text-blue-200">Partials</span><span className="font-bold">{mtdStats.partials}</span></div>
                 <div><span className="block text-blue-200">Finals</span><span className="font-bold">{mtdStats.finals}</span></div>
-                <div><span className="block text-blue-200">Total</span><span className="font-bold">{mtdStats.docs + mtdStats.partials + mtdStats.finals}</span></div>
+                <div><span className="block text-blue-200">Add Rd</span><span className="font-bold">{mtdStats.rounds || 0}</span></div>
+                <div><span className="block text-blue-200">Total</span><span className="font-bold">{mtdStats.docs + mtdStats.partials + mtdStats.finals + (mtdStats.rounds || 0)}</span></div>
               </div>
             </div>
 
             <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
               <h3 className="text-slate-500 text-sm font-medium mb-1">YTD Totals</h3>
               <p className="text-3xl font-bold text-slate-800 mb-1">{formatCurrency(ytdStats.sales)}</p>
-              <div className="grid grid-cols-3 gap-1 text-xs text-slate-500">
+              <div className="grid grid-cols-4 gap-1 text-xs text-slate-500">
                 <div><span className="block">Docs</span><span className="font-bold text-slate-700">{ytdStats.docs}</span></div>
                 <div><span className="block">Partials</span><span className="font-bold text-slate-700">{ytdStats.partials}</span></div>
                 <div><span className="block">Finals</span><span className="font-bold text-slate-700">{ytdStats.finals}</span></div>
+                <div><span className="block">Add Rd</span><span className="font-bold text-slate-700">{ytdStats.rounds || 0}</span></div>
               </div>
             </div>
 
