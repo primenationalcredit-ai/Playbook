@@ -93,7 +93,8 @@ exports.handler = async (event) => {
         refund_amount: parseFloat(b.amount) || 0,
         refund_date: new Date().toISOString().slice(0, 10),
         pipedrive_deal_id: String(b.pipedrive_deal_id),
-        deduction_amount: 0
+        deduction_amount: 0,
+        refund_reason: b.reason || 'refund'
       })
     });
   } catch (e) { console.error('refund ledger write failed (non-fatal):', e.message); }
