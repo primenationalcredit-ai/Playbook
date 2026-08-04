@@ -40,6 +40,7 @@ const GMB_LOCATIONS = [
   { name: 'ASAP Credit Repair Laurel', city: 'Laurel', state: 'MD' },
   { name: 'ASAP Credit Repair West Valley Utah', city: 'West Valley', state: 'UT' },
   { name: 'ASAP Credit Repair McAllen', city: 'McAllen', state: 'TX' },
+  { name: 'Longmont', city: 'Longmont', state: 'CO' },
 ];
 
 function IncomingReviews() {
