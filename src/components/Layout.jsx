@@ -283,6 +283,8 @@ function Layout() {
   const additionalDepartmentItems = [
     ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue, unread: affiliateCallsOverdue }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
+    // AMs get Additional Rounds (Joe 8/4) - page's internal admin gates unchanged
+    ...(currentUser?.department === 'account_managers' && currentUser?.role !== 'admin' ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
   ];
 
@@ -294,6 +296,8 @@ function Layout() {
     { path: '/agreements', icon: FileText, label: 'Agreements' },
     ...((isConsultant || isCSR) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
+    // AMs get Additional Rounds (Joe 8/4) - page's internal admin gates unchanged
+    ...(currentUser?.department === 'account_managers' && currentUser?.role !== 'admin' ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
   ] : coreDepartmentItems;
