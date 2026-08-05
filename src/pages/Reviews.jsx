@@ -291,7 +291,10 @@ function Reviews() {
         reviewer_name: formData.client_name,
         review_date: formData.review_date,
         review_text: formData.notes || null,
-        location_name: formData.location_name || null,
+        // Trustpilot/BBB etc. have no Google location - store the platform name
+        // instead of null (the DB requires a value, and this gives the filters
+        // a useful bucket per platform). Google reviews keep their listing name.
+        location_name: formData.location_name || (formData.platform ? formData.platform.charAt(0).toUpperCase() + formData.platform.slice(1) : 'Other'),
         rating: formData.rating,
         pipedrive_deal_id: dealId,
         assigned_to: targetUserId,
