@@ -170,7 +170,7 @@ export default function AdditionalRounds() {
                 <span className="text-xs text-slate-500">Now:</span>
                 <input type="number" step="0.01" min="1" value={splitFirst} onChange={(e) => setSplitFirst(e.target.value)}
                   className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-24" />
-                <span className="text-xs text-slate-500">Later: <b>${'{'}splitSecond.toFixed(2){'}'}</b> on</span>
+                <span className="text-xs text-slate-500">Later: <b>${splitSecond.toFixed(2)}</b> on</span>
                 <input type="date" value={splitDate} onChange={(e) => setSplitDate(e.target.value)}
                   className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
               </div>
