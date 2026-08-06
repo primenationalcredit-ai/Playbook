@@ -14,6 +14,7 @@ function Automations() {
   const [runs, setRuns] = useState([]);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [conns, setConns] = useState([]);
   const load = useCallback(async () => {
     try {
       const [a, r] = await Promise.all([
@@ -22,6 +23,8 @@ function Automations() {
       ]);
       setAutos(Array.isArray(a) ? a : []);
       setRuns(Array.isArray(r) ? r : []);
+      fetch('/.netlify/functions/connections-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"list"}' })
+        .then((x) => x.json()).then((d) => setConns(Array.isArray(d.connections) ? d.connections : [])).catch(() => {});
       setErr(null);
     } catch (e) { setErr(String(e)); }
   }, []);
@@ -68,6 +71,21 @@ function Automations() {
           </div>
         ))}
         {!autos.length && !err && <div className="p-6 text-sm text-slate-400">Loading registry\u2026</div>}
+      </div>
+      <div>
+        <h2 className="text-sm font-semibold text-slate-700 mb-2">Connections</h2>
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+          {conns.map((c) => (
+            <div key={c.name} className="px-4 py-2.5 flex items-center gap-3 text-xs flex-wrap">
+              <span className="font-semibold text-slate-800">{c.name}</span>
+              {c.service && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium">{c.service}</span>}
+              <span className="text-slate-400 ml-auto">added {new Date(c.created_at).toLocaleDateString()}</span>
+              <span className="text-slate-400">{c.last_used_at ? `last used ${new Date(c.last_used_at).toLocaleString()}` : 'not used yet'}</span>
+            </div>
+          ))}
+          {!conns.length && <div className="p-4 text-xs text-slate-400">No connections stored yet.</div>}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-1.5">Credentials are encrypted in the vault — values never appear here and can’t be viewed from this page. Adding or removing a connection goes through the gated admin door.</p>
       </div>
       <div>
         <h2 className="text-sm font-semibold text-slate-700 mb-2">Recent runs (auto-refreshes)</h2>
