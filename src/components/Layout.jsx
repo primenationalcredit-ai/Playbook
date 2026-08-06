@@ -300,6 +300,7 @@ function Layout() {
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
     { path: '/invoices', icon: FileText, label: 'Invoices' },
     { path: '/agreements', icon: FileText, label: 'Agreements' },
+    { path: '/admin/automations', icon: ShieldCheck, label: 'Automations' },
     ...((isConsultant || isCSR) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     // AMs get Additional Rounds (Joe 8/4) - page's internal admin gates unchanged
