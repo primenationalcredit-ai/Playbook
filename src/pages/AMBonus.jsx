@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useDailyGate, AM_CHECKLIST } from '../components/DailyChecklistGate';
 import ReviewClaimQueue from '../components/ReviewClaimQueue';
 import { supabase } from '../lib/supabase';
 import { Trophy, Star, RefreshCw, Plus, Check, X, ShieldCheck, Users, Repeat, MessageSquare, Award, TrendingUp, Clock, Image as ImageIcon, ExternalLink, Upload, AlertTriangle, Mail, DollarSign } from 'lucide-react';
@@ -34,6 +35,7 @@ const fmt = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigit
 
 export default function AMBonus() {
   const { currentUser, users } = useApp();
+  const dailyGate = useDailyGate(currentUser, 'account_manager', AM_CHECKLIST, currentUser?.department === 'account_managers');
   const [tab, setTab] = useState('dashboard');
   const [submissions, setSubmissions] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -265,6 +267,8 @@ export default function AMBonus() {
     loadData();
   };
 
+  if (!dailyGate.ready) return <div className="p-6 text-center text-slate-500">Loading…</div>;
+  if (!dailyGate.unlocked) return dailyGate.panel;
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
