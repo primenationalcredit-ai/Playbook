@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useDailyGate, CONSULTANT_CHECKLIST } from '../components/DailyChecklistGate';
 import {
   Trophy, TrendingUp, DollarSign, Users, Star, Award, Target,
   RefreshCw, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Zap, Gift,
@@ -194,6 +195,7 @@ const drawFor = (name, isVA) => isVA ? VA_DRAW : (CONSULTANT_DRAW[String(name ||
 
 export default function ConsultantBonus() {
   const { currentUser, users } = useApp();
+  const dailyGate = useDailyGate(currentUser, 'consultant', CONSULTANT_CHECKLIST, currentUser?.department === 'credit_consultants');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -332,6 +334,8 @@ export default function ConsultantBonus() {
   );
 
   if (!data) return null;
+  if (!dailyGate.ready) return <div className="p-6 text-center text-slate-500">Loading…</div>;
+  if (!dailyGate.unlocked) return dailyGate.panel;
 
   const c = data.consultants[selectedConsultant];
   if (!c) return <div className="p-6 text-center text-slate-500">No data found for {selectedConsultant}</div>;
