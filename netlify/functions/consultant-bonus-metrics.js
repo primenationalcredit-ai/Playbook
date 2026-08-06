@@ -881,8 +881,13 @@ exports.handler = async (event) => {
       // PIF = client paid Doc Fee AND Final (no Partial) within 5 business days
       let pifCount = 0;
       const pifClients = [];
-      for (const client of clients) {
+      // PIF pairs cross month boundaries (doc fee July, final August) - use the
+      // window map, not the month-scoped list, and credit the month the FINAL landed.
+      for (const client of Object.values(windowClientMap)) {
         if (!client.hasDocFee || !client.hasFinal || client.hasPartial) continue;
+        const pifFinal0 = client.payments.find(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+        const pifFinalMonth = pifFinal0 ? String(pifFinal0.payment_month || String(pifFinal0.payment_date).slice(0, 7)) : null;
+        if (pifFinalMonth !== targetMonth) continue;
         // Find doc fee date and final date
         const docPayment = client.payments.find(p => p.payment_type === 'doc_fee');
         const finalPayment = client.payments.find(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');

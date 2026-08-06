@@ -123,6 +123,7 @@ exports.handler = async (event) => {
         if (deal.add_time) {
           const addDate = new Date(deal.add_time);
           let bizDays = 0, d = new Date(addDate);
+          d.setDate(d.getDate() + 1); // day AFTER signup is business day 1 (matches the $25 math)
           while (d <= now && bizDays <= 6) {
             if (d.getDay() !== 0 && d.getDay() !== 6) bizDays++;
             d.setDate(d.getDate() + 1);

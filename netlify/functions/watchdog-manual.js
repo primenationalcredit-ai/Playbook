@@ -23,7 +23,7 @@ const sb = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
 });
 function bizDaysSince(addTime, now) {
   if (!addTime) return 99;
-  let biz = 0, d = new Date(addTime); d.setHours(0, 0, 0, 0);
+  let biz = 0, d = new Date(addTime); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1); // day AFTER signup is day 1
   const end = new Date(now); end.setHours(0, 0, 0, 0);
   while (d <= end && biz <= 6) { const w = d.getDay(); if (w !== 0 && w !== 6) biz++; d.setDate(d.getDate() + 1); }
   return biz;

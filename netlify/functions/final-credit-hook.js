@@ -17,7 +17,7 @@ const YES = { DOC_1: '1104', PARTIAL_1: '1106', FINAL_1: '1108' };
 const fieldIs = (v, want) => { const id = (v && typeof v === 'object') ? String(v.id ?? v.value ?? '') : String(v ?? ''); return id === want; };
 function bizDaysSince(addTime, now) {
   if (!addTime) return 99;
-  let biz = 0, d = new Date(addTime); d.setHours(0, 0, 0, 0);
+  let biz = 0, d = new Date(addTime); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 1); // day AFTER signup is day 1
   const end = new Date(now); end.setHours(0, 0, 0, 0);
   while (d <= end && biz <= 6) { const w = d.getDay(); if (w !== 0 && w !== 6) biz++; d.setDate(d.getDate() + 1); }
   return biz;
