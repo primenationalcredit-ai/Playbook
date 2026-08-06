@@ -278,6 +278,7 @@ function Layout() {
     // actually render (departmentItems = isJoe ? [...] : coreDepartmentItems);
     // the earlier inserts sat in leadership-only arrays and never showed.
     ...(isAccountManagerDept ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
+    ...(isLeadership ? [{ path: '/admin/automations', icon: ShieldCheck, label: 'Automations' }] : []),
     ...(isAccountManagerDept ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isConsultant && !hideExtras ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
