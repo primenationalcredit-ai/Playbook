@@ -66,6 +66,24 @@ const PLAID_API = 'https://asap-financial-dashboard-backend-production.up.railwa
 const SUPABASE_URL = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
 
+function AuthnetTicker() {
+  // Live balance check: what Authorize.net processed today vs what the payment
+  // system recorded. Green = balanced to the penny. Red = the difference and
+  // which side is missing it. Card money only (Zelle/checks live in Zoho).
+  const [d, setD] = React.useState(null);
+  React.useEffect(() => {
+    const load = () => fetch('/.netlify/functions/authnet-proxy').then((r) => r.json()).then(setD).catch(() => {});
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, []);
+  if (!d) return null;
+  if (d.error) return <div className="mb-4 px-4 py-3 rounded-lg text-sm font-semibold bg-amber-50 text-amber-700">Auth.net balance check unavailable: {d.error}</div>;
+  const fmt = (n) => '$' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const base = `Auth.net today: ${fmt(d.authnet?.total)} (${d.authnet?.count}${d.authnet?.refunds ? `, ${d.authnet.refunds} refund${d.authnet.refunds > 1 ? 's' : ''}` : ''})  |  App: ${fmt(d.app?.total)} (${d.app?.count})`;
+  if (d.match) return <div className="mb-4 px-4 py-3 rounded-lg text-sm font-semibold bg-emerald-50 text-emerald-700">{'✅'} {base} {'—'} balanced</div>;
+  return <div className="mb-4 px-4 py-3 rounded-lg text-sm font-semibold bg-rose-50 text-rose-700">{'⚠️'} {base} {'—'} {fmt(Math.abs(d.difference || 0))} {(d.difference || 0) > 0 ? 'processed at Auth.net that the system has not recorded' : 'recorded in the system but not seen at Auth.net'}{d.authnet?.errors?.length ? ` (${d.authnet.errors.join('; ')})` : ''}</div>;
+}
 export default function FinancialDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1019,6 +1037,7 @@ export default function FinancialDashboard() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Financial Dashboard</h1>
+          <AuthnetTicker />
             <p className="text-slate-500 text-sm">
               {lastUpdated && `Updated: ${format(lastUpdated, 'MMM d, h:mm a')}`}
             </p>
