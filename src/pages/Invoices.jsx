@@ -658,6 +658,7 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
                 <th className="text-left px-3 py-2">Client</th>
+                <th className="text-left px-3 py-2">Consultant</th>
                 <th className="text-left px-3 py-2">Deal</th>
                 <th className="text-left px-3 py-2">Type</th>
                 <th className="text-right px-3 py-2">Amount</th>
@@ -684,6 +685,7 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                       <p className="font-semibold text-slate-800">{i.client_name || 'Unknown'}</p>
                       {i.client_email && <p className="text-[11px] text-slate-500">{i.client_email}</p>}
                     </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{i.consultant_name || '\u2014'}</td>
                     <td className="px-3 py-2">
                       <a href={DEAL_URL(i.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="font-mono text-xs font-semibold text-asap-blue hover:underline">#{i.pipedrive_deal_id || '?'}</a>
                       {i.pipedrive_deal_id && (

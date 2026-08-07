@@ -113,6 +113,27 @@ async function scopeInvoicesForAM(data, email) {
   } catch (e) { console.error('AM scope filter failed (returning unscoped):', e); }
   return data;
 }
+// Consultant column (Astrid 8/7): stamp each token/charge with the consultant
+// who sold the deal. consultant_payments already maps deal -> consultant_name
+// (Zoho-derived, same source the bonus math uses), so this is one bulk read -
+// no Pipedrive calls. Fail-open: the list still returns without the names.
+async function addConsultantNames(data) {
+  const SU = process.env.SUPABASE_URL, SK = process.env.SUPABASE_SERVICE_KEY;
+  if (!SU || !SK) return data;
+  const H = { apikey: SK, Authorization: `Bearer ${SK}` };
+  try {
+    const ids = [...new Set([...(data.tokens || []), ...(data.charges || [])].map(x => x.pipedrive_deal_id).filter(Boolean))];
+    const map = {};
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const rows = await fetch(`${SU}/rest/v1/consultant_payments?pipedrive_deal_id=in.(${chunk.join(',')})&select=pipedrive_deal_id,consultant_name`, { headers: H }).then(r => r.json());
+      for (const r of (Array.isArray(rows) ? rows : [])) { if (r.consultant_name && !map[r.pipedrive_deal_id]) map[r.pipedrive_deal_id] = r.consultant_name; }
+    }
+    for (const t of (data.tokens || [])) t.consultant_name = map[t.pipedrive_deal_id] || null;
+    for (const c of (data.charges || [])) c.consultant_name = map[c.pipedrive_deal_id] || null;
+  } catch (e) { console.error('consultant name enrich failed (list returns without it):', e); }
+  return data;
+}
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ error: 'POST only' }) };
@@ -149,11 +170,12 @@ exports.handler = async (event) => {
     });
     const text = await upstream.text();
     // AM scoping: filter the invoice browse list down to the signed-in AM's clients.
-    if (action === 'list_recent_invoices' && upstream.ok && playbookUser && playbookUser.email) {
+    if (action === 'list_recent_invoices' && upstream.ok) {
       let listData = null;
       try { listData = JSON.parse(text); } catch (e) {}
       if (listData && Array.isArray(listData.tokens)) {
-        listData = await scopeInvoicesForAM(listData, playbookUser.email);
+        if (playbookUser && playbookUser.email) listData = await scopeInvoicesForAM(listData, playbookUser.email);
+        listData = await addConsultantNames(listData);
         return { statusCode: 200, headers, body: JSON.stringify(listData) };
       }
     }
