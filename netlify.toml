@@ -46,8 +46,11 @@
 
 # Pre-warm the consultant bonus cache every 10 min during business hours so the page
 # always loads instantly off the cache instead of computing live.
+# Around the clock (Joe 8/8, stale-rankings ticket): the old 7AM-6PM CT Mon-Sat
+# window left evenings, early mornings, and all of Sunday serving a stale cache -
+# the page always serves cache by design, so freshness IS the warm cadence.
 [functions."consultant-bonus-warm"]
-  schedule = "*/10 12-23 * * 1-6"
+  schedule = "*/10 * * * *"
 
 # Sync the Ready-to-Quote consult deals from Pipedrive into our own consult_deals table. The bonus
 # dashboard reads closing-rate data from that table (never from Pipedrive live), so a rate limit or
