@@ -22,7 +22,9 @@ async function pd(path) {
 }
 async function upsert(table, rows, conflict) {
   for (let i = 0; i < rows.length; i += 200) {
-    const r = await fetch(`${SU}/rest/v1/${table}?on_conflict=${conflict}`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows.slice(i, i + 200)) });
+    // \u0000 (null bytes pasted into PD fields) are illegal in Postgres text - strip them
+    const body = JSON.stringify(rows.slice(i, i + 200)).replace(/\\u0000/g, '');
+    const r = await fetch(`${SU}/rest/v1/${table}?on_conflict=${conflict}`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' }, body });
     if (!r.ok) throw new Error(`${table} upsert ${r.status}: ${(await r.text()).slice(0, 200)}`);
   }
 }
