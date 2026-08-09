@@ -120,3 +120,8 @@
 
 [functions."payment-enrich-tick"]
   schedule = "0 * * * *"
+
+# CRM mirror heartbeat: incremental Pipedrive -> crm_* sync every 10 min,
+# offset to :02 so it never collides with the bonus warm on :00.
+[functions."crm-sync-tick"]
+  schedule = "2,12,22,32,42,52 * * * *"
