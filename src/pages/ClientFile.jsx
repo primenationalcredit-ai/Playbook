@@ -23,6 +23,8 @@ function ClientFile() {
   const [options, setOptions] = useState({});
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('notes');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [postingNote, setPostingNote] = useState(false);
   const debounceRef = useRef(null);
 
   useEffect(() => {
@@ -43,7 +45,6 @@ function ClientFile() {
       // Pipedrive-style fuzzy search via the crm_client_search RPC:
       // every word matches somewhere, or the name is similar (typo-tolerant), ranked.
       const { data, error } = await supabase.rpc('crm_client_search', { q });
-      console.log('CLIENT SEARCH:', q, '->', Array.isArray(data) ? data.length + ' results' : data, error ? ('ERROR: ' + JSON.stringify(error)) : 'no error');
       if (error) console.error('client search error:', error);
       setResults(data || []);
       setSearching(false);
@@ -76,7 +77,27 @@ function ClientFile() {
     setLoading(false);
   };
 
-  const Badge = ({ children, color }) => children ? (
+  const postNote = async () => {
+    const content = noteDraft.trim();
+    if (!content || postingNote || !client) return;
+    setPostingNote(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      const res = await fetch('/.netlify/functions/crm-note-write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ person_id: client.pipedrive_person_id, deal_id: (deals[0] && deals[0].pipedrive_deal_id) || null, content })
+      });
+      const j = await res.json();
+      if (!res.ok || !j.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      setNotes([{ pd_add_time: new Date().toISOString(), author: j.author, content, pinned: false }, ...notes]);
+      setNoteDraft('');
+    } catch (e) { alert('Note failed: ' + e.message); }
+    setPostingNote(false);
+  };
+
+    const Badge = ({ children, color }) => children ? (
     <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${color || 'bg-blue-100 text-blue-800'}`}>{children}</span>
   ) : null;
 
@@ -186,6 +207,17 @@ function ClientFile() {
               <button onClick={() => setTab('notes')} className={`px-5 py-3 text-sm font-medium flex items-center gap-1.5 ${tab === 'notes' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}><MessageSquare className="w-4 h-4" /> Notes ({notes.length})</button>
               <button onClick={() => setTab('activities')} className={`px-5 py-3 text-sm font-medium flex items-center gap-1.5 ${tab === 'activities' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}><CheckSquare className="w-4 h-4" /> Activities ({activities.length})</button>
             </div>
+            {tab === 'notes' && (
+              <div className="p-4 pb-0 flex gap-2">
+                <textarea value={noteDraft} onChange={e => setNoteDraft(e.target.value)} rows={2}
+                  placeholder="Add a note - posts here and to Pipedrive..."
+                  className="flex-1 border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <button onClick={postNote} disabled={postingNote || !noteDraft.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 self-start">
+                  {postingNote ? 'Posting...' : 'Post'}
+                </button>
+              </div>
+            )}
             <div className="p-5 space-y-3 max-h-96 overflow-y-auto">
               {tab === 'notes' && notes.map((n, i) => (
                 <div key={i} className={`border rounded-lg p-3 ${n.pinned ? 'border-amber-300 bg-amber-50' : ''}`}>
