@@ -1,3 +1,4 @@
+import Pipelines from './pages/Pipelines';
 import MyDay from './pages/MyDay';
 import ClientFile from './pages/ClientFile';
 ﻿import React from 'react';
@@ -126,6 +127,7 @@ function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="clients" element={<ClientFile />} />
         <Route path="my-day" element={<MyDay />} />
+        <Route path="pipelines" element={<Pipelines />} />
         <Route path="playbook" element={<MyPlaybook />} />
         <Route path="team" element={<TeamView />} />
         <Route path="updates" element={<Updates />} />
