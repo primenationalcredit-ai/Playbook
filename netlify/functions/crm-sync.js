@@ -38,8 +38,17 @@ async function setState(k, v) {
 async function advanceCursor(k, v) {
   // Cursors only move FORWARD. The full backfill's final invocation (oldest pages)
   // once stomped the bookmark back to 2018, freezing incremental progress.
+  const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  if (v > nowStr) v = nowStr; // clamp: a bogus future-dated record (a 2036 activity exists!) must never freeze the cursor
   const cur = await getState(k);
   if (!cur || v > cur) await setState(k, v);
+}
+async function peekNewest(endpoint, extra) {
+  // True newest update_time in PD - used when a multi-call walk finishes on a
+  // continuation call (whose own pages are old), so the bookmark lands at the top.
+  const j = await pd(`${endpoint}?${extra ? extra + '&' : ''}limit=1&start=0&sort=update_time DESC`);
+  const d = (j.data || [])[0];
+  return d ? d.update_time : null;
 }
 async function userMap() {
   const j = await pd('users?limit=500');
@@ -93,7 +102,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         start = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await advanceCursor('persons_cursor', maxSeen);
+      if (!more || hitCursor) { let cv = maxSeen; if ((parseInt(q.start) || 0) > 0) { try { cv = (await peekNewest('persons')) || cv; } catch (_) {} } if (cv) await advanceCursor('persons_cursor', cv); }
       out.persons = { synced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : start };
       if (mode === 'persons') return respond(200, out);
       start = parseInt(q.start) || 0;
@@ -135,7 +144,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         start = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await advanceCursor('deals_cursor', maxSeen);
+      if (!more || hitCursor) { let cv = maxSeen; if ((parseInt(q.start) || 0) > 0) { try { cv = (await peekNewest('deals')) || cv; } catch (_) {} } if (cv) await advanceCursor('deals_cursor', cv); }
       out.deals = { synced, rounds: roundsSynced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : start };
     }
     if (mode === 'notes' || mode === 'all') {
@@ -161,7 +170,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         nStart = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await advanceCursor('notes_cursor', maxSeen);
+      if (!more || hitCursor) { let cv = maxSeen; if ((parseInt(q.start) || 0) > 0) { try { cv = (await peekNewest('notes')) || cv; } catch (_) {} } if (cv) await advanceCursor('notes_cursor', cv); }
       out.notes = { synced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : nStart };
       if (mode === 'notes') return respond(200, out);
     }
@@ -189,7 +198,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         aStart = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await advanceCursor('activities_cursor', maxSeen);
+      if (!more || hitCursor) { let cv = maxSeen; if ((parseInt(q.start) || 0) > 0) { try { cv = (await peekNewest('activities', 'user_id=0')) || cv; } catch (_) {} } if (cv) await advanceCursor('activities_cursor', cv); }
       out.activities = { synced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : aStart };
     }
     return respond(200, out);
