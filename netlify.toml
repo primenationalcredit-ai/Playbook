@@ -130,3 +130,8 @@
 # fresh in crm_*. Verdict lands in crm_sync_state key last_compare. 7am CT.
 [functions."crm-compare-tick"]
   schedule = "0 13 * * *"
+
+# Daily field-level spot audit: random recently-changed deals/persons pulled fresh
+# from PD, compared field-by-field, mismatches self-heal (PD is master). 7:30am CT.
+[functions."crm-deep-verify-tick"]
+  schedule = "30 13 * * *"
