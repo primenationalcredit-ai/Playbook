@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useSearchParams } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
 import { Search, User, FileText, Calendar, DollarSign, MessageSquare, CheckSquare, MapPin, Phone, Mail, Loader2 } from 'lucide-react';
 
 // ClientFile - Phase 2 screen #1 of the CRM migration (Joe 8/10).
@@ -38,6 +39,12 @@ function ClientFile() {
   const [noteDraft, setNoteDraft] = useState('');
   const [postingNote, setPostingNote] = useState(false);
   const debounceRef = useRef(null);
+  const { currentUser } = useApp();
+  const isLeadership = currentUser && ['leadership', 'admin'].includes((currentUser.department || '').toLowerCase());
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeQuery, setMergeQuery] = useState('');
+  const [mergeCands, setMergeCands] = useState([]);
+  const [merging, setMerging] = useState(false);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -120,6 +127,35 @@ function ClientFile() {
       setStatusEdit(false); setStatusDraft({});
     } catch (e) { alert('Status update failed: ' + e.message); }
     setSavingStatus(false);
+  };
+
+    const searchMergeCands = async (q) => {
+    setMergeQuery(q);
+    if (q.trim().length < 2) { setMergeCands([]); return; }
+    const { data } = await supabase.from('crm_clients')
+      .select('pipedrive_person_id,name,email,phone')
+      .eq('deleted', false).neq('pipedrive_person_id', client.pipedrive_person_id)
+      .ilike('search_blob', `%${q.trim().toLowerCase()}%`).limit(8);
+    setMergeCands(data || []);
+  };
+
+  const mergeDuplicate = async (dup) => {
+    if (merging) return;
+    if (!window.confirm(`Merge "${dup.name}" (#${dup.pipedrive_person_id}) INTO "${client.name}" (#${client.pipedrive_person_id})?\n\nThe duplicate is merged in Pipedrive itself - its deals, notes, and activities all move to this client. This cannot be undone.`)) return;
+    setMerging(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      const res = await fetch('/.netlify/functions/crm-person-merge', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ survivor_id: client.pipedrive_person_id, duplicate_id: dup.pipedrive_person_id })
+      });
+      const j = await res.json();
+      if (!res.ok || !j.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      setMergeOpen(false); setMergeQuery(''); setMergeCands([]);
+      openClient({ pipedrive_person_id: client.pipedrive_person_id, name: client.name });
+    } catch (e) { alert('Merge failed: ' + e.message); }
+    setMerging(false);
   };
 
     const openStageEdit = async (d) => {
@@ -269,6 +305,23 @@ function ClientFile() {
             {!statusEdit && (
               <button onClick={() => { setStatusDraft({ current_status: client.current_status ?? '', update_status: client.update_status ?? '', quick_buttons: client.quick_buttons ?? '' }); setStatusEdit(true); }}
                 className="mt-3 text-xs text-blue-600 font-medium hover:underline">Change status</button>
+            )}
+            {isLeadership && !mergeOpen && (
+              <button onClick={() => setMergeOpen(true)} className="mt-3 ml-4 text-xs text-gray-500 font-medium hover:underline">Merge duplicate</button>
+            )}
+            {mergeOpen && (
+              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="text-xs font-medium text-amber-800 mb-2">Merge a duplicate INTO this client (the duplicate is absorbed in Pipedrive itself; cannot be undone)</div>
+                <input value={mergeQuery} onChange={e => searchMergeCands(e.target.value)} placeholder="Search the duplicate by name, email, or phone..."
+                  className="w-full border rounded-md p-2 text-sm mb-2" autoFocus />
+                {mergeCands.map(m => (
+                  <button key={m.pipedrive_person_id} onClick={() => mergeDuplicate(m)} disabled={merging}
+                    className="block w-full text-left text-xs p-2 rounded hover:bg-amber-100 disabled:opacity-50">
+                    <b>{m.name}</b> #{m.pipedrive_person_id} - {m.email || 'no email'} {m.phone ? `- ${m.phone}` : ''}
+                  </button>
+                ))}
+                <button onClick={() => { setMergeOpen(false); setMergeQuery(''); setMergeCands([]); }} className="text-xs text-gray-500 mt-1 hover:underline">Cancel</button>
+              </div>
             )}
             {statusEdit && (
               <div className="mt-3 flex flex-wrap items-end gap-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
