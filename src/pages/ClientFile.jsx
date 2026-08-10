@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { useSearchParams } from 'react-router-dom';
 import { Search, User, FileText, Calendar, DollarSign, MessageSquare, CheckSquare, MapPin, Phone, Mail, Loader2 } from 'lucide-react';
 
 // ClientFile - Phase 2 screen #1 of the CRM migration (Joe 8/10).
@@ -37,6 +38,14 @@ function ClientFile() {
   const [noteDraft, setNoteDraft] = useState('');
   const [postingNote, setPostingNote] = useState(false);
   const debounceRef = useRef(null);
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const pid = parseInt(searchParams.get('person'));
+    const did = parseInt(searchParams.get('deal')) || undefined;
+    if (pid) openClient({ pipedrive_person_id: pid, name: '' }, did);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     supabase.from('crm_field_options').select('field_key,option_id,label').then(({ data }) => {
