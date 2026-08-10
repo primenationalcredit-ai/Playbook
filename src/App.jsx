@@ -1,3 +1,4 @@
+import MyBook from './pages/MyBook';
 import Pipelines from './pages/Pipelines';
 import MyDay from './pages/MyDay';
 import ClientFile from './pages/ClientFile';
@@ -128,6 +129,7 @@ function App() {
         <Route path="clients" element={<ClientFile />} />
         <Route path="my-day" element={<MyDay />} />
         <Route path="pipelines" element={<Pipelines />} />
+        <Route path="my-book" element={<MyBook />} />
         <Route path="playbook" element={<MyPlaybook />} />
         <Route path="team" element={<TeamView />} />
         <Route path="updates" element={<Updates />} />
