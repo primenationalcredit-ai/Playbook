@@ -40,11 +40,10 @@ function ClientFile() {
     if (q.length < 2) { setResults([]); return; }
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
-      const safe = q.replace(/[%,()]/g, ' ').trim();
-      const { data } = await supabase.from('crm_clients')
-        .select('pipedrive_person_id,name,email,phone,current_status,account_manager_name,owner_name')
-        .or(`name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`)
-        .eq('deleted', false).limit(20);
+      // Pipedrive-style fuzzy search via the crm_client_search RPC:
+      // every word matches somewhere, or the name is similar (typo-tolerant), ranked.
+      const { data, error } = await supabase.rpc('crm_client_search', { q });
+      if (error) console.error('client search error:', error);
       setResults(data || []);
       setSearching(false);
     }, 300);
