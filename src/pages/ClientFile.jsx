@@ -45,22 +45,22 @@ function ClientFile() {
     if (q.length < 2) { setResults([]); return; }
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
-      // Pipedrive-style fuzzy search via the crm_client_search RPC:
-      // every word matches somewhere, or the name is similar (typo-tolerant), ranked.
-      const { data, error } = await supabase.rpc('crm_client_search', { q });
+      // Deal-centric fuzzy search via the crm_deal_search RPC: matches deal title
+      // OR the client's name/email/phone (typo-tolerant), ranked by closeness.
+      const { data, error } = await supabase.rpc('crm_deal_search', { q });
       if (error) console.error('client search error:', error);
       setResults(data || []);
       setSearching(false);
     }, 300);
   }, [query]);
 
-  const openClient = async (row) => {
+  const openClient = async (row, focusDealId) => {
     setLoading(true); setClient(row); setResults([]); setQuery(row.name || '');
     const pid = row.pipedrive_person_id;
     const { data: full } = await supabase.from('crm_clients').select('*').eq('pipedrive_person_id', pid).limit(1);
     if (full && full[0]) setClient(full[0]);
     const { data: ds } = await supabase.from('crm_deals').select('*').eq('pipedrive_person_id', pid).order('pd_add_time', { ascending: false });
-    const dealList = ds || [];
+    const dealList = (ds || []).sort((a, b) => (b.pipedrive_deal_id === focusDealId ? 1 : 0) - (a.pipedrive_deal_id === focusDealId ? 1 : 0));
     setDeals(dealList);
     const ids = dealList.map(d => d.pipedrive_deal_id).filter(Boolean);
     const idCsv = ids.join(',');
@@ -136,19 +136,19 @@ function ClientFile() {
       {!client && (
       <div className="relative mb-6">
         <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name, email, or phone..."
+        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search deals by client name, deal title, email, or phone..."
           className="w-full pl-9 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
         {searching && <Loader2 className="w-4 h-4 absolute right-3 top-3 animate-spin text-gray-400" />}
         {results.length > 0 && (
           <div className="absolute z-10 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-80 overflow-y-auto">
             {results.map(r => (
-              <button key={r.pipedrive_person_id} onClick={() => openClient(r)} className="w-full text-left px-4 py-2 hover:bg-blue-50 border-b last:border-b-0">
-                <div className="font-medium">{r.name}</div>
-                <div className="text-xs text-gray-500">{r.email || 'no email'} {r.phone ? `- ${r.phone}` : ''} {r.account_manager_name ? `- AM: ${r.account_manager_name}` : ''}</div>
+              <button key={r.pipedrive_deal_id} onClick={() => openClient({ pipedrive_person_id: r.pipedrive_person_id, name: r.person_name }, r.pipedrive_deal_id)} className="w-full text-left px-4 py-2 hover:bg-blue-50 border-b last:border-b-0">
+                <div className="font-medium">{r.title} <span className="text-xs text-gray-400">#{r.pipedrive_deal_id}</span></div>
+                <div className="text-xs text-gray-500">{r.person_name || 'no person'} {r.email ? `- ${r.email}` : ''} {r.phone ? `- ${r.phone}` : ''}</div>
                 <div className="text-xs mt-0.5 flex flex-wrap gap-1.5">
                   {opt('current_status', r.current_status) && <span className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{opt('current_status', r.current_status)}</span>}
-                  {r.latest_stage && <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{r.latest_stage}</span>}
-                  {r.latest_deal_status && <span className={`px-1.5 py-0.5 rounded ${r.latest_deal_status === 'won' ? 'bg-emerald-50 text-emerald-700' : r.latest_deal_status === 'lost' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'}`}>{r.latest_deal_status}</span>}
+                  {r.stage_name && <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{r.stage_name}</span>}
+                  {r.status && <span className={`px-1.5 py-0.5 rounded ${r.status === 'won' ? 'bg-emerald-50 text-emerald-700' : r.status === 'lost' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'}`}>{r.status}</span>}
                 </div>
               </button>
             ))}
