@@ -35,6 +35,12 @@ async function getState(k) {
 async function setState(k, v) {
   await fetch(`${SU}/rest/v1/crm_sync_state?on_conflict=key`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify([{ key: k, value: String(v), updated_at: new Date().toISOString() }]) });
 }
+async function advanceCursor(k, v) {
+  // Cursors only move FORWARD. The full backfill's final invocation (oldest pages)
+  // once stomped the bookmark back to 2018, freezing incremental progress.
+  const cur = await getState(k);
+  if (!cur || v > cur) await setState(k, v);
+}
 async function userMap() {
   const j = await pd('users?limit=500');
   const m = {}; for (const u of (j.data || [])) m[u.id] = u.name; return m;
@@ -87,7 +93,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         start = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await setState('persons_cursor', maxSeen);
+      if (maxSeen && (!more || hitCursor)) await advanceCursor('persons_cursor', maxSeen);
       out.persons = { synced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : start };
       if (mode === 'persons') return respond(200, out);
       start = parseInt(q.start) || 0;
@@ -129,7 +135,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         start = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await setState('deals_cursor', maxSeen);
+      if (maxSeen && (!more || hitCursor)) await advanceCursor('deals_cursor', maxSeen);
       out.deals = { synced, rounds: roundsSynced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : start };
     }
     if (mode === 'notes' || mode === 'all') {
@@ -155,7 +161,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         nStart = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await setState('notes_cursor', maxSeen);
+      if (maxSeen && (!more || hitCursor)) await advanceCursor('notes_cursor', maxSeen);
       out.notes = { synced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : nStart };
       if (mode === 'notes') return respond(200, out);
     }
@@ -183,7 +189,7 @@ exports.handler = async (event) => {
         more = !!(pag && pag.more_items_in_collection);
         aStart = (pag && pag.next_start) || 0;
       }
-      if (maxSeen && (!more || hitCursor)) await setState('activities_cursor', maxSeen);
+      if (maxSeen && (!more || hitCursor)) await advanceCursor('activities_cursor', maxSeen);
       out.activities = { synced, done: !more || hitCursor, next_start: (!more || hitCursor) ? null : aStart };
     }
     return respond(200, out);

@@ -50,12 +50,15 @@ exports.handler = async (event) => {
   const q = (event && event.queryStringParameters) || {};
   if (q.key !== process.env.PAYMENT_API_KEY) return { statusCode: 401, body: 'unauthorized' };
   const cutoff = norm(new Date(Date.now() - 24 * 3600 * 1000).toISOString());
-  const out = { ran_at: new Date().toISOString(), window_start: cutoff };
+  const out = { ran_at: new Date().toISOString(), window_start: cutoff, grace_window_min: 15 };
+  // Records PD touched in the last 15 min are in-flight (webhook/tick still landing) - not stale.
+  const graceCut = norm(new Date(Date.now() - 15 * 60 * 1000).toISOString());
+  const settled = (arr) => arr.filter(x => x.u <= graceCut);
   try {
-    out.persons = await mirrorCheck('crm_clients', 'pipedrive_person_id', await recentPd('persons', cutoff, 4));
-    out.deals = await mirrorCheck('crm_deals', 'pipedrive_deal_id', await recentPd('deals', cutoff, 4));
-    out.notes = await mirrorCheck('crm_notes', 'pipedrive_note_id', await recentPd('notes', cutoff, 3));
-    out.activities = await mirrorCheck('crm_activities', 'pipedrive_activity_id', await recentPd('activities', cutoff, 4, 'user_id=0'));
+    out.persons = await mirrorCheck('crm_clients', 'pipedrive_person_id', settled(await recentPd('persons', cutoff, 4)));
+    out.deals = await mirrorCheck('crm_deals', 'pipedrive_deal_id', settled(await recentPd('deals', cutoff, 4)));
+    out.notes = await mirrorCheck('crm_notes', 'pipedrive_note_id', settled(await recentPd('notes', cutoff, 3)));
+    out.activities = await mirrorCheck('crm_activities', 'pipedrive_activity_id', settled(await recentPd('activities', cutoff, 4, 'user_id=0')));
     out.ok = ['persons', 'deals', 'notes', 'activities'].every(k => out[k].missing_count === 0 && out[k].stale_count === 0);
     await fetch(`${SU}/rest/v1/crm_sync_state?on_conflict=key`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify([{ key: 'last_compare', value: JSON.stringify(out), updated_at: new Date().toISOString() }]) });
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out) };
