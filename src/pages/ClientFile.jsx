@@ -133,6 +133,7 @@ function ClientFile() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-2 mb-1"><User className="w-6 h-6 text-blue-600" /><h1 className="text-2xl font-bold">Clients</h1></div>
       <p className="text-sm text-gray-500 mb-4">Search the full client base - served from our own database. Read-only for now; edits still happen in Pipedrive.</p>
+      {!client && (
       <div className="relative mb-6">
         <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
         <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name, email, or phone..."
@@ -144,11 +145,23 @@ function ClientFile() {
               <button key={r.pipedrive_person_id} onClick={() => openClient(r)} className="w-full text-left px-4 py-2 hover:bg-blue-50 border-b last:border-b-0">
                 <div className="font-medium">{r.name}</div>
                 <div className="text-xs text-gray-500">{r.email || 'no email'} {r.phone ? `- ${r.phone}` : ''} {r.account_manager_name ? `- AM: ${r.account_manager_name}` : ''}</div>
+                <div className="text-xs mt-0.5 flex flex-wrap gap-1.5">
+                  {opt('current_status', r.current_status) && <span className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{opt('current_status', r.current_status)}</span>}
+                  {r.latest_stage && <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{r.latest_stage}</span>}
+                  {r.latest_deal_status && <span className={`px-1.5 py-0.5 rounded ${r.latest_deal_status === 'won' ? 'bg-emerald-50 text-emerald-700' : r.latest_deal_status === 'lost' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-700'}`}>{r.latest_deal_status}</span>}
+                </div>
               </button>
             ))}
           </div>
         )}
       </div>
+      )}
+      {client && !loading && (
+        <button onClick={() => { setClient(null); setQuery(''); setResults([]); }}
+          className="mb-4 inline-flex items-center gap-1.5 text-sm text-blue-600 font-medium hover:underline">
+          <Search className="w-4 h-4" /> New search
+        </button>
+      )}
       {loading && <div className="flex items-center gap-2 text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /> Loading client file...</div>}
       {client && !loading && (
         <div className="space-y-6">
