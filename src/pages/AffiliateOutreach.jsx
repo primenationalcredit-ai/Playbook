@@ -180,6 +180,7 @@ export default function AffiliateOutreach() {
   }, []);
   const [touches, setTouches] = useState({});
   const [callTasks, setCallTasks] = useState([]);
+  const [doneToday, setDoneToday] = useState(0);
   const [queuedCount, setQueuedCount] = useState(0);
   const [templates, setTemplates] = useState([]);
   const [callView, setCallView] = useState('open');
@@ -244,6 +245,10 @@ export default function AffiliateOutreach() {
     // backlog: queued tasks waiting for a free slot (max 20 active per consultant)
     const qd = await sbGet('affiliate_call_tasks?status=eq.queued&select=id,assigned_to&limit=1000');
     setQueuedCount(mine(Array.isArray(qd) ? qd : []).length);
+    // done-today counter (daily-batch queue: 20/weekday, done means done - Cindy's 8/10 ticket)
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const dn = await sbGet(`affiliate_call_tasks?status=not.in.(open,queued)&completed_at=gte.${dayStart.toISOString()}&select=id,assigned_to&limit=500`);
+    setDoneToday(mine(Array.isArray(dn) ? dn : []).length);
   }, [callView, isLeadership, currentUser]);
 
   useEffect(() => { loadSummary(); }, [loadSummary]);
@@ -708,9 +713,12 @@ export default function AffiliateOutreach() {
           <div className="flex gap-2 mb-4 items-center">
             <button onClick={() => setCallView('open')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${callView === 'open' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>Open</button>
             <button onClick={() => setCallView('done')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${callView === 'done' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>Completed</button>
+              {doneToday > 0 && (
+                <span className="text-xs text-green-700 bg-green-100 px-3 py-1.5 rounded-lg font-medium">{'\u2713'} {doneToday} done today{callView === 'open' && callTasks.length === 0 ? ' - finished for the day!' : ''}</span>
+              )}
             {queuedCount > 0 && (
-              <span className="ml-auto text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg" title="Waiting in the background. New tasks surface as you complete open ones (max 20 active).">
-                +{queuedCount} queued
+              <span className="ml-auto text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg" title="Waiting for upcoming days. Your next batch of 20 loads each weekday morning.">
+                +{queuedCount} waiting for upcoming days
               </span>
             )}
           </div>
