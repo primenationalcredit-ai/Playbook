@@ -578,13 +578,25 @@ exports.handler = async (event) => {
       // in full - the partial invoice on a partial plan, the final invoice on a
       // full plan. The rest of the balance being open does NOT block qualification.
       const paidTotals = nonDoc.filter(inv => (parseFloat(inv.balance) || 0) <= EPS).map(inv => parseFloat(inv.total) || 0).filter(t => t > 0);
-      const qualified = paidTotals.length > 0 || owed <= EPS;
+      let qualified = paidTotals.length > 0 || owed <= EPS;
+      // MONEY BEATS STALE PAPERWORK (Fernando Torres 266340, 8/10): the invoice
+      // mirror can lag Zoho (his $275 partial paid 8/7 but INV-052095 still showed
+      // balance 275 from 7/27). If the client's actual balance payments cover the
+      // smallest balance invoice, they qualify off the payments - same doctrine as
+      // the no-balance-invoice branch above.
+      let payTarget = paidTotals.length ? Math.min(...paidTotals) : 0;
+      if (!qualified) {
+        const invTotals = nonDoc.map(inv => parseFloat(inv.total) || 0).filter(t => t > 0);
+        const minInv = invTotals.length ? Math.min(...invTotals) : 0;
+        const balancePaid = (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0);
+        if (minInv > 0 && balancePaid >= minInv - EPS) { qualified = true; payTarget = minInv; }
+      }
       // MONTH (Joe 7/23): the doc counts in the month that invoice FINISHED. Walk
       // the client's balance payments in date order until they cover the first
       // completed invoice; the payment that crosses the line names the month.
       let month = null;
       if (qualified) {
-        const target = paidTotals.length ? Math.min(...paidTotals) : 0;
+        const target = payTarget;
         const pays = (client.payments || []).filter(p => p.payment_type !== 'doc_fee' && p.payment_date).sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
         let cum = 0;
         for (const p of pays) { cum += parseFloat(p.amount) || 0; if (cum >= target - EPS) { month = String(p.payment_date).slice(0, 7); break; } }
