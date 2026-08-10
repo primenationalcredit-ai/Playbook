@@ -125,3 +125,8 @@
 # offset to :02 so it never collides with the bonus warm on :00.
 [functions."crm-sync-tick"]
   schedule = "2,12,22,32,42,52 * * * *"
+
+# Daily mirror proof: verifies every PD record changed in the last 24h exists
+# fresh in crm_*. Verdict lands in crm_sync_state key last_compare. 7am CT.
+[functions."crm-compare-tick"]
+  schedule = "0 13 * * *"
