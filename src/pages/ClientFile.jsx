@@ -43,6 +43,7 @@ function ClientFile() {
       // Pipedrive-style fuzzy search via the crm_client_search RPC:
       // every word matches somewhere, or the name is similar (typo-tolerant), ranked.
       const { data, error } = await supabase.rpc('crm_client_search', { q });
+      console.log('CLIENT SEARCH:', q, '->', Array.isArray(data) ? data.length + ' results' : data, error ? ('ERROR: ' + JSON.stringify(error)) : 'no error');
       if (error) console.error('client search error:', error);
       setResults(data || []);
       setSearching(false);
