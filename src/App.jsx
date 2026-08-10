@@ -1,3 +1,4 @@
+import ClientFile from './pages/ClientFile';
 ﻿import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useApp } from './context/AppContext';
@@ -122,6 +123,7 @@ function App() {
       }>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="clients" element={<ClientFile />} />
         <Route path="playbook" element={<MyPlaybook />} />
         <Route path="team" element={<TeamView />} />
         <Route path="updates" element={<Updates />} />
