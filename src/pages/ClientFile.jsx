@@ -23,6 +23,10 @@ function ClientFile() {
   const [options, setOptions] = useState({});
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('notes');
+  const [taskDraft, setTaskDraft] = useState('');
+  const [taskDue, setTaskDue] = useState('');
+  const [postingTask, setPostingTask] = useState(false);
+  const [completingId, setCompletingId] = useState(null);
   const [statusEdit, setStatusEdit] = useState(false);
   const [statusDraft, setStatusDraft] = useState({});
   const [savingStatus, setSavingStatus] = useState(false);
@@ -74,7 +78,7 @@ function ClientFile() {
     const orFilter = ids.length ? `pipedrive_person_id.eq.${pid},pipedrive_deal_id.in.(${idCsv})` : `pipedrive_person_id.eq.${pid}`;
     const [{ data: ns }, { data: as }] = await Promise.all([
       supabase.from('crm_notes').select('pd_add_time,author,content,pinned').or(orFilter).order('pd_add_time', { ascending: false }).limit(30),
-      supabase.from('crm_activities').select('pd_add_time,subject,activity_type,done,due_date,owner_name,note').or(orFilter).order('pd_add_time', { ascending: false }).limit(40)
+      supabase.from('crm_activities').select('pipedrive_activity_id,pd_add_time,subject,activity_type,done,due_date,owner_name,note').or(orFilter).order('pd_add_time', { ascending: false }).limit(40)
     ]);
     setNotes(ns || []); setActivities(as || []);
     setLoading(false);
@@ -103,6 +107,40 @@ function ClientFile() {
       setStatusEdit(false); setStatusDraft({});
     } catch (e) { alert('Status update failed: ' + e.message); }
     setSavingStatus(false);
+  };
+
+    const authedPost = async (payload) => {
+    const { data: sess } = await supabase.auth.getSession();
+    const token = sess && sess.session && sess.session.access_token;
+    const res = await fetch('/.netlify/functions/crm-activity-write', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json();
+    if (!res.ok || !j.ok) throw new Error(j.error || `HTTP ${res.status}`);
+    return j;
+  };
+
+  const createTask = async () => {
+    const subject = taskDraft.trim();
+    if (!subject || postingTask || !client) return;
+    setPostingTask(true);
+    try {
+      const j = await authedPost({ action: 'create', subject, due_date: taskDue || null, person_id: client.pipedrive_person_id, deal_id: (deals[0] && deals[0].pipedrive_deal_id) || null });
+      setActivities([{ pipedrive_activity_id: j.activity_id, pd_add_time: new Date().toISOString(), subject, activity_type: 'task', done: false, due_date: taskDue || null, owner_name: j.author }, ...activities]);
+      setTaskDraft(''); setTaskDue('');
+    } catch (e) { alert('Task failed: ' + e.message); }
+    setPostingTask(false);
+  };
+
+  const completeActivity = async (a) => {
+    if (!a.pipedrive_activity_id || completingId) return;
+    setCompletingId(a.pipedrive_activity_id);
+    try {
+      await authedPost({ action: 'complete', activity_id: a.pipedrive_activity_id });
+      setActivities(activities.map(x => x.pipedrive_activity_id === a.pipedrive_activity_id ? { ...x, done: true } : x));
+    } catch (e) { alert('Complete failed: ' + e.message); }
+    setCompletingId(null);
   };
 
     const postNote = async () => {
@@ -290,11 +328,28 @@ function ClientFile() {
                 </div>
               ))}
               {tab === 'notes' && notes.length === 0 && <div className="text-sm text-gray-500">No notes on file.</div>}
+              {tab === 'activities' && (
+                <div className="flex gap-2 pb-1">
+                  <input value={taskDraft} onChange={e => setTaskDraft(e.target.value)} placeholder="Add a task - posts here and to Pipedrive..."
+                    className="flex-1 border rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="date" value={taskDue} onChange={e => setTaskDue(e.target.value)} className="border rounded-lg p-2 text-sm" />
+                  <button onClick={createTask} disabled={postingTask || !taskDraft.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">{postingTask ? 'Adding...' : 'Add'}</button>
+                </div>
+              )}
               {tab === 'activities' && activities.map((a, i) => (
                 <div key={i} className="border rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-medium">{a.subject || '(no subject)'}</div>
-                    <Badge color={a.done ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>{a.done ? 'done' : 'open'}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge color={a.done ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>{a.done ? 'done' : 'open'}</Badge>
+                      {!a.done && a.pipedrive_activity_id && (
+                        <button onClick={() => completeActivity(a)} disabled={completingId === a.pipedrive_activity_id}
+                          className="text-xs text-green-700 font-medium hover:underline disabled:opacity-50">
+                          {completingId === a.pipedrive_activity_id ? 'Saving...' : 'Mark done'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="text-xs text-gray-500 mt-1">{a.activity_type} - {fmtDT(a.pd_add_time)} {a.due_date && `- due ${fmtDate(a.due_date)}`} {a.owner_name && `- ${a.owner_name}`}</div>
                   {a.note && <div className="text-xs text-gray-600 mt-1">{stripHtml(a.note)}</div>}
