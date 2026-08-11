@@ -856,7 +856,12 @@ function AuthnetTicker() {
   if (!d) return null;
   if (d.error) return <div className="mb-4 px-4 py-3 rounded-lg text-sm font-semibold bg-amber-50 text-amber-700">Auth.net balance check unavailable: {d.error}</div>;
   const fmt = (n) => '$' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const base = `Auth.net today: ${fmt(d.authnet?.total)} (${d.authnet?.count}${d.authnet?.refunds ? `, ${d.authnet.refunds} refund${d.authnet.refunds > 1 ? 's' : ''}` : ''})  |  App: ${fmt(d.app?.total)} (${d.app?.count})`;
+  // Show the whole equation (Joe 8/10: "how is this balanced? I don't get it") -
+  // the check compares Auth.net against app charges PLUS Zoho pay-link charges,
+  // so the label must say so or the numbers look wrong at a glance.
+  const zoho = d.app?.zoho || {};
+  const ext = d.app?.external || {};
+  const base = `Auth.net today: ${fmt(d.authnet?.total)} (${d.authnet?.count}${d.authnet?.refunds ? `, ${d.authnet.refunds} refund${d.authnet.refunds > 1 ? 's' : ''}` : ''}) = App ${fmt(d.app?.total)} (${d.app?.count})${zoho.count ? ` + Zoho links ${fmt(zoho.total)} (${zoho.count})` : ''}${ext.count ? `  ·  Zelle/external: ${fmt(ext.total)} (${ext.count})` : ''}`;
   if (d.match) return <div className="mb-4 px-4 py-3 rounded-lg text-sm font-semibold bg-emerald-50 text-emerald-700">{'✅'} {base} {'—'} balanced</div>;
   return <div className="mb-4 px-4 py-3 rounded-lg text-sm font-semibold bg-rose-50 text-rose-700">{'⚠️'} {base} {'—'} {fmt(Math.abs(d.difference || 0))} {(d.difference || 0) > 0 ? 'processed at Auth.net that the system has not recorded' : 'recorded in the system but not seen at Auth.net'}{d.authnet?.errors?.length ? ` (${d.authnet.errors.join('; ')})` : ''}</div>;
 }
