@@ -36,17 +36,18 @@ exports.handler = async (event) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': AK, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 8000, system: BUILD_SYSTEM(creator, today), messages: [{ role: 'user', content: `THE APPROVED INTERVIEW:\n\n${convo}\n\nOutput ONLY the project JSON now.` }] })
+      body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 16000, system: BUILD_SYSTEM(creator, today), messages: [{ role: 'user', content: `THE APPROVED INTERVIEW:\n\n${convo}\n\nOutput ONLY the project JSON now.` }] })
     });
     if (!r.ok) { await saveStatus(nonce, { status: 'error', error: `anthropic ${r.status}: ${(await r.text()).slice(0, 200)}` }); return { statusCode: 200, body: 'err saved' }; }
     const data = await r.json();
+    if (data.stop_reason === 'max_tokens') { await saveStatus(nonce, { status: 'error', error: 'project JSON exceeded the token budget - approve again (it usually fits on retry) or simplify the project' }); return { statusCode: 200, body: 'err saved' }; }
     await saveStatus(nonce, { status: 'building', stage: 'parsing' });
     let text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
     text = text.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
     const first = text.indexOf('{'); const last = text.lastIndexOf('}');
     if (first === -1 || last === -1) { await saveStatus(nonce, { status: 'error', error: 'no JSON in model output' }); return { statusCode: 200, body: 'err saved' }; }
     let proj = null;
-    try { proj = JSON.parse(text.slice(first, last + 1)); } catch (e) { await saveStatus(nonce, { status: 'error', error: 'model JSON malformed - approve again to retry' }); return { statusCode: 200, body: 'err saved' }; }
+    try { proj = JSON.parse(text.slice(first, last + 1)); } catch (e) { await saveStatus(nonce, { status: 'error', error: 'model JSON malformed (stop: ' + (data.stop_reason || '?') + ', tail: ' + text.slice(-80).replace(/\s+/g, ' ') + ') - approve again to retry' }); return { statusCode: 200, body: 'err saved' }; }
     await saveStatus(nonce, { status: 'building', stage: 'inserting' });
     const row = {
       title: String(proj.title || 'Untitled project').slice(0, 200),
