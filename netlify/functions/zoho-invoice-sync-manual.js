@@ -42,6 +42,7 @@ exports.handler = async (event) => {
     if (params.due_end) url += `&due_date_end=${params.due_end}`;
     if (params.date_start) url += `&date_start=${params.date_start}`;
     if (params.date_end) url += `&date_end=${params.date_end}`;
+    if (params.search) url += `&search_text=${encodeURIComponent(params.search)}`;
 
     const data = await zohoGet(token, url);
     const invoices = data.invoices || [];
