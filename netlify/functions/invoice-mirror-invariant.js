@@ -66,9 +66,18 @@ exports.handler = async (event) => {
     const limit = Math.min(parseInt(params.limit) || 8, 25);
     const dry = params.dry === '1';
     const orphans = await collectOrphans(days);
+    // SKIP LIST: deals a prior repair attempt could not fix (no Zoho invoice under
+    // that name - usually pre-Zoho-era clients). They stay counted + reported but
+    // stop clogging the repair queue; clear the app_cache row to retry them all.
+    let skip = {};
+    try {
+      const sk = await supaGet(`app_cache?cache_key=eq.invoice_mirror_skip&select=cache_value`);
+      if (Array.isArray(sk) && sk[0]) skip = JSON.parse(sk[0].cache_value) || {};
+    } catch (e) {}
+    const repairable = orphans.filter(o => !skip[o.dealId]);
     let repaired = [], failed = [];
-    if (!dry && orphans.length) {
-      for (const o of orphans.slice(0, limit)) {
+    if (!dry && repairable.length) {
+      for (const o of repairable.slice(0, limit)) {
         try {
           const r = await fetch(`${SITE}/.netlify/functions/zoho-invoice-sync-manual?search=${encodeURIComponent(o.client || '')}`);
           const j = await r.json().catch(() => ({}));
@@ -81,9 +90,26 @@ exports.handler = async (event) => {
     if (repaired.length) {
       const after = await collectOrphans(days);
       const stillBad = new Set(after.map(o => o.dealId));
-      verified = repaired.map(r => ({ dealId: r.dealId, client: r.client, fixed: !stillBad.has(r.dealId) }));
+      verified = [];
+      for (const r of repaired) {
+        const fixed = !stillBad.has(r.dealId);
+        let otherDeals = [];
+        if (!fixed && r.client) {
+          // Did the search bring in invoices for this NAME under a different deal id?
+          // (returning-client trap: payments point at one deal, Zoho invoiced another)
+          try {
+            const rows = await supaGet(`consultant_invoices?customer_name=ilike.${encodeURIComponent('*' + r.client.trim().split(/\s+/).join('*') + '*')}&select=pipedrive_deal_id,invoice_number,total,balance,invoice_date&limit=10`);
+            otherDeals = (rows || []).filter(x => String(x.pipedrive_deal_id) !== String(r.dealId));
+          } catch (e) {}
+          skip[r.dealId] = { client: r.client, reason: otherDeals.length ? 'invoices exist under other deal id(s) - needs repoint ruling' : 'no Zoho invoice found by name - likely pre-Zoho era', other_deal_ids: [...new Set(otherDeals.map(x => String(x.pipedrive_deal_id)))], skipped_at: new Date().toISOString() };
+        }
+        verified.push({ dealId: r.dealId, client: r.client, fixed, ...(otherDeals.length && !fixed ? { invoices_under_other_deals: otherDeals.slice(0, 5) } : {}) });
+      }
+      await fetch(`${SU}/rest/v1/app_cache`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ cache_key: 'invoice_mirror_skip', cache_value: JSON.stringify(skip), updated_at: new Date().toISOString() }) }).catch(() => {});
     }
-    const summary = { ran_at: new Date().toISOString(), days, dry, orphans_found: orphans.length, orphans: orphans.slice(0, 40), repaired_this_run: repaired.length, verified, failed, remaining_estimate: Math.max(0, orphans.length - repaired.length) };
+    const skippedCount = Object.keys(skip).length;
+    const summary = { ran_at: new Date().toISOString(), days, dry, orphans_found: orphans.length, skipped_known_unfixable: skippedCount, repair_queue: Math.max(0, repairable.length - repaired.length), orphans: orphans.slice(0, 40), attempted_this_run: repaired.length, verified, failed };
     await fetch(`${SU}/rest/v1/app_cache`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ cache_key: 'invoice_mirror_invariant_last', cache_value: JSON.stringify(summary), updated_at: new Date().toISOString() }) }).catch(() => {});
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(summary) };
