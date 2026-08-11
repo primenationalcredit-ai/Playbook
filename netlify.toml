@@ -135,3 +135,6 @@
 # from PD, compared field-by-field, mismatches self-heal (PD is master). 7:30am CT.
 [functions."crm-deep-verify-tick"]
   schedule = "30 13 * * *"
+
+[functions."invoice-mirror-invariant"]
+  schedule = "30 4 * * *"
