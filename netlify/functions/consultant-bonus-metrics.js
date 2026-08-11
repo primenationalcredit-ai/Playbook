@@ -232,6 +232,12 @@ exports.handler = async (event) => {
       awardedBonuses = await supaGet('bonus_awards', `select=*`);
     } catch(e) {}
     const awardedOrgs = new Set(awardedBonuses.map(a => `${a.bonus_type}:${a.org_name}`));
+    // RECOMPUTE-SAFETY (DaShanaye ticket 8/11): an award stamped FOR the target month
+    // must not block that month's own recompute - otherwise the first compute pays the
+    // one-time bonus, stamps it, and every recompute of that same month erases it
+    // (widget then shows "already earned" + $0). Awards from OTHER months still block.
+    const awardedOrgMonths = {};
+    for (const a of awardedBonuses) { awardedOrgMonths[`${a.bonus_type}:${a.org_name}`] = String(a.awarded_month || ''); }
 
     // Get refunds for refund rate
     let refunds = [];
@@ -839,7 +845,7 @@ exports.handler = async (event) => {
           
           if (daysDiff >= 90) {
             // Check if already awarded
-            if (!awardedOrgs.has(`reactivation_kicker:${orgName}`)) {
+            if (!awardedOrgs.has(`reactivation_kicker:${orgName}`) || awardedOrgMonths[`reactivation_kicker:${orgName}`] === String(targetMonth)) {
               reactivationCount++;
               reactivatedOrgs.push({ name: orgName, lastActive: priorPayments[0].date, reactivatedOn: thisMonthPayments[0].date, daysDormant: daysDiff });
             }
@@ -882,7 +888,7 @@ exports.handler = async (event) => {
           if (count >= 1) {
             const qualifies = qualifiedCount >= 3;
             newAffiliateAllOrgs.push({ name: orgName, clients: count, qualifiedClients: qualifiedCount, daysSinceCreated, firstDate: allOrgPayments[0].date, qualifies });
-            if (qualifies && !awardedOrgs.has(`new_affiliate_launch:${orgName}`)) {
+            if (qualifies && (!awardedOrgs.has(`new_affiliate_launch:${orgName}`) || awardedOrgMonths[`new_affiliate_launch:${orgName}`] === String(targetMonth))) {
               newAffiliateLaunchCount++;
               newAffiliateOrgs.push({ name: orgName, firstDate: allOrgPayments[0].date, orgCreated: addTime, clients: count, daysSinceCreated });
             }
@@ -1012,7 +1018,7 @@ exports.handler = async (event) => {
           name: o.name, daysSinceCreated: o.daysSinceCreated, qualifies: o.qualifies,
           paidClients: o.clients,
           qualifiedClients: o.qualifiedClients || 0,
-          alreadyAwarded: awardedOrgs.has(`new_affiliate_launch:${o.name}`),
+          alreadyAwarded: awardedOrgs.has(`new_affiliate_launch:${o.name}`) && awardedOrgMonths[`new_affiliate_launch:${o.name}`] !== String(targetMonth),
           clients
         };
       }).sort((a, b) => (b.qualifiedClients - a.qualifiedClients) || (b.clients.length - a.clients.length));
@@ -1067,7 +1073,7 @@ exports.handler = async (event) => {
           lastAmount: lastPriorPay.amount || null,
           reactivatedOn: kind === 'reactivated' ? thisMonthPays[0].date : null,
           revivedBy: kind === 'reactivated' ? (thisMonthPays[0].client || null) : null,
-          alreadyAwarded: awardedOrgs.has(`reactivation_kicker:${orgName}`),
+          alreadyAwarded: awardedOrgs.has(`reactivation_kicker:${orgName}`) && awardedOrgMonths[`reactivation_kicker:${orgName}`] !== String(targetMonth),
           clients: rosterClients
         });
       }
