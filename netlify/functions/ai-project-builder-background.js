@@ -1,11 +1,9 @@
-﻿// ai-project-builder-background.js - the heavy half of the AI Project Manager.
-// Netlify background function (15-min limit): takes the approved interview
-// transcript, has the AI emit the full project JSON, creates the card, and
-// writes the outcome to app_cache aipm_{nonce} for the panel's status poll.
+﻿// ai-project-builder-background.js v2 - auth = the nonce (planner-created cache row
+// is the ticket; no shared key to mismatch, which silently killed run #1) and a
+// HEARTBEAT at every stage so a stall is visible in the aipm_ status key.
 const SU = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SK = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const AK = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY;
-const BKEY = process.env.PAYMENT_API_KEY || process.env.PIPEDRIVE_API_KEY || '';
 const H = { apikey: SK, Authorization: `Bearer ${SK}`, 'Content-Type': 'application/json' };
 const IN_PROGRESS = '6cd85490-88b9-4f05-abba-009b9548398b';
 const NOT_STARTED = '1653dbef-ccdc-4b2e-91ea-d485f7ec4663';
@@ -26,24 +24,30 @@ exports.handler = async (event) => {
   try {
     const body = JSON.parse(event.body || '{}');
     nonce = body.nonce;
-    if (!BKEY || body.key !== BKEY) return { statusCode: 401, body: 'unauthorized' };
     if (!nonce || !Array.isArray(body.transcript)) return { statusCode: 400, body: 'bad request' };
+    // AUTH: the nonce row must already exist (only the session-authed planner writes it)
+    const gate = await fetch(`${SU}/rest/v1/app_cache?cache_key=eq.${encodeURIComponent('aipm_' + nonce)}&select=cache_key`, { headers: H }).then(r => r.json()).catch(() => []);
+    if (!Array.isArray(gate) || !gate[0]) return { statusCode: 401, body: 'unknown nonce' };
+    await saveStatus(nonce, { status: 'building', stage: 'started' });
     const creator = body.creator || 'Leadership';
     const today = new Date().toISOString().slice(0, 10);
     const convo = body.transcript.map(m => `${m.role === 'user' ? creator : 'AI PM'}: ${m.content}`).join('\n\n');
+    await saveStatus(nonce, { status: 'building', stage: 'generating' });
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': AK, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 8000, system: BUILD_SYSTEM(creator, today), messages: [{ role: 'user', content: `THE APPROVED INTERVIEW:\n\n${convo}\n\nOutput ONLY the project JSON now.` }] })
     });
-    if (!r.ok) { await saveStatus(nonce, { status: 'error', error: `anthropic ${r.status}` }); return { statusCode: 200, body: 'err saved' }; }
+    if (!r.ok) { await saveStatus(nonce, { status: 'error', error: `anthropic ${r.status}: ${(await r.text()).slice(0, 200)}` }); return { statusCode: 200, body: 'err saved' }; }
     const data = await r.json();
+    await saveStatus(nonce, { status: 'building', stage: 'parsing' });
     let text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
     text = text.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
     const first = text.indexOf('{'); const last = text.lastIndexOf('}');
     if (first === -1 || last === -1) { await saveStatus(nonce, { status: 'error', error: 'no JSON in model output' }); return { statusCode: 200, body: 'err saved' }; }
     let proj = null;
-    try { proj = JSON.parse(text.slice(first, last + 1)); } catch (e) { await saveStatus(nonce, { status: 'error', error: 'model JSON malformed - try approving again' }); return { statusCode: 200, body: 'err saved' }; }
+    try { proj = JSON.parse(text.slice(first, last + 1)); } catch (e) { await saveStatus(nonce, { status: 'error', error: 'model JSON malformed - approve again to retry' }); return { statusCode: 200, body: 'err saved' }; }
+    await saveStatus(nonce, { status: 'building', stage: 'inserting' });
     const row = {
       title: String(proj.title || 'Untitled project').slice(0, 200),
       objective: proj.objective || null,

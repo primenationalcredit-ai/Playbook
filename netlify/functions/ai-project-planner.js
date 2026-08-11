@@ -64,11 +64,21 @@ exports.handler = async (event) => {
       const nonce = Math.random().toString(36).slice(2, 12);
       await fetch(`${SU}/rest/v1/app_cache`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify({ cache_key: 'aipm_' + nonce, cache_value: JSON.stringify({ status: 'building' }), updated_at: new Date().toISOString() }) });
-      // hand off to the background builder (15-min limit); invocation returns 202 fast
-      await fetch(`${SITE}/.netlify/functions/ai-project-builder-background`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: BKEY, nonce, creator, transcript: [...messages, { role: 'assistant', content: reply }] })
-      }).catch(e => console.error('builder invoke failed:', e.message));
+      // hand off to the background builder (15-min limit). Auth = the nonce row
+      // itself (only this session-authed function creates it). Record the invoke
+      // status so a failed handoff is visible instead of silently stuck.
+      let invokeStatus = 0;
+      try {
+        const ir = await fetch(`${SITE}/.netlify/functions/ai-project-builder-background`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nonce, creator, transcript: [...messages, { role: 'assistant', content: reply }] })
+        });
+        invokeStatus = ir.status;
+      } catch (e) { console.error('builder invoke failed:', e.message); }
+      if (invokeStatus >= 300 || invokeStatus === 0) {
+        await fetch(`${SU}/rest/v1/app_cache`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({ cache_key: 'aipm_' + nonce, cache_value: JSON.stringify({ status: 'error', error: `builder handoff failed (http ${invokeStatus}) - approve again to retry` }), updated_at: new Date().toISOString() }) });
+      }
       return respond(200, { reply: reply || 'Building your project now - this takes about a minute.', creating: true, nonce });
     }
     return respond(200, { reply });
