@@ -497,7 +497,7 @@ function LeadershipProjects() {
       )}
 
       {openProjectId && (() => { const pc = cards.find(c => c.id === openProjectId); return pc ? (
-        <ProjectDetail card={pc} stages={stages} leaders={leaders} currentUser={currentUser}
+        <ProjectDetail key={pc.updated_at || pc.id} card={pc} stages={stages} leaders={leaders} currentUser={currentUser} onReload={() => loadData()}
           onClose={() => setOpenProjectId(null)}
           onDelete={() => { deleteCard(pc.id); setOpenProjectId(null); }}
           onSaveSteps={async (steps) => {
@@ -681,12 +681,71 @@ function AIPlannerPanel({ onClose, onCreated }) {
   );
 }
 
-function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, onSaveSteps, onSaveMeta }) {
+// PHASE B - per-project AI assistant (Joe 8/11): the same brain pointed at an
+// existing card. "Push testing out two days" / "add a task for X" / "mark layout
+// done" - it edits the card server-side and the page reloads with the changes.
+function ProjectAIPanel({ card, onClose, onChanged }) {
+  const [msgs, setMsgs] = useState([{ role: 'assistant', local: true, content: `I'm managing "${card.title}" with you. Ask me anything about it, or tell me what to change - dates, tasks, subtasks, phases, updates - and I'll do it.` }]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const endRef = React.useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, busy]);
+  const send = async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    const next = [...msgs, { role: 'user', content: text }];
+    setMsgs(next); setInput(''); setBusy(true);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      const res = await fetch('/.netlify/functions/ai-project-assistant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ card_id: card.id, messages: next.filter(m => !m.local).map(m => ({ role: m.role, content: m.content })) })
+      });
+      const j = await res.json();
+      if (!res.ok) setMsgs(p => [...p, { role: 'assistant', content: `Error: ${j.error || res.status}` }]);
+      else {
+        setMsgs(p => [...p, { role: 'assistant', content: (j.reply || '(no reply)') + (j.applied ? `\n\n(${j.applied} change${j.applied === 1 ? '' : 's'} applied - refreshing the page data now)` : '') }]);
+        if (j.applied) setTimeout(() => onChanged(), 800);
+      }
+    } catch (e) { setMsgs(p => [...p, { role: 'assistant', content: `Error: ${e.message}` }]); }
+    setBusy(false);
+  };
+  return (
+    <div className="fixed right-6 bottom-6 z-50 w-[26rem] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden" style={{ height: '32rem' }}>
+      <div className="px-4 py-3 flex items-center justify-between bg-gradient-to-r from-violet-600 to-asap-blue text-white">
+        <div className="font-bold text-sm">{'\u2728'} AI Project Manager</div>
+        <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-4 h-4" /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
+        {msgs.map((m, i) => (
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[90%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-asap-blue text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>{m.content}</div>
+          </div>
+        ))}
+        {busy && <div className="flex justify-start"><div className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-400">working{'\u2026'}</div></div>}
+        <div ref={endRef} />
+      </div>
+      <div className="p-2.5 border-t border-slate-200 flex gap-2 bg-white">
+        <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder="Ask or instruct... (Enter to send)"
+          className="flex-1 border border-slate-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-asap-blue resize-none" />
+        <button onClick={send} disabled={busy} className="px-4 bg-asap-blue text-white rounded-xl text-sm font-medium hover:bg-asap-blue-dark disabled:opacity-50">Send</button>
+      </div>
+    </div>
+  );
+}
+
+function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, onSaveSteps, onSaveMeta, onReload }) {
   const [steps, setSteps] = useState(Array.isArray(card.steps) ? card.steps : []);
   const [meta, setMeta] = useState({ title: card.title || '', objective: card.objective || '', notes: card.notes || '',
     dependencies: card.dependencies || '', risks: card.risks || '', owner_name: card.owner_name || '',
     priority: card.priority || 'medium', stage_id: card.stage_id, target_start_date: card.target_start_date || '', due_date: card.due_date || '' });
   const [updates, setUpdates] = useState(Array.isArray(card.updates) ? card.updates : []);
+  const [aiPanel, setAiPanel] = useState(false); // PHASE B assistant
+  const phase = card.phase || 'PREPLAN';
+  const PHASES = ['PREPLAN','LAYOUT','BUILD','TESTING','SOP','LAUNCH','TRAINING','TRACKING'];
   const [links, setLinks] = useState(Array.isArray(card.links) ? card.links : []);
   const [newUpdate, setNewUpdate] = useState('');
   const [newLink, setNewLink] = useState({ label: '', url: '' });
@@ -733,7 +792,10 @@ function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, 
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex items-center justify-between mb-4">
           <button onClick={onClose} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-medium"><X className="w-5 h-5" /> Back to board</button>
-          <button onClick={onDelete} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 text-sm font-medium text-rose-600"><Trash2 className="w-4 h-4" /> Delete project</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setAiPanel(true)} className="flex items-center gap-2 px-4 py-1.5 bg-gradient-to-r from-violet-600 to-asap-blue text-white rounded-lg hover:opacity-90 text-sm font-medium">{'\u2728'} AI Project Manager</button>
+            <button onClick={onDelete} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 text-sm font-medium text-rose-600"><Trash2 className="w-4 h-4" /> Delete project</button>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-4">
@@ -759,6 +821,23 @@ function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, 
           <div className="w-full bg-slate-100 rounded-full h-2.5 mb-4">
             <div className="bg-asap-blue h-2.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
           </div>
+          <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1">
+            {PHASES.map((ph, i) => {
+              const cur = PHASES.indexOf(phase);
+              const state = i < cur ? 'past' : i === cur ? 'current' : 'future';
+              return (
+                <React.Fragment key={ph}>
+                  {i > 0 && <div className={`h-0.5 w-3 shrink-0 ${state === 'future' ? 'bg-slate-200' : 'bg-asap-blue'}`} />}
+                  <button onClick={() => onSaveMeta({ phase: ph })}
+                    title={state === 'current' ? 'Current phase' : `Set phase to ${ph}`}
+                    className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all ${state === 'current' ? 'bg-asap-blue text-white shadow' : state === 'past' ? 'bg-blue-50 text-asap-blue' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
+                    {state === 'past' ? '\u2713 ' : ''}{ph}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+          {aiPanel && <ProjectAIPanel card={card} onClose={() => setAiPanel(false)} onChanged={() => { setAiPanel(false); onReload(); }} />}
           <div className="text-xs font-bold text-slate-400 uppercase mb-1">Objective</div>
           <textarea value={meta.objective} onChange={(e) => setM('objective', e.target.value)} onBlur={() => commit('objective')} rows={2}
             placeholder="What does done look like?" className="w-full text-slate-700 bg-transparent border border-transparent hover:border-slate-200 focus:border-asap-blue rounded-lg p-2 focus:outline-none resize-none mb-3" />
