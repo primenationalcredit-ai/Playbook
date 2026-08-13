@@ -811,3 +811,13 @@ Part I Section 4 still governs. Added since:
   confirm override, which is truthy, so every click sent `confirm:true` and the phase gate never
   fired. Button passes `false` explicitly and the check is now `=== true` so no caller can bypass
   it by accident. General lesson: never wire a handler with optional args directly to onClick.
+- **TRAINING BUILDER - SOP to course (8/13):** `ai-training-from-sop.js` (leadership door, warns if
+  the project has no approved SOP) + `ai-training-background.js` (BKEY-gated). Reads the NEWEST
+  approved SOP on the card and generates 2-4 modules, 2-4 lessons each, and one scenario quiz
+  (6-10 questions, plausible-mistake distractors, 80% pass), then inserts the whole tree.
+  SCHEMA IS EXACT, read from AdminTrainingCourse.jsx: `training_courses` / `training_modules` /
+  `training_lessons` / `training_quizzes` / `training_quiz_questions`. **`correct_answer` is the
+  OPTION INDEX**, not the answer text - `TrainingCourse.jsx` compares `quizAnswers[i] === correct_answer`,
+  so writing the text there would silently mark every answer wrong. Index is clamped in range.
+  Course is created `is_published: false` on purpose - leadership reviews and publishes, and
+  publishing is what assigns it. "Generate Training" sits next to "Generate SOP" in the AI PM panel.
