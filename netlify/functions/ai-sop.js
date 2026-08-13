@@ -51,7 +51,7 @@ exports.handler = async (event) => {
       const links = Array.isArray(rows[0].links) ? rows[0].links : [];
       const updates = Array.isArray(rows[0].updates) ? rows[0].updates : [];
       const version = links.filter(l => l && l.sop).length + 1;
-      links.push({ name: `SOP v${version}`, url: '', sop: true, content: String(body.content).slice(0, 60000), approved_by: who.name, at: new Date().toISOString() });
+      links.push({ label: `SOP v${version}`, name: `SOP v${version}`, url: '', sop: true, content: String(body.content).slice(0, 60000), approved_by: who.name, at: new Date().toISOString() });
       updates.unshift({ text: `SOP v${version} approved by ${who.name} and attached to this project.`, by: 'AI Project Manager', at: new Date().toISOString() });
       const up = await fetch(`${SU}/rest/v1/project_cards?id=eq.${encodeURIComponent(body.card_id)}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
         body: JSON.stringify({ links, updates, updated_at: new Date().toISOString() }) });

@@ -946,7 +946,14 @@ function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, 
               {links.map((l, i) => (
                 <div key={i} className="group flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2 text-sm">
                   <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                  <a href={l.url} target="_blank" rel="noreferrer" className="flex-1 text-asap-blue hover:underline truncate">{l.label}</a>
+                  {l.sop ? (
+                    <details className="flex-1 min-w-0">
+                      <summary className="cursor-pointer text-asap-blue hover:underline truncate list-none">{l.label || l.name}{l.approved_by ? ' - approved by ' + l.approved_by : ''}</summary>
+                      <pre className="mt-2 max-h-96 overflow-y-auto whitespace-pre-wrap text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3">{l.content}</pre>
+                    </details>
+                  ) : (
+                    <a href={l.url} target="_blank" rel="noreferrer" className="flex-1 text-asap-blue hover:underline truncate">{l.label}</a>
+                  )}
                   <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500">{'\u2715'}</button>
                 </div>
               ))}
