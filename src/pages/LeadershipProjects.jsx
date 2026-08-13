@@ -692,12 +692,17 @@ function ProjectAIPanel({ card, onClose, onChanged }) {
   const [sopDraft, setSopDraft] = useState(null);
   const [sopConfirm, setSopConfirm] = useState(null);
   const genSOP = async (sopConfirmOverride) => {
+    // GATE FIX (Joe 8/13): onClick={genSOP} handed React's click event in as the
+    // override, which is truthy, so every click sent confirm:true and the phase
+    // gate never fired. Button now passes false explicitly; this stays strict so
+    // no future caller can bypass the gate by accident.
+    const confirmed = sopConfirmOverride === true;
     if (sopBusy) return; setSopBusy(true);
     setMsgs(p => [...p, { role: 'assistant', local: true, content: 'Drafting the SOP from this project card - 30 to 60 seconds...' }]);
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess && sess.session && sess.session.access_token;
-      const st = await fetch('/.netlify/functions/ai-sop', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ action: 'start', card_id: card.id, confirm: !!sopConfirmOverride }) });
+      const st = await fetch('/.netlify/functions/ai-sop', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ action: 'start', card_id: card.id, confirm: confirmed }) });
       const sj = await st.json();
       // PHASE GATE (Joe 8/13): early-lifecycle cards get one honest warning first.
       if (sj.warn) { setSopConfirm(sj.warn); setSopBusy(false); return; }
@@ -753,7 +758,7 @@ function ProjectAIPanel({ card, onClose, onChanged }) {
     <div className="fixed right-6 bottom-6 z-50 w-[26rem] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden" style={{ height: '32rem' }}>
       <div className="px-4 py-3 flex items-center justify-between bg-gradient-to-r from-violet-600 to-asap-blue text-white">
         <div className="font-bold text-sm">{'\u2728'} AI Project Manager</div>
-        <button onClick={genSOP} disabled={sopBusy} className="ml-auto mr-2 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold disabled:opacity-50">{sopBusy ? 'Drafting...' : 'Generate SOP'}</button>
+        <button onClick={() => genSOP(false)} disabled={sopBusy} className="ml-auto mr-2 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold disabled:opacity-50">{sopBusy ? 'Drafting...' : 'Generate SOP'}</button>
         {sopConfirm && (
           <div className="fixed inset-0 z-[75] bg-black/40 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">

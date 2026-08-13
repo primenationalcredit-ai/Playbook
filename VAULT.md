@@ -807,3 +807,7 @@ Part I Section 4 still governs. Added since:
   the existing training UI and the Phase D lockout with no new machinery. Guards: published only,
   never when an open assignment exists, leadership/admin skipped. DEVIATION: the refresher is the
   full course, not the 3-question short form in the original spec - that needs a quiz-subset feature.
+- **SOP gate bypass fixed (8/13):** `onClick={genSOP}` passed React's synthetic click event as the
+  confirm override, which is truthy, so every click sent `confirm:true` and the phase gate never
+  fired. Button passes `false` explicitly and the check is now `=== true` so no caller can bypass
+  it by accident. General lesson: never wire a handler with optional args directly to onClick.
