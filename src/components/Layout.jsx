@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import FloatingTools from './FloatingTools';
@@ -44,10 +44,16 @@ import {
   FileText,
 } from 'lucide-react';
 import CoverageAlerts from './CoverageAlerts';
+import { useTrainingLock, TrainingLockScreen } from './TrainingLockGate';
 
 function Layout() {
   const { currentUser, logout, getCompletionStats, notifications, isViewingAs, realUser, stopViewingAs } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
+  // PHASE D (Joe 8/13): overdue training locks every page except /training.
+  // Leadership exempt; fails open. See TrainingLockGate.jsx.
+  const { locked: trainingLocked, overdue: overdueTraining } = useTrainingLock(currentUser);
+  const onTrainingPage = (location.pathname || '').startsWith('/training');
   // --- Sidebar customization (saved in this browser) ---
   const NAVPREF_KEY = 'navPrefs:v1';
   const [navPrefs, setNavPrefs] = useState(() => { try { return JSON.parse(localStorage.getItem(NAVPREF_KEY)) || { hidden: [], order: {} }; } catch { return { hidden: [], order: {} }; } });
@@ -703,7 +709,9 @@ function Layout() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
-        <Outlet />
+        {trainingLocked && !onTrainingPage
+          ? <TrainingLockScreen overdue={overdueTraining} onGo={() => navigate('/training')} />
+          : <Outlet />}
       </main>
 
       {/* Floating Tools (Notepad, Quick Reference, Feature Request) */}

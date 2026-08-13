@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { 
   GraduationCap, Plus, Edit, Trash2, Users, Clock, 
   CheckCircle, XCircle, Eye, Rocket, BookOpen, Sparkles,
+  ShieldCheck,
   Upload, FileText, Loader, X, Layers, AlertTriangle
 } from 'lucide-react';
 import { extractTextFromPDF, isPDFFile, extractPDFInChunks } from '../utils/pdfUtils';
@@ -17,6 +18,36 @@ function AdminTraining() {
   const [showModal, setShowModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
   const [courseStats, setCourseStats] = useState({});
+  // PHASE D (Joe 8/13): per-course compliance + the leadership override the lock
+  // gate requires. Writes only existing columns, so no migration.
+  const [compCourse, setCompCourse] = useState(null);
+  const [compRows, setCompRows] = useState([]);
+  const [compBusy, setCompBusy] = useState(false);
+  const openCompliance = async (course) => {
+    setCompCourse(course); setCompBusy(true); setCompRows([]);
+    const rows = await supabaseFetch('training_assignments', `select=*&course_id=eq.${course.id}`);
+    const byId = {}; (users || []).forEach(u => { byId[u.id] = u; });
+    const now = Date.now();
+    setCompRows((rows || []).map(r => {
+      const u = byId[r.user_id] || {};
+      return { id: r.id, name: u.name || 'Unknown user', dept: u.department || '',
+        due: r.due_date, done: r.completed_at,
+        late: !r.completed_at && r.due_date && new Date(r.due_date).getTime() < now,
+        exempt: u.department === 'leadership' || u.role === 'admin' };
+    }).sort((x, y) => (y.late ? 1 : 0) - (x.late ? 1 : 0) || String(x.name).localeCompare(String(y.name))));
+    setCompBusy(false);
+  };
+  const extendDue = async (row, days) => {
+    const next = new Date(Math.max(row.due ? new Date(row.due).getTime() : Date.now(), Date.now()));
+    next.setDate(next.getDate() + days);
+    await supabasePatch('training_assignments', row.id, { due_date: next.toISOString() });
+    setCompRows(p => p.map(r => r.id === row.id ? { ...r, due: next.toISOString(), late: false } : r));
+  };
+  const clearAssignment = async (row) => {
+    const at = new Date().toISOString();
+    await supabasePatch('training_assignments', row.id, { completed_at: at });
+    setCompRows(p => p.map(r => r.id === row.id ? { ...r, done: at, late: false } : r));
+  };
   
   // AI Generation states
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -738,6 +769,13 @@ function AdminTraining() {
                 
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => openCompliance(course)}
+                    className="p-2 text-slate-400 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition-colors"
+                    title="Who is overdue / override"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => navigate(`/admin/training/${course.id}`)}
                     className="p-2 text-slate-400 hover:text-asap-blue hover:bg-slate-100 rounded-lg transition-colors"
                     title="Edit Content"
@@ -1065,6 +1103,52 @@ function AdminTraining() {
           onAllComplete={onTrainingChunksComplete}
           onClose={() => setShowChunkedTraining(false)}
         />
+      )}
+      {/* PHASE D compliance + override */}
+      {compCourse && (
+        <div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col" style={{ maxHeight: '85vh' }}>
+            <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <div className="font-bold text-slate-800">Training compliance</div>
+                <div className="text-xs text-slate-500">{compCourse.title}</div>
+              </div>
+              <button onClick={() => setCompCourse(null)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {compBusy && <div className="text-sm text-slate-400 p-4">Loading...</div>}
+              {!compBusy && compRows.length === 0 && <div className="text-sm text-slate-400 p-4">Nobody is assigned to this course yet.</div>}
+              {!compBusy && compRows.length > 0 && (
+                <table className="w-full text-sm">
+                  <thead><tr className="text-xs text-slate-400 uppercase text-left"><th className="py-2">Employee</th><th>Due</th><th>Status</th><th className="text-right">Override</th></tr></thead>
+                  <tbody>
+                    {compRows.map(r => (
+                      <tr key={r.id} className="border-t border-slate-100">
+                        <td className="py-2">
+                          <div className="font-medium text-slate-700">{r.name}</div>
+                          <div className="text-xs text-slate-400">{r.dept}{r.exempt ? ' - never locked' : ''}</div>
+                        </td>
+                        <td className="text-slate-600 text-xs">{r.due ? new Date(r.due).toLocaleDateString() : 'no due date'}</td>
+                        <td>{r.done
+                          ? <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Complete</span>
+                          : r.late
+                            ? <span className="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-700">{r.exempt ? 'Overdue' : 'Overdue - locked out'}</span>
+                            : <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">On track</span>}</td>
+                        <td className="text-right whitespace-nowrap">
+                          {!r.done && (<>
+                            <button onClick={() => extendDue(r, 7)} className="px-2 py-1 text-xs rounded-lg border border-slate-200 hover:bg-slate-50 mr-1">+7 days</button>
+                            <button onClick={() => clearAssignment(r)} className="px-2 py-1 text-xs rounded-lg border border-slate-200 text-emerald-700 hover:bg-emerald-50">Clear</button>
+                          </>)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 text-xs text-slate-500">Extending pushes the deadline and unlocks them until then. Clearing marks it complete for that person - only when they have genuinely done it or are exempt.</div>
+          </div>
+        </div>
       )}
     </div>
   );
