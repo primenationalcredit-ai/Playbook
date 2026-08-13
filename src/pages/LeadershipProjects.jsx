@@ -686,6 +686,40 @@ function AIPlannerPanel({ onClose, onCreated }) {
 // done" - it edits the card server-side and the page reloads with the changes.
 function ProjectAIPanel({ card, onClose, onChanged }) {
   const [msgs, setMsgs] = useState([{ role: 'assistant', local: true, content: `I'm managing "${card.title}" with you. Ask me anything about it, or tell me what to change - dates, tasks, subtasks, phases, updates - and I'll do it.` }]);
+  // PHASE C (Joe 8/13): in-Playbook SOP engine - generate from the card, review, approve.
+  const [sopBusy, setSopBusy] = useState(false);
+  const [sopDraft, setSopDraft] = useState(null);
+  const genSOP = async () => {
+    if (sopBusy) return; setSopBusy(true);
+    setMsgs(p => [...p, { role: 'assistant', local: true, content: 'Drafting the SOP from this project card - 30 to 60 seconds...' }]);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      const st = await fetch('/.netlify/functions/ai-sop', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ action: 'start', card_id: card.id }) });
+      const sj = await st.json();
+      if (!st.ok || !sj.nonce) throw new Error(sj.error || 'start failed');
+      for (let t = 0; t < 100; t++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const pr = await fetch('/.netlify/functions/ai-sop', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ action: 'status', nonce: sj.nonce }) });
+        const pj = await pr.json();
+        if (pj.status === 'done') { setSopDraft(pj.draft || ''); setSopBusy(false); return; }
+        if (pj.status === 'error') throw new Error(pj.error || 'generation failed');
+      }
+      throw new Error('timed out waiting for the draft');
+    } catch (e) { setMsgs(p => [...p, { role: 'assistant', local: true, content: 'SOP draft failed: ' + e.message }]); setSopBusy(false); }
+  };
+  const approveSOP = async () => {
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      const res = await fetch('/.netlify/functions/ai-sop', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ action: 'approve', card_id: card.id, content: sopDraft }) });
+      const j = await res.json();
+      if (!res.ok || !j.ok) throw new Error(j.error || 'approve failed');
+      setSopDraft(null);
+      setMsgs(p => [...p, { role: 'assistant', local: true, content: 'SOP v' + j.version + ' approved and attached to this project.' }]);
+      setTimeout(() => onChanged(), 800);
+    } catch (e) { setMsgs(p => [...p, { role: 'assistant', local: true, content: 'SOP approve failed: ' + e.message }]); }
+  };
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const endRef = React.useRef(null);
@@ -715,6 +749,23 @@ function ProjectAIPanel({ card, onClose, onChanged }) {
     <div className="fixed right-6 bottom-6 z-50 w-[26rem] max-w-[92vw] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden" style={{ height: '32rem' }}>
       <div className="px-4 py-3 flex items-center justify-between bg-gradient-to-r from-violet-600 to-asap-blue text-white">
         <div className="font-bold text-sm">{'\u2728'} AI Project Manager</div>
+        <button onClick={genSOP} disabled={sopBusy} className="ml-auto mr-2 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold disabled:opacity-50">{sopBusy ? 'Drafting...' : 'Generate SOP'}</button>
+        {sopDraft !== null && (
+          <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col" style={{ height: '85vh' }}>
+              <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div className="font-bold text-slate-800">SOP draft - review, edit, approve</div>
+                <button onClick={() => setSopDraft(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">X</button>
+              </div>
+              <textarea value={sopDraft} onChange={(e) => setSopDraft(e.target.value)}
+                className="flex-1 m-4 border border-slate-200 rounded-xl p-4 text-xs font-mono text-slate-700 focus:outline-none focus:border-asap-blue resize-none" />
+              <div className="px-5 pb-4 flex gap-2 justify-end">
+                <button onClick={() => setSopDraft(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Discard</button>
+                <button onClick={approveSOP} className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">Approve and Attach</button>
+              </div>
+            </div>
+          </div>
+        )}
         <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-4 h-4" /></button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
