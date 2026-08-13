@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { format, isPast, isToday, differenceInDays } from 'date-fns';
 import { supabase } from '../lib/supabase';
+import SopDocument from '../components/SopDocument';
 
 const SUPABASE_URL = 'https://kkcbpqbcpzcarxhknzza.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrY2JwcWJjcHpjYXJ4aGtuenphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzAzNjAsImV4cCI6MjA4Mjk0NjM2MH0.xdBXVquwL3gV8MU7cFL8kqadDoXlAg-RfZgPk2icRy0';
@@ -799,6 +800,7 @@ function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, 
   const PHASES = ['PREPLAN','LAYOUT','BUILD','TESTING','SOP','LAUNCH','TRAINING','TRACKING'];
   const [links, setLinks] = useState(Array.isArray(card.links) ? card.links : []);
   const [newUpdate, setNewUpdate] = useState('');
+  const [openSop, setOpenSop] = useState(null); // SOP document viewer (Joe 8/13)
   const [newLink, setNewLink] = useState({ label: '', url: '' });
   const [newTask, setNewTask] = useState({ text: '', assignee: '', due: '' });
   const [expanded, setExpanded] = useState(null); // which task row is open (Joe 8/11: tasks open up - subtasks, instructions, test links)
@@ -941,16 +943,16 @@ function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, 
                 placeholder="Paste link (Drive, Docs, Loom...)" className="flex-1 min-w-[160px] border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-asap-blue" />
               <button onClick={addLink} className="px-3 py-2 bg-asap-blue text-white rounded-lg hover:bg-asap-blue-dark text-sm font-medium">Add</button>
             </div>
+            {openSop && <SopDocument sop={openSop} projectTitle={card.title} onClose={() => setOpenSop(null)} />}
             <div className="space-y-1.5 max-h-64 overflow-y-auto">
               {links.length === 0 && <div className="text-sm text-slate-400">Attach the SOP, training videos, Loom walkthroughs, and any docs - one link each.</div>}
               {links.map((l, i) => (
                 <div key={i} className="group flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2 text-sm">
                   <FileText className="w-4 h-4 text-slate-400 shrink-0" />
                   {l.sop ? (
-                    <details className="flex-1 min-w-0">
-                      <summary className="cursor-pointer text-asap-blue hover:underline truncate list-none">{l.label || l.name}{l.approved_by ? ' - approved by ' + l.approved_by : ''}</summary>
-                      <pre className="mt-2 max-h-96 overflow-y-auto whitespace-pre-wrap text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3">{l.content}</pre>
-                    </details>
+                    <button onClick={() => setOpenSop(l)} className="flex-1 min-w-0 text-left text-asap-blue hover:underline truncate">
+                      {l.label || l.name}{l.approved_by ? ' - approved by ' + l.approved_by : ''}
+                    </button>
                   ) : (
                     <a href={l.url} target="_blank" rel="noreferrer" className="flex-1 text-asap-blue hover:underline truncate">{l.label}</a>
                   )}
