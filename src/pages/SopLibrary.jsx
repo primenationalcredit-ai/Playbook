@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { BookOpen, Search, FileText, Loader2, Sparkles, Send } from 'lucide-react';
+import { BookOpen, Search, FileText, Loader2, Sparkles, Send , Download } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import SopDocument from '../components/SopDocument';
 
@@ -43,6 +43,7 @@ export default function SopLibrary() {
 
   useEffect(() => {
     (async () => {
+      fetch('/.netlify/functions/sop-pdf-background', { method: 'POST' }).catch(() => {}); // PDFs for any SOP missing one (Joe 8/13)
       const cards = await supabaseFetch('project_cards', 'select=id,title,links,updated_at&order=updated_at.desc');
       const all = [];
       (cards || []).forEach(c => {
@@ -120,6 +121,12 @@ export default function SopLibrary() {
               <FileText className="w-4 h-4 text-asap-blue shrink-0" />
               <div className="font-semibold text-slate-800 truncate">{s.projectTitle}</div>
               <div className="text-xs text-slate-400 shrink-0">{s.label}</div>
+              {s.pdf_url && (
+                <span onClick={(e) => { e.stopPropagation(); window.open(s.pdf_url, '_blank'); }}
+                  className="ml-auto shrink-0 text-[11px] px-2 py-1 rounded-lg border border-slate-200 text-asap-blue hover:bg-blue-50 flex items-center gap-1 cursor-pointer">
+                  <Download className="w-3 h-3" /> PDF
+                </span>
+              )}
             </div>
             <div className="text-xs text-slate-500 mt-1.5 line-clamp-2">{snippet(s)}</div>
             <div className="text-[11px] text-slate-400 mt-1.5">{s.approved_by ? 'Approved by ' + s.approved_by : ''}{s.at ? ' - ' + new Date(s.at).toLocaleDateString() : ''}</div>
