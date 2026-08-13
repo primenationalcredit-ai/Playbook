@@ -42,7 +42,7 @@ import {
   BarChart3,
   Trophy,
   FileText,
-} from 'lucide-react';
+, Video } from 'lucide-react';
 import CoverageAlerts from './CoverageAlerts';
 import { useTrainingLock, TrainingLockScreen } from './TrainingLockGate';
 
@@ -227,7 +227,7 @@ function Layout() {
     ...(!hideExtras ? [{ path: '/team', icon: Users, label: 'Team View' }] : []),
     { path: '/bonus-tracker', icon: Trophy, label: 'Bonus & Payment Tracker' },
     ...(!hideExtras ? [{ path: '/training', icon: GraduationCap, label: 'Training' }] : []),
-    ...(!hideExtras ? [{ path: '/sops', icon: BookOpen, label: 'SOP Library' }] : []),
+    ...(!hideExtras ? [{ path: '/sops', icon: BookOpen, label: 'SOP Library' }, { path: '/media', icon: Video, label: 'Media Library' }] : []),
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     ...(!hideExtras ? [{ path: '/ask-ai', icon: Sparkles, label: 'Ask AI' }] : []),
     { path: '/reviews', icon: Star, label: 'Reviews' },
