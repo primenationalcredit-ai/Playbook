@@ -131,7 +131,7 @@ export default function AffiliateOutreach() {
   const { currentUser } = useApp();
   const isLeadership = currentUser?.department === 'leadership';
 
-  const [tab, setTab] = useState('book');
+  const [tab, setTab] = useState('calls'); // Joe 8/13: call queue is the first thing consultants see
   const [counts, setCounts] = useState({});
   const [config, setConfig] = useState({});
   const [rows, setRows] = useState([]);
@@ -411,9 +411,9 @@ export default function AffiliateOutreach() {
         <button onClick={() => setTab('calls')} className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'calls' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>
           Call Queue
         </button>
-        <button onClick={() => setTab('messages')} className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'messages' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>
+        {isLeadership && (<button onClick={() => setTab('messages')} className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'messages' ? 'bg-gray-900 text-white' : 'bg-gray-100'}`}>
           Messages ({templates.length})
-        </button>
+        </button>)}
       </div>
 
       {tab === 'book' && (
@@ -453,7 +453,7 @@ export default function AffiliateOutreach() {
                       <tr className={`border-t hover:bg-gray-50 ${a.paused || a.opted_out || a.super_affiliate ? 'opacity-60' : ''}`}>
                         <td className="px-4 py-2">
                           <div className="font-medium">{a.org_name}</div>
-                          <div className="text-xs text-gray-400">{a.contact_email || 'no email'}{a.contact_phone ? ` · ${a.contact_phone}` : ''}</div>
+                          <div className="text-xs text-gray-400">{a.contact_email || 'no email'}{a.contact_phone ? <> {'\u00b7'} <a href={`tel:${String(a.contact_phone).replace(/[^0-9+]/g, '')}`} className="text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>{a.contact_phone}</a></> : ''}</div>
                           {calledToday[a.id]
                             ? <span className="inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full bg-green-100 text-green-700" title={calledToday[a.id].detail || ''}>{'\u2713'} called today{calledToday[a.id].subject ? ` · ${calledToday[a.id].subject}` : ''}</span>
                             : (!a.opted_out && <span className="inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">not called today</span>)}
@@ -505,7 +505,7 @@ export default function AffiliateOutreach() {
                                     <div className="font-bold text-lg">{a.org_name}</div>
                                     <div className="text-xs text-gray-500">Referred clients {'\u00b7'} pulled live from Pipedrive</div>
                                     {refData[a.id] && refData[a.id].contact && (refData[a.id].contact.name || refData[a.id].contact.email || refData[a.id].contact.phone) && (
-                                      <div className="text-xs text-gray-600 mt-1">{refData[a.id].contact.name || ''}{refData[a.id].contact.email ? ` \u00b7 ${refData[a.id].contact.email}` : ''}{refData[a.id].contact.phone ? ` \u00b7 ${refData[a.id].contact.phone}` : ''}</div>
+                                      <div className="text-xs text-gray-600 mt-1">{refData[a.id].contact.name || ''}{refData[a.id].contact.email ? ` \u00b7 ${refData[a.id].contact.email}` : ''}{refData[a.id].contact.phone ? <> {' \u00b7 '}<a href={`tel:${String(refData[a.id].contact.phone).replace(/[^0-9+]/g, '')}`} className="text-blue-600 hover:underline">{refData[a.id].contact.phone}</a></> : ''}</div>
                                     )}
                                   </div>
                                   <button onClick={() => setRefOpen(null)} className="text-gray-400 hover:text-gray-700 text-xl leading-none">{'\u00d7'}</button>
