@@ -227,6 +227,7 @@ function Layout() {
     ...(!hideExtras ? [{ path: '/team', icon: Users, label: 'Team View' }] : []),
     { path: '/bonus-tracker', icon: Trophy, label: 'Bonus & Payment Tracker' },
     ...(!hideExtras ? [{ path: '/training', icon: GraduationCap, label: 'Training' }] : []),
+    ...(!hideExtras ? [{ path: '/sops', icon: BookOpen, label: 'SOP Library' }] : []),
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     ...(!hideExtras ? [{ path: '/ask-ai', icon: Sparkles, label: 'Ask AI' }] : []),
     { path: '/reviews', icon: Star, label: 'Reviews' },

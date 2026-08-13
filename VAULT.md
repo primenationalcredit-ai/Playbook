@@ -790,3 +790,7 @@ Part I Section 4 still governs. Added since:
   per-task [BUILT] / [NOT BUILT YET] marker with a ground rule to document only what is BUILT.
   Reason: the first real SOP documented an SOP library, quizzes and a Drive link that did not
   exist, because the card sat at BUILD and the plan field is a SPEC, not a description of reality.
+- **PHASE E part 1 - SOP Library (8/13):** `/sops`, nav item for everyone (reading a process is
+  never restricted). Reads every `project_cards.links` entry flagged `sop`, sorted newest first,
+  full-text search across project title and SOP body with a match-centred snippet; clicking opens
+  the `SopDocument` reader. This is the corpus Ask-the-Playbook answers from.

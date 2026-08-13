@@ -20,6 +20,7 @@ import AdminUpdates from './pages/AdminUpdates';
 import AdminTraining from './pages/AdminTraining';
 import AdminTrainingCourse from './pages/AdminTrainingCourse';
 import Training from './pages/Training';
+import SopLibrary from './pages/SopLibrary';
 import TrainingCourse from './pages/TrainingCourse';
 import Reviews from './pages/Reviews';
 import IncomingReviews from './pages/IncomingReviews';
@@ -133,6 +134,7 @@ function App() {
         <Route path="playbook" element={<MyPlaybook />} />
         <Route path="team" element={<TeamView />} />
         <Route path="updates" element={<Updates />} />
+        <Route path="sops" element={<SopLibrary />} />
         <Route path="training" element={<Training />} />
         <Route path="training/:courseId" element={<TrainingCourse />} />
         <Route path="reviews" element={<Reviews />} />
