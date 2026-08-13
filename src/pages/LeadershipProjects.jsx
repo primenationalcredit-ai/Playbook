@@ -914,7 +914,13 @@ function ProjectDetail({ card, stages, leaders, currentUser, onClose, onDelete, 
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(() => { const els = []; let lastM = null;
-                steps.forEach((st, i) => {
+                // DATE-ORDER FIX (Joe 8/13): render sorted by due date (undated last, ties keep
+                // original order); array order untouched so indices stay stable for edits.
+                const ordered = steps.map((st, i) => ({ st, i })).sort((x, y) => {
+                  const dx = x.st.due || '9999-12-31', dy = y.st.due || '9999-12-31';
+                  return dx < dy ? -1 : dx > dy ? 1 : x.i - y.i;
+                });
+                ordered.forEach(({ st, i }) => {
                   const m = monthOf(st.due);
                   if (m !== lastM) { lastM = m;
                     els.push(<tr key={`m-${i}`} className="bg-slate-100/70"><td colSpan={6} className="px-4 py-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide">{m}</td></tr>); }
