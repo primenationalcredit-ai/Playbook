@@ -88,6 +88,7 @@ export default function MediaLibrary() {
         is_published: false,
       });
       setShowAdd(false); setFile(null);
+      fetch('/.netlify/functions/media-describe-background', { method: 'POST' }).catch(() => {}); // AI summary, fire-and-forget
       setForm({ title: '', description: '', kind: 'link', url: '', categories: '', departments: ['everyone'] });
       load();
     } catch (e) { alert('Could not save: ' + e.message); }
