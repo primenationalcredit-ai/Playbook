@@ -690,14 +690,17 @@ function ProjectAIPanel({ card, onClose, onChanged }) {
   // PHASE C (Joe 8/13): in-Playbook SOP engine - generate from the card, review, approve.
   const [sopBusy, setSopBusy] = useState(false);
   const [sopDraft, setSopDraft] = useState(null);
-  const genSOP = async () => {
+  const [sopConfirm, setSopConfirm] = useState(null);
+  const genSOP = async (sopConfirmOverride) => {
     if (sopBusy) return; setSopBusy(true);
     setMsgs(p => [...p, { role: 'assistant', local: true, content: 'Drafting the SOP from this project card - 30 to 60 seconds...' }]);
     try {
       const { data: sess } = await supabase.auth.getSession();
       const token = sess && sess.session && sess.session.access_token;
-      const st = await fetch('/.netlify/functions/ai-sop', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ action: 'start', card_id: card.id }) });
+      const st = await fetch('/.netlify/functions/ai-sop', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ action: 'start', card_id: card.id, confirm: !!sopConfirmOverride }) });
       const sj = await st.json();
+      // PHASE GATE (Joe 8/13): early-lifecycle cards get one honest warning first.
+      if (sj.warn) { setSopConfirm(sj.warn); setSopBusy(false); return; }
       if (!st.ok || !sj.nonce) throw new Error(sj.error || 'start failed');
       for (let t = 0; t < 100; t++) {
         await new Promise(r => setTimeout(r, 3000));
@@ -751,6 +754,18 @@ function ProjectAIPanel({ card, onClose, onChanged }) {
       <div className="px-4 py-3 flex items-center justify-between bg-gradient-to-r from-violet-600 to-asap-blue text-white">
         <div className="font-bold text-sm">{'\u2728'} AI Project Manager</div>
         <button onClick={genSOP} disabled={sopBusy} className="ml-auto mr-2 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-semibold disabled:opacity-50">{sopBusy ? 'Drafting...' : 'Generate SOP'}</button>
+        {sopConfirm && (
+          <div className="fixed inset-0 z-[75] bg-black/40 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="font-bold text-slate-800 mb-2">This project is not ready for an SOP</div>
+              <div className="text-sm text-slate-600 mb-5">{sopConfirm}</div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setSopConfirm(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Wait until it is built</button>
+                <button onClick={() => { setSopConfirm(null); genSOP(true); }} className="px-4 py-2 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700">Generate anyway</button>
+              </div>
+            </div>
+          </div>
+        )}
         {sopDraft !== null && (
           <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col" style={{ height: '85vh' }}>

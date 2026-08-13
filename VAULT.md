@@ -785,3 +785,8 @@ Part I Section 4 still governs. Added since:
   push on it returning empty.
 - When verifying a display complaint, verify THE SOURCE THE DISPLAY READS - not the system you
   assume feeds it. (Fernando 266340 cost three rounds to that lesson.)
+- **SOP phase gating (8/13):** `ai-sop` refuses to start before the SOP phase unless the caller
+  passes `confirm:true`, and the generator receives the phase, the done/total count, and a
+  per-task [BUILT] / [NOT BUILT YET] marker with a ground rule to document only what is BUILT.
+  Reason: the first real SOP documented an SOP library, quizzes and a Drive link that did not
+  exist, because the card sat at BUILD and the plan field is a SPEC, not a description of reality.

@@ -38,6 +38,23 @@ exports.handler = async (event) => {
       return respond(200, v);
     }
     if (body.action === 'start' && body.card_id) {
+      // PHASE GATE (Joe 8/13): the first real SOP documented features that did not
+      // exist, because the card sat at BUILD and its plan field is a SPEC. An SOP
+      // written before TESTING documents the plan, not the product. Warn once; the
+      // panel can re-send with confirm:true to override.
+      const PHASE_ORDER = ['PREPLAN','LAYOUT','BUILD','TESTING','SOP','LAUNCH','TRAINING','TRACKING'];
+      if (!body.confirm) {
+        const cr = await fetch(`${SU}/rest/v1/project_cards?id=eq.${encodeURIComponent(body.card_id)}&select=phase,steps`, { headers: H }).then(r => r.json()).catch(() => null);
+        const c0 = Array.isArray(cr) && cr[0];
+        if (c0) {
+          const idx = PHASE_ORDER.indexOf(String(c0.phase || 'PREPLAN').toUpperCase());
+          const steps = Array.isArray(c0.steps) ? c0.steps : [];
+          const done = steps.filter(x => x && x.done).length;
+          if (idx > -1 && idx < PHASE_ORDER.indexOf('SOP')) {
+            return respond(200, { warn: `This project is still in ${PHASE_ORDER[idx]} with ${done} of ${steps.length} tasks done. An SOP written now documents the PLAN, not what is actually built - it will describe features that do not exist yet. Generate anyway?` });
+          }
+        }
+      }
       const nonce = Math.random().toString(36).slice(2, 12);
       await fetch(`${SU}/rest/v1/app_cache`, { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates' },
         body: JSON.stringify({ cache_key: 'sop_' + nonce, cache_value: JSON.stringify({ status: 'generating' }), updated_at: new Date().toISOString() }) });
