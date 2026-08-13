@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { BookOpen, Search, FileText, Loader2 } from 'lucide-react';
+import { BookOpen, Search, FileText, Loader2, Sparkles, Send } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import SopDocument from '../components/SopDocument';
 
 // PHASE E of the AI Project Manager (Joe 8/13): the searchable SOP library.
@@ -14,6 +15,31 @@ export default function SopLibrary() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(null);
+  // ASK THE PLAYBOOK (Phase E): answers strictly from the approved SOPs above.
+  const [ask, setAsk] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState(null);
+  const askPlaybook = async () => {
+    const question = ask.trim();
+    if (!question || asking) return;
+    setAsking(true); setAnswer(null);
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess && sess.session && sess.session.access_token;
+      const hdr = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+      const r = await fetch('/.netlify/functions/ask-playbook', { method: 'POST', headers: hdr, body: JSON.stringify({ action: 'ask', question }) });
+      const j = await r.json();
+      if (!r.ok || !j.nonce) throw new Error(j.error || 'could not ask');
+      for (let t = 0; t < 60; t++) {
+        await new Promise(res => setTimeout(res, 2000));
+        const pr = await fetch('/.netlify/functions/ask-playbook', { method: 'POST', headers: hdr, body: JSON.stringify({ action: 'status', nonce: j.nonce }) });
+        const pj = await pr.json();
+        if (pj.status === 'done') { setAnswer(pj.answer); setAsking(false); return; }
+        if (pj.status === 'error') throw new Error(pj.error || 'failed');
+      }
+      throw new Error('timed out');
+    } catch (e) { setAnswer('Could not answer: ' + e.message); setAsking(false); }
+  };
 
   useEffect(() => {
     (async () => {
@@ -57,6 +83,21 @@ export default function SopLibrary() {
           <h1 className="text-2xl font-bold text-slate-900">SOP Library</h1>
           <p className="text-sm text-slate-500">Every approved process, searchable. Look here before asking.</p>
         </div>
+      </div>
+      <div className="mt-5 rounded-2xl border border-violet-200 bg-violet-50/50 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="w-4 h-4 text-violet-600" />
+          <div className="text-sm font-semibold text-slate-800">Ask the Playbook</div>
+          <div className="text-xs text-slate-500">answers only from approved SOPs</div>
+        </div>
+        <div className="flex gap-2">
+          <input value={ask} onChange={e => setAsk(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') askPlaybook(); }}
+            placeholder="How do I ... ?" className="flex-1 px-3 py-2 border border-violet-200 rounded-xl text-sm bg-white focus:outline-none focus:border-violet-500" />
+          <button onClick={askPlaybook} disabled={asking} className="px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 flex items-center gap-1.5">
+            {asking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{asking ? 'Reading SOPs' : 'Ask'}
+          </button>
+        </div>
+        {answer && <div className="mt-3 bg-white border border-violet-200 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{answer}</div>}
       </div>
       <div className="relative my-5">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />

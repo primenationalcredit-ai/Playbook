@@ -794,3 +794,8 @@ Part I Section 4 still governs. Added since:
   never restricted). Reads every `project_cards.links` entry flagged `sop`, sorted newest first,
   full-text search across project title and SOP body with a match-centred snippet; clicking opens
   the `SopDocument` reader. This is the corpus Ask-the-Playbook answers from.
+- **PHASE E part 2 - Ask the Playbook (8/13):** `ask-playbook.js` (any signed-in employee, not
+  leadership-only) + `ask-playbook-background.js` (BKEY-gated, background+poll per the 10s lesson).
+  Loads every approved SOP as the corpus (120k char budget, 30k per doc) and answers STRICTLY
+  from it - names the exact screens the SOP names, cites SOURCE, and says plainly when something
+  is not documented rather than guessing or inventing a button. Lives at the top of `/sops`.
