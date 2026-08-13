@@ -799,3 +799,11 @@ Part I Section 4 still governs. Added since:
   Loads every approved SOP as the corpus (120k char budget, 30k per doc) and answers STRICTLY
   from it - names the exact screens the SOP names, cites SOURCE, and says plainly when something
   is not documented rather than guessing or inventing a button. Lives at the top of `/sops`.
+- **PHASE E part 3 - 90-day refreshers (8/13):** `training-refresher-sweep` (daily 8:00 UTC) plus
+  keyed `training-refresher-manual` (`?dry_run=1`, logic inlined per the esbuild gotcha). Ninety
+  days after a user COMPLETES a published course, the course is assigned to them again with a
+  14-day grace due date. NO MIGRATION - a refresher is just another `training_assignments` row,
+  identified by the user having an older completed assignment for that course, so it flows through
+  the existing training UI and the Phase D lockout with no new machinery. Guards: published only,
+  never when an open assignment exists, leadership/admin skipped. DEVIATION: the refresher is the
+  full course, not the 3-question short form in the original spec - that needs a quiz-subset feature.

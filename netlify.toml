@@ -13,6 +13,11 @@
 # Bonus tracking sync - runs hourly during business hours Mon-Sat
 # Qualified-doc watchdog: nightly self-heal at 3:30am MT (after 2am autobill+sync).
 # Verifies every recent final/PIF payment has its deal checkboxes + bonus events; fixes what is missing.
+# 90-day training refreshers: re-assign a completed course 90 days on (Phase E, Joe 8/13).
+# 8:00 UTC daily - well before anyone starts, and the 14-day grace means it never locks same-day.
+[functions."training-refresher-sweep"]
+  schedule = "0 8 * * *"
+
 [functions."qualified-doc-watchdog"]
   schedule = "30 9 * * *"
 [functions."consultant-bonus-sync"]
