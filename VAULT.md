@@ -608,3 +608,180 @@ Use plain string concatenation, or splice JSX in from a downloaded file. And ALW
 
 ### NOTE: netlify.toml comment above the autobill cron is stale (says "daily", says 14:00 UTC).
 Actual cron is `0 */8 * * *`. Cosmetic; fix when convenient.
+
+---
+---
+
+# PART II — 2026-07-07 to 2026-08-13 (377 commits)
+
+**Added:** 2026-08-13. Part I above is accurate as of 2026-07-07 and is kept as history.
+Where Part I and Part II disagree, **Part II wins**.
+
+## 20. HOW TO USE THIS PART + WHAT ELSE TO READ
+- `HANDOVER.md` (repo root, 2026-08-08) documents architecture, ~120 tables by domain, the
+  scheduled-function map, the auth model, and external systems. **Do not duplicate it here.**
+  This part carries RULINGS, POLICY, and SYSTEM CHANGES - the things that live nowhere else.
+- The standing rule from Part I still holds and was NOT followed 7/07 to 8/13. Follow it now:
+  every push updates the vault in the same or next commit.
+- Section 28 (Standing Rulings) is the highest-value section. Read it before changing any
+  counting, crediting, or money logic. Most "why did this number change" questions end there.
+
+## 21. THE CRM MIGRATION (8/08-8/10) — biggest new system, absent from Part I
+Goal: replace Pipedrive as system of record with the Playbook. Pipedrive is STILL master;
+the Playbook holds a live mirror and writes through to PD on every change.
+- **Mirror:** `crm-sync` pulls persons + deals (all 18 custom fields, RD/ARD round dateranges),
+  notes, and activities into `crm_clients` / `crm_deals` / `crm_notes` / `crm_activities` /
+  `crm_field_options`. Cursor-based incremental; `crm-sync-tick` every 10 min.
+- **Cursor hardening (learned the hard way):** cursors only advance FORWARD (`advanceCursor`) -
+  the backfill's final oldest-page run was stomping bookmarks. Cursors are clamped to now - a
+  future-dated 2036 activity in PD froze `activities_cursor` and silently stopped incremental sync.
+- **Null bytes:** `crm-sync` strips `\u0000` from upsert payloads (a pasted null byte in one
+  person record at page 10500 killed the whole person backfill).
+- **Screens:** Client File (`/clients`, deal-centric search over 255k clients via
+  `crm_deal_search` / `crm_client_search` RPC with trigram fuzzy), Pipeline Board, My Day,
+  AM Book, SMS/Texts tab (two-way RingCentral threads incl. client replies).
+- **Write-backs, all Pipedrive-first then mirror:** notes, activities (add task / mark done),
+  deal stage moves, status changes (CURRENT STATUS / UPDATE STATUS / QUICK BUTTONS),
+  person-merge (uses Pipedrive's NATIVE merge).
+- **Verification:** `crm-compare` daily (every PD record changed in 24h exists in the mirror),
+  `crm-deep-verify` daily field-level spot audit on a random sample changed in 48h.
+- **Nav:** Clients / My Day / Pipelines / My Book are LEADERSHIP-ONLY (removed from
+  `coreNavItems`) during rollout. Opening them to staff is a deliberate future step.
+
+## 22. REFUNDS — full pipeline (7/09-7/16, rulings 8/04)
+Flow: **request -> leadership approve -> release signed -> pay (card and/or check) -> ledger + payroll deduction.**
+- Everyone files a request (`refund-requests`); no direct card refunds remain on Invoices.
+- Card refunds route to the correct merchant (primary vs Amex) by `merchant_id` /
+  `paid_via_merchant`. Remainder auto-routes to the check queue.
+- `refund-webhook` writes the `refunds` ledger on every refund - the Bonus Tracker's standard
+  source. Requires `refund_reason` AND `deduction_percentage` (both NOT NULL - two separate hotfixes).
+- **Payroll deduction is automatic per house policy: 10% VA / 14% regular** of the refund
+  amount, on both card and check paths. Check refunds are 0%.
+- Bonus readers exclude refund-flagged payments (open-period rule).
+- Refund requests stamp the consultant (Pipedrive deal owner) at submit time.
+
+## 23. SPLIT CHARGES (7/14-7/16)
+- **Design correction (Joe):** a split is ONE invoice with TWO payments. Zoho is not
+  restructured, no remainder invoice is created; only the due date moves to payment 2.
+- One door: everyone files a request; splits execute only via Approvals approve.
+- Guardrails: P1 <= original due date, 14-day gap cap, 45-day resolution window,
+  month-boundary acknowledgment. Admins split instantly (`split_charge`); team keeps the request path.
+
+## 24. AFFILIATE CADENCE ENGINE (7/10-7/22)
+- `affiliate-book-sync` hourly from PD filter 523931 into `affiliate_orgs`.
+- **Super affiliates are excluded from all cadences** - flagged via Super Affiliate Portal /
+  Senior Affiliate fields, plus an explicit allowlist (Oz Konar/BLB, 7 Figures Funding,
+  NoRisk Digitals, Kevin Walters Sr).
+- **Date guard:** payments cannot credit an affiliate that did not exist yet (kills
+  retro-attribution - Paul Ashton went 8 referrals -> 1).
+- Runner sends Mon-Fri only, from 8am Central, batch-dialled via `app_config.affiliate_per_run`.
+  Atomic claim before send so overlapping runs can never double-send.
+- **AI personalization at send time** rewrites each email around the affiliate's real history.
+  Hard rule: the AI never mentions payouts, earnings, or dollar amounts to affiliates.
+- SendGrid event webhook stamps opens/clicks/bounces onto touches. Sent bodies stored on the
+  touch (JSON in `detail`, zero-DDL).
+- RingCentral credentials live in Supabase `app_secrets` (4KB Lambda env cap workaround).
+- SMS STOP replies auto-opt-out the affiliate.
+- Call queue: **daily batch, 20 per consultant per weekday, done means done** (Joe's 8/10
+  ruling replacing the rolling refill). Weekends promote nothing; unfinished carry into the
+  next day's 20.
+## 28. STANDING RULINGS (READ BEFORE CHANGING ANY COUNTING OR MONEY LOGIC)
+These are Joe's decisions. They are not implementation details - changing code that violates
+one of these is a policy change, not a bug fix.
+
+**Qualified docs / consultant credit**
+- A client qualifies when the first plan invoice COMPLETES; it counts in the month it finished (7/23).
+- Cross-month is fine: a doc fee in one month and the balance payment in the next counts to the
+  month of the first balance-side payment (7/10).
+- One-shot payers with no balance invoice qualify off real payment rows (Sims).
+- **Money beats stale paperwork:** if actual balance payments cover the smallest balance invoice,
+  qualify off the payments even when the Zoho invoice mirror still shows a balance (Fernando 8/10).
+- Orphan doc-fee payments only credit the consultant they NAME - repeat clients stop
+  double-crediting old deal owners.
+- Name-to-deal resolution prefers OPEN deals, then newest (the returning-client trap).
+  Payment enrichment never blind-copies a sibling row's deal/consultant - it nominates, fetches,
+  verifies open, then derives the consultant LIVE from `owner_name`.
+
+**Refunds**
+- A refund only counts against a month's sales when the ORIGINAL payment was made that month.
+  Refunds of prior-month money do not reduce the current month (8/04).
+- Refunds show the moment the release is SIGNED - rows marked, ledger written with payroll
+  deduction at that point (8/04).
+
+**CSR report credit**
+- No monitoring site = no report. Blank-site deals stay in stage distribution and the
+  operational funnel but never count toward reports.
+- Credit triggers on the monitoring site being set, OR the deal landing in Ready to Quote this
+  month (the legacy OR-branch). NOT deal creation date.
+- Capture pipeline must be New Leads, Reports, or Quoted at capture time - but do NOT gate on
+  CURRENT pipeline: an RTQ-this-month deal still counts after progressing to SOLD/CRS.
+- Categories: contains "Identity IQ"/"IDIQ" = IDIQ; "Smart Credit" = Smart Credit; anything
+  else filled = Other.
+- Only deals created THIS MONTH get credited on first touch (stops legacy deals drip-crediting).
+
+**Stall rate (Astrid/Kim's metric - do not change without them)**
+- Rounds submitted to bureaus LEAVE the stall universe (waiting on bureaus, not the AM).
+- Payment-blocked (OWES MONEY family), missing-docs, service-complete, and additional-round
+  clients are all excluded from the stall population.
+
+**Money / P&L**
+- Meta/Facebook ad spend and attorney/legal fees on the card are OWNER COSTS - excluded from
+  the P&L and from Astrid's DOO compensation basis entirely. VSL Queen ad-creative charges too.
+- Consultant MTD/today = commissionable sales only (doc/partial/final). Additional rounds stay
+  in company MTD but not consultant MTD.
+
+**Reviews**
+- Assigned/approved reviews keep their credit even if Google later delists them (Kim/Joe 7/20).
+  Delisting only hides unassigned reviews.
+
+**Team / process**
+- Additional Rounds price is $299 (was $249 until 8/01). Already-sent $249 offers are HONORED
+  via the `price_override` path - that is the standing honored-price route.
+- Payment link first, always. Sideways money (Zoho-direct, Zelle) means capture the card the
+  same day - a Zoho-direct payment breaks autopay, agreement send, AND the doc-fee guard at once.
+
+## 29. GOTCHAS ADDED SINCE PART I
+- `consultant-dashboard-api.js` contains a non-UTF8 byte (0x97). Read it with
+  `errors='surrogateescape'` or patch byte-level (`open('rb')`) - naive readers crash.
+- Scheduled Netlify functions reject direct HTTP (403). Every one needs an inlined `-manual`
+  twin; `require`-ing a sibling function breaks under esbuild per-function bundling.
+- Playbook deploys take 4+ minutes and QUEUE. Check the Netlify Deploys tab before concluding
+  a change did not ship.
+- JSX does not process unicode escapes in text nodes - write the character, not the escape.
+- Supabase REST caps at 1000 rows; use `Prefer: count=exact` and paginate.
+- `scheduled_charges` status constraint REJECTS 'cancelled'. Valid vocabulary includes
+  scheduled/pending/paid/failed/paused/refunded/voided. Use 'paused'.
+- PowerShell: `$pid` is a READ-ONLY builtin - never assign to it.
+- Pipedrive moved the deal owner name to a flat `owner_name` field; `owner_id.name` is now
+  EMPTY for every deal. Anything reading `owner_id.name` is silently broken.
+- All timestamps that represent a PAYMENT DATE must stamp America/Chicago, not UTC. A payment
+  after 7pm CT posts to TOMORROW in UTC and lands in the wrong commission month at month end.
+
+## 30. OPEN AT 2026-08-13
+- **Phase E of the AI Project Manager** (SOP library, Ask-the-Playbook, 90-day refreshers).
+- **SOP phase gating:** the SOP generator writes an SOP of the PLAN when a card is early in its
+  lifecycle. It should warn or refuse before the SOP phase and read completion state.
+- Estrella qualified_doc revoke-or-stays after refund - asked 3x, still unruled.
+- Refund deduction policy: the UI never sends a percentage, so deductions are 0 until Joe rules
+  enforce-or-zero.
+- Historical blind-borrow sweep beyond the walker's 120-day window.
+- `pay.html` validates only primary Auth.net keys - missing Amex keys would silently kill all
+  Amex tokenization. Loud-failure check is cheap and not yet done.
+- Madison Diaz de Leon: a third sender (likely a GHL blast) has broken payment links; blocked
+  on the forwarded email.
+- Two clients carry duplicate open deals needing cleanup: Charles Watson (256037 + 269002),
+  Melanie Quintanilla (259311 + 266053).
+- Pipedrive API token rotation is still pending.
+
+## 31. DEPLOY DISCIPLINE — ADDITIONS
+Part I Section 4 still governs. Added since:
+- **Every ticket ends in a permanent, structural fix. Nothing is re-tasked.** (Joe, 8/11)
+- Patch scripts abort-check EVERY anchor (count != 1 -> exit before writing). An abort that
+  writes nothing is a success, not a failure.
+- Verify before push: a `verify_*.py` that greps for every expected string and prints
+  ALL GOOD / DO NOT PUSH, with the push gated on `$LASTEXITCODE`.
+- Before shipping anything that can lock users out or stop money, run a READ-ONLY precheck
+  (Supabase REST GET from PowerShell) that names exactly who would be affected, and gate the
+  push on it returning empty.
+- When verifying a display complaint, verify THE SOURCE THE DISPLAY READS - not the system you
+  assume feeds it. (Fernando 266340 cost three rounds to that lesson.)
