@@ -267,7 +267,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers,
       body: JSON.stringify({
-        month: targetMonth, page, paymentsScanned: payments.length,
+        month: targetMonth, page, paymentsScanned: payments.length, batchPreview: batch,
         newRecords, skipped, hasMore,
         nextUrl: hasMore ? `/.netlify/functions/zoho-payment-sync?month=${targetMonth}&page=${page + 1}` : null,
         syncedAt: now.toISOString()
