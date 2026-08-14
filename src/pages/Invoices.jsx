@@ -458,7 +458,7 @@ function NotesSection({ notes }) {
   );
 }
 
-function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} }) {
+function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {}, qualifiedDoc }) {
   const { deal_id, client_name, client_email, client_phone, initial_payment, scheduled_charges = [], doc_fee, has_card_on_file, activities = [], notes = [], other_invoices = [] } = data;
   const token = initial_payment;
 
@@ -499,6 +499,22 @@ function DealView({ data, isAdmin, canRequest, onAction, pendingByCharge = {} })
                 {!has_card_on_file ? ' No card on file yet.' : ''}
               </p>
             </div>
+          </div>
+        )
+      )}
+
+      {qualifiedDoc && (
+        qualifiedDoc.qualified ? (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-green-200 bg-green-50 text-xs text-green-800">
+            <CheckCircle2 size={14} className="text-green-600 shrink-0" />
+            <span className="font-semibold">Qualified Doc</span>
+            {qualifiedDoc.month && <span className="text-green-600">(counts in {qualifiedDoc.month})</span>}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-800">
+            <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+            <span className="font-semibold">Not a Qualified Doc</span>
+            {qualifiedDoc.reason && <span className="text-amber-700">— {qualifiedDoc.reason}</span>}
           </div>
         )
       )}
@@ -1281,6 +1297,7 @@ export default function Invoices() {
   })();
   const [dealInput, setDealInput] = useState(initialDeal);
   const [dealData, setDealData] = useState(null);
+  const [qualifiedDoc, setQualifiedDoc] = useState(null);
   const [browseData, setBrowseData] = useState(null);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1442,13 +1459,14 @@ export default function Invoices() {
     try {
       const [data] = await Promise.all([callApi('get_deal', { deal_id: id }), loadPendingApprovals()]);
       setDealData(data);
+      callApi('check_qualified_doc', { deal_id: id }).then(setQualifiedDoc).catch(() => setQualifiedDoc(null));
     } catch (e) {
       setErr(e.message); setDealData(null);
     } finally { setLoading(false); }
   };
 
   const browse = async () => {
-    setLoading(true); setErr(null); setDealData(null); setMode('browse');
+    setLoading(true); setErr(null); setDealData(null); setQualifiedDoc(null); setMode('browse');
     try {
       const [data] = await Promise.all([callApi('list_recent_invoices', { filters: { days_back: 90 } }), loadPendingApprovals()]);
       setBrowseData(data);
@@ -1531,7 +1549,7 @@ export default function Invoices() {
         </div>
       )}
 
-      {!loading && mode === 'lookup' && dealData && <DealView data={dealData} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} />}
+      {!loading && mode === 'lookup' && dealData && <DealView data={dealData} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} qualifiedDoc={qualifiedDoc} />}
       {!loading && mode === 'browse' && browseData && <BrowseView data={browseData} filter={filter} onFilterChange={setFilter} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} />}
 
       {!loading && !dealData && !browseData && !err && (
