@@ -1014,7 +1014,7 @@ function BillingList({ title, icon, rows, emptyText, showDecline = false, defaul
             : rows.map(r => (
                 <div key={r.id}>
                   <BillingRow r={r} showDecline={showDecline} isAdmin={isAdmin} />
-                  {showDecline && <DeclineOutreachBar r={r} />}
+                  {showDecline && <DeclineOutreachBar r={r} isAdmin={isAdmin} />}
                 </div>
               ))}
         </div>
@@ -1025,7 +1025,7 @@ function BillingList({ title, icon, rows, emptyText, showDecline = false, defaul
 
 // Astrid 7/30: outreach tracking under each declined card - attempts badge,
 // deal owner, Log attempt button (server: log_outreach -> app_cache counter).
-function DeclineOutreachBar({ r }) {
+function DeclineOutreachBar({ r, isAdmin = false }) {
   const [attempts, setAttempts] = useState(r.outreach_attempts || 0);
   const [busy, setBusy] = useState(false);
   // Joe 7/31: charge the client straight from the declined card, and show how
