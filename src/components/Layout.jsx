@@ -41,8 +41,7 @@ import {
   Link,
   BarChart3,
   Trophy,
-  FileText,
-, Video } from 'lucide-react';
+  FileText, Video } from 'lucide-react';
 import CoverageAlerts from './CoverageAlerts';
 import { useTrainingLock, TrainingLockScreen } from './TrainingLockGate';
 
