@@ -1036,6 +1036,31 @@ function DeclineOutreachBar({ r }) {
     }
     setCharging(false);
   };
+  const [fixing, setFixing] = useState(false);
+  const fixAddress = async () => {
+    if (fixing) return;
+    const address = window.prompt(`Street address for ${r.client_name || 'this client'}:`);
+    if (address === null) return;
+    const city = window.prompt('City:');
+    if (city === null) return;
+    const state = window.prompt('State (2-letter):');
+    if (state === null) return;
+    const zip = window.prompt('Zip code:');
+    if (zip === null) return;
+    if (!address && !zip) { alert('Enter at least a street address or zip.'); return; }
+    setFixing(true);
+    try {
+      await callApi('update_billing_address', {
+        deal_id: r.pipedrive_deal_id,
+        billingAddress: { address, city, state, zip },
+        cardholderName: r.client_name
+      });
+      alert('Billing address updated. Card was not touched - the next retry will use the corrected address.');
+    } catch (e) {
+      alert('Could not update address: ' + (e.message || e));
+    }
+    setFixing(false);
+  };
   const badge = attempts === 0
     ? { cls: 'bg-slate-100 text-slate-500', label: 'No attempts yet' }
     : attempts < 3
@@ -1080,6 +1105,11 @@ function DeclineOutreachBar({ r }) {
         <button onClick={chargeNow} disabled={charging}
           className="text-[11px] font-semibold px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 whitespace-nowrap">
           {charging ? 'Charging...' : 'Charge card'}
+        </button>
+        <button onClick={fixAddress} disabled={fixing || charging}
+          title="Correct the billing address on file without touching the card itself"
+          className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-asap-blue text-asap-blue hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap">
+          {fixing ? 'Saving...' : 'Fix Address'}
         </button>
       </div>
     </div>
