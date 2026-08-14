@@ -965,7 +965,7 @@ function MetricCard({ label, count, amount, tone }) {
   );
 }
 
-function BillingRow({ r, showDecline }) {
+function BillingRow({ r, showDecline, isAdmin = false }) {
   const noCard = !r.customer_profile_id;
   return (
     <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-sm">
@@ -1013,7 +1013,7 @@ function BillingList({ title, icon, rows, emptyText, showDecline = false, defaul
             ? <p className="text-xs text-slate-400 italic">{emptyText}</p>
             : rows.map(r => (
                 <div key={r.id}>
-                  <BillingRow r={r} showDecline={showDecline} />
+                  <BillingRow r={r} showDecline={showDecline} isAdmin={isAdmin} />
                   {showDecline && <DeclineOutreachBar r={r} />}
                 </div>
               ))}
