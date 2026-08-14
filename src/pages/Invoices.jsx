@@ -253,6 +253,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                   className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
                   <FileText size={12} /> Fix Address
                 </button>
+                <button onClick={() => onAction({ type: 'discount', charge_id: c.id, amount: c.amount, deal_id })}
+                  title="Apply a leadership discount to this invoice"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-white border border-amber-400 rounded hover:bg-amber-50">
+                  <DollarSign size={12} /> Discount
+                </button>
               </>
               ) : (
                 <button onClick={() => onAction({ type: 'add_card', deal_id, client_name, client_email })}
@@ -332,6 +337,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 title="Correct the billing address on file without touching the card itself"
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
                 <FileText size={12} /> Fix Address
+              </button>
+              <button onClick={() => onAction({ type: 'discount', charge_id: c.id, amount: c.amount, deal_id })}
+                title="Apply a leadership discount to this invoice"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-white border border-amber-400 rounded hover:bg-amber-50">
+                <DollarSign size={12} /> Discount
               </button>
               </>
             ) : (
@@ -986,7 +996,7 @@ function BillingRow({ r, showDecline }) {
   );
 }
 
-function BillingList({ title, icon, rows, emptyText, showDecline = false, defaultOpen = false }) {
+function BillingList({ title, icon, rows, emptyText, showDecline = false, defaultOpen = false, isAdmin = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100">
@@ -1065,6 +1075,24 @@ function DeclineOutreachBar({ r }) {
     }
     setFixing(false);
   };
+  const [discounting, setDiscounting] = useState(false);
+  const applyDiscount = async () => {
+    if (discounting) return;
+    const pctStr = window.prompt(`Discount percentage off $${Number(r.amount).toFixed(2)} for ${r.client_name || 'this client'}:`, '10');
+    if (pctStr === null) return;
+    const pct = parseFloat(pctStr);
+    if (!(pct > 0) || pct >= 100) { alert('Enter a percentage between 0 and 100.'); return; }
+    const reason = window.prompt('Reason (optional):') || '';
+    if (!window.confirm(`Apply a ${pct}% discount? This will reduce what's owed (or refund the difference if already paid).`)) return;
+    setDiscounting(true);
+    try {
+      const res = await callApi('apply_discount', { charge_id: r.id, percent: pct, reason });
+      alert(`Discount applied. New amount: $${Number(res.new_amount).toFixed(2)}` + (res.was_paid ? ' (refunded the difference).' : ' (invoice reduced, nothing charged yet).'));
+    } catch (e) {
+      alert('Could not apply discount: ' + (e.message || e));
+    }
+    setDiscounting(false);
+  };
   const badge = attempts === 0
     ? { cls: 'bg-slate-100 text-slate-500', label: 'No attempts yet' }
     : attempts < 3
@@ -1115,6 +1143,13 @@ function DeclineOutreachBar({ r }) {
           className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-asap-blue text-asap-blue hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap">
           {fixing ? 'Saving...' : 'Fix Address'}
         </button>
+        {isAdmin && (
+          <button onClick={applyDiscount} disabled={discounting}
+            title="Apply a leadership discount to this invoice"
+            className="text-[11px] font-semibold px-2 py-1 rounded-lg border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50 whitespace-nowrap">
+            {discounting ? 'Applying...' : 'Discount'}
+          </button>
+        )}
       </div>
     </div>
     {Array.isArray(r.charge_log) && r.charge_log.length > 0 && (
@@ -1191,7 +1226,7 @@ function BillingOverview() {
         <MetricCard label="Declined (open)" tone="red" count={m.declined?.count || 0} amount={m.declined?.amount || 0} />
         <MetricCard label="Recovered" tone="blue" count={m.recovered?.count || 0} amount={m.recovered?.amount || 0} />
       </div>
-      <BillingList title="Due Today" icon={<AlarmClock size={15} className="text-amber-600" />} rows={data.due_today || []} emptyText="Nothing bills today." defaultOpen={true} />
+      <BillingList title="Due Today" icon={<AlarmClock size={15} className="text-amber-600" />} rows={data.due_today || []} emptyText="Nothing bills today." defaultOpen={true} isAdmin={isAdmin} />
       {data.outstanding && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1220,8 +1255,8 @@ function BillingOverview() {
           </div>
         </div>
       )}
-      <BillingList title={range === 'all' ? 'Upcoming (all scheduled)' : `Upcoming (${range} days)`} icon={<CalendarClock size={15} className="text-sky-600" />} rows={(() => { const all = data.upcoming_all || data.upcoming_7_days || []; if (range === 'all') return all; const lim = new Date(Date.now() + range * 86400000).toISOString().slice(0, 10); return all.filter(r => (r.due_date || '') <= lim); })()} emptyText="Nothing scheduled in this window." />
-      <BillingList title="Declined — needs outreach" icon={<XCircle size={15} className="text-red-600" />} rows={data.declined_open || []} emptyText="No open declines. 🎉" showDecline={true} defaultOpen={true} />
+      <BillingList title={range === 'all' ? 'Upcoming (all scheduled)' : `Upcoming (${range} days)`} icon={<CalendarClock size={15} className="text-sky-600" />} rows={(() => { const all = data.upcoming_all || data.upcoming_7_days || []; if (range === 'all') return all; const lim = new Date(Date.now() + range * 86400000).toISOString().slice(0, 10); return all.filter(r => (r.due_date || '') <= lim); })()} emptyText="Nothing scheduled in this window." isAdmin={isAdmin} />
+      <BillingList title="Declined — needs outreach" icon={<XCircle size={15} className="text-red-600" />} rows={data.declined_open || []} emptyText="No open declines. 🎉" showDecline={true} defaultOpen={true} isAdmin={isAdmin} />
     </div>
   );
 }
@@ -1324,6 +1359,11 @@ export default function Invoices() {
         if (!form.zip && !form.address) throw new Error('Enter at least a street address or zip');
         await callApi('update_billing_address', { deal_id: modal.deal_id, billingAddress: { address: form.address, city: form.city, state: form.state, zip: form.zip }, cardholderName: modal.client_name });
         setNotice({ type: 'success', text: 'Billing address updated. The card itself was not changed - the next scheduled retry will use the corrected address.' });
+      } else if (modal.type === 'discount') {
+        const pct = parseFloat(form.percent);
+        if (!(pct > 0) || pct >= 100) throw new Error('Enter a percentage between 0 and 100');
+        const r = await callApi('apply_discount', { charge_id: modal.charge_id, percent: pct, reason: form.reason });
+        setNotice({ type: 'success', text: `${pct}% discount applied. New amount: $${Number(r.new_amount).toFixed(2)}` + (r.was_paid ? ' (refunded the difference)' : ' (invoice reduced, nothing charged yet)') });
       } else if (modal.type === 'refund_initial') {
         if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
         if (!form.passcode) throw new Error('Manager passcode required');
@@ -1534,6 +1574,18 @@ export default function Invoices() {
                   <input placeholder="Zip" value={form.zip || ''} onChange={e => setForm({ ...form, zip: e.target.value })}
                     className="w-24 px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
                 </div>
+              </div>
+            )}
+            {modal.type === 'discount' && (
+              <div className="mb-4 space-y-2">
+                <p className="text-xs text-slate-500 -mt-2 mb-2">Leadership only. Works on unpaid invoices (reduces what's owed) and paid invoices (refunds the difference).</p>
+                <div className="flex items-center gap-2">
+                  <input type="number" min="1" max="99" placeholder="10" defaultValue={10} value={form.percent ?? 10} onChange={e => setForm({ ...form, percent: e.target.value })}
+                    className="w-20 px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  <span className="text-sm text-slate-600">% off {modal.amount ? '$' + Number(modal.amount).toFixed(2) : 'this invoice'}</span>
+                </div>
+                <input placeholder="Reason (optional)" value={form.reason || ''} onChange={e => setForm({ ...form, reason: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
               </div>
             )}
             {(modal.type === 'update_due_date' || modal.type === 'request_date_change') && (
