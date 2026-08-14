@@ -325,6 +325,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700">
                 <Zap size={12} /> Charge Now
               </button>
+              <button onClick={() => onAction({ type: 'fix_address', deal_id, client_name })}
+                title="Correct the billing address on file without touching the card itself"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+                <FileText size={12} /> Fix Address
+              </button>
             ) : (
               <button onClick={() => onAction({ type: 'add_card', deal_id, client_name, client_email })}
                 title="No card on file yet. Add a card before charging."
