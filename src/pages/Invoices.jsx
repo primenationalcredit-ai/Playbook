@@ -247,6 +247,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                   className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700">
                   <Zap size={12} /> Charge Now
                 </button>
+                <button onClick={() => onAction({ type: 'fix_address', deal_id, client_name })}
+                  title="Correct the billing address on file without touching the card itself"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
+                  <FileText size={12} /> Fix Address
+                </button>
               ) : (
                 <button onClick={() => onAction({ type: 'add_card', deal_id, client_name, client_email })}
                   title="No card on file yet. Add a card before charging."
@@ -1276,6 +1281,10 @@ export default function Invoices() {
         const txn = r.transaction_id || r.transactionId || (r.charge && r.charge.transaction_id) || null;
         const amt = modal.amount ? ' $' + Number(modal.amount).toFixed(2) : '';
         setNotice({ type: 'success', text: 'Payment collected' + amt + (txn ? ' - txn ' + txn : '') + '. Refresh the page to see it move to Paid.' });
+      } else if (modal.type === 'fix_address') {
+        if (!form.zip && !form.address) throw new Error('Enter at least a street address or zip');
+        await callApi('update_billing_address', { deal_id: modal.deal_id, billingAddress: { address: form.address, city: form.city, state: form.state, zip: form.zip }, cardholderName: modal.client_name });
+        setNotice({ type: 'success', text: 'Billing address updated. The card itself was not changed - the next scheduled retry will use the corrected address.' });
       } else if (modal.type === 'refund_initial') {
         if (!form.reason || form.reason.trim().length < 3) throw new Error('Reason required (3+ chars)');
         if (!form.passcode) throw new Error('Manager passcode required');
@@ -1473,6 +1482,21 @@ export default function Invoices() {
               {(modal.type === 'refund_initial' || modal.type === 'refund_scheduled') && <span className="block text-xs text-amber-700 mt-1">This will refund {fmtMoney(modal.amount)} {modal.cardLast4 ? `to the card ending in ${String(modal.cardLast4).replace(/X+/, '')}` : ''}. Manager passcode required.</span>}
             </p>
 
+            {modal.type === 'fix_address' && (
+              <div className="mb-4 space-y-2">
+                <p className="text-xs text-slate-500 -mt-2 mb-2">Corrects the billing address the card issuer checks (AVS). The card number and expiration are never touched.</p>
+                <input placeholder="Street address" value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                <div className="flex gap-2">
+                  <input placeholder="City" value={form.city || ''} onChange={e => setForm({ ...form, city: e.target.value })}
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  <input placeholder="State" maxLength={2} value={form.state || ''} onChange={e => setForm({ ...form, state: e.target.value.toUpperCase() })}
+                    className="w-16 px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                  <input placeholder="Zip" value={form.zip || ''} onChange={e => setForm({ ...form, zip: e.target.value })}
+                    className="w-24 px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+                </div>
+              </div>
+            )}
             {(modal.type === 'update_due_date' || modal.type === 'request_date_change') && (
               <div className="mb-4">
                 <label className="block text-xs font-semibold text-slate-500 mb-1">New due date</label>

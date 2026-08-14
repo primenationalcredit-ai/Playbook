@@ -19,7 +19,7 @@ const WRITE_ACTIONS = new Set([
   // External (Zelle) payment recording - Zoho payment + charge closed on the processor side
   'mark_paid_external',
   // Card on file (save a card for a client, e.g. Zelle clients with no card yet)
-  'update_card_on_file', 'collect_and_save_card',
+  'update_card_on_file', 'collect_and_save_card', 'update_billing_address',
   'send_payment_form',
   // Split a scheduled charge into partial + remainder
   'split_charge'
