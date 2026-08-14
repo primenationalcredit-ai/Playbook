@@ -1166,7 +1166,7 @@ function DeclineOutreachBar({ r, isAdmin = false }) {
     )}
   </>);
 }
-function BillingOverview() {
+function BillingOverview({ isAdmin }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -1491,7 +1491,7 @@ export default function Invoices() {
               : 'Track doc fees and scheduled payments. Read-only.'}
         </p>
       </div>
-      <BillingOverview />
+      <BillingOverview isAdmin={isAdmin} />
 
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
