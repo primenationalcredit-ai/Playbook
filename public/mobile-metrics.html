@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Today</title>
+<style>
+  :root { --ink:#1a2b45; --muted:#8a94a6; --line:#e5e9f0; --green:#16a34a; --bg:#f5f7fa; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    margin:0; padding:20px 16px 40px;
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  h1 { font-size:15px; font-weight:600; color:var(--muted); margin:0 0 4px; text-transform:uppercase; letter-spacing:.5px; }
+  .date { font-size:13px; color:var(--muted); margin:0 0 20px; }
+  .box {
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:20px 18px; margin-bottom:12px;
+  }
+  .label { font-size:14px; color:var(--muted); font-weight:600; margin:0 0 6px; }
+  .value { font-size:38px; font-weight:800; color:var(--ink); line-height:1.1; }
+  .sublabel { font-size:13px; color:var(--muted); margin-top:4px; }
+  .refresh {
+    position:fixed; bottom:20px; right:20px;
+    width:52px; height:52px; border-radius:26px;
+    background:var(--ink); color:#fff; border:none;
+    font-size:20px; box-shadow:0 4px 12px rgba(0,0,0,.15);
+  }
+  .updated { text-align:center; font-size:12px; color:var(--muted); margin-top:20px; }
+  .err { color:#b23c3c; font-size:14px; text-align:center; padding:40px 0; }
+</style>
+</head>
+<body>
+  <h1>Today's Numbers</h1>
+  <div class="date" id="date">loading…</div>
+  <div id="boxes"></div>
+  <div class="updated" id="updated"></div>
+  <button class="refresh" onclick="load()">↻</button>
+
+<script>
+const KEY = 'YLk7xzTw4K1okgbfM_7RsFiVEWrlSnvr';
+const API = '/.netlify/functions/mobile-metrics?key=' + KEY;
+
+async function load() {
+  try {
+    const r = await fetch(API);
+    const d = await r.json();
+    if (!d.boxes) throw new Error('bad response');
+    document.getElementById('date').textContent = d.date || '';
+    document.getElementById('boxes').innerHTML = d.boxes.map(b => `
+      <div class="box">
+        <div class="label">${b.label}</div>
+        <div class="value">${b.value}</div>
+        ${b.sublabel ? `<div class="sublabel">${b.sublabel}</div>` : ''}
+      </div>
+    `).join('');
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('boxes').innerHTML = '<div class="err">Couldn\'t load — tap ↻ to retry</div>';
+  }
+}
+load();
+setInterval(load, 60000); // auto-refresh every 60s
+</script>
+</body>
+</html>
