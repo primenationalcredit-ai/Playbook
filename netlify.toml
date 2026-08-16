@@ -18,6 +18,9 @@
 [functions."training-refresher-sweep"]
   schedule = "0 8 * * *"
 
+[functions."monitoring-site-drift-sweep"]
+  schedule = "*/20 * * * *"
+
 [functions."qualified-doc-watchdog"]
   schedule = "30 9 * * *"
 [functions."consultant-bonus-sync"]
