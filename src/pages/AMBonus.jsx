@@ -442,7 +442,13 @@ export default function AMBonus() {
     const key = (r.am_name || '').toLowerCase();
     const nm = (currentAMName || '').toLowerCase();
     if (!key || !nm || nm === 'unknown') return false;
-    return key.includes(nm.split(' ')[0]) || nm.includes(key.split(' ')[0]);
+    if (!(key.includes(nm.split(' ')[0]) || nm.includes(key.split(' ')[0]))) return false;
+    // Month scope (Kim 8/17, CSAT tracker showing July responses under August):
+    // this raw response list had no date boundary at all - selecting August
+    // showed every response ever received, from every month. Match the same
+    // calendar-month window am-csat.js already correctly uses for the average.
+    if (!r.created_at) return false;
+    return String(r.created_at).slice(0, 7) === selectedMonth;
   });
   const isBad = (r) => (r.am_rating != null && r.am_rating <= 6) || (r.overall_satisfaction != null && r.overall_satisfaction <= 6);
 
