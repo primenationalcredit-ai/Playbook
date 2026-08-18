@@ -59,90 +59,7 @@ exports.handler = async (event) => {
     const monthLabel = new Date(targetMonth + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' });
     const monthStart = `${targetMonth}-01`;
 
-    // ===== PAYSHEET MIRROR (shared) =====
-    // The Payment Dashboard reads the Google Sheet (paysheet-live) and is the source of truth for MTD
-    // sales. This rewrites each consultant's totalSales (MTD) and today.sales to match the paysheet,
-    // so the leaderboard equals the Payment Dashboard. Applied to BOTH fresh and cached responses.
-    const mirrorTodayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-    let paysheetTotals = null; // { mtdSales, todaySales, mtdDocs, mtdPartials, mtdFinals } from the paysheet
-    const applyPaysheetMirror = async (consultantsObj) => {
-      try {
-        const siteBase = process.env.URL || process.env.DEPLOY_URL || 'https://cute-cat-d9631c.netlify.app';
-        const psRes = await fetch(`${siteBase}/.netlify/functions/paysheet-live?months=${targetMonth}`);
-        if (!psRes.ok) return false;
-        const ps = await psRes.json();
-        const psRows = (ps && ps.months && ps.months[targetMonth] && ps.months[targetMonth].rows) ? ps.months[targetMonth].rows : [];
-        // Company totals straight from the paysheet (matches the Payment Dashboard's company MTD).
-        let coSales = 0, coToday = 0, coDocs = 0, coPartials = 0, coFinals = 0;
-        const psAgg = {};
-        for (const row of psRows) {
-          const amtAll = parseFloat(row.fee_paid) || 0;
-          coSales += amtAll;
-          if (row.date_paid === mirrorTodayStr) coToday += amtAll;
-          const codeAll = (row.code || '').toLowerCase();
-          const ftAll = (row.fee_type || '').toLowerCase();
-          let catAll = 'other';
-          if (codeAll.includes('doc')) catAll = 'doc';
-          else if (codeAll.includes('par')) catAll = 'partial';
-          else if (codeAll.includes('fin')) catAll = 'final';
-          else if (ftAll.includes('doc')) catAll = 'doc';
-          else if (ftAll.includes('partial')) catAll = 'partial';
-          else if (ftAll.includes('final')) catAll = 'final';
-          if (catAll === 'doc') coDocs++;
-          else if (catAll === 'partial') coPartials++;
-          else if (catAll === 'final') coFinals++;
-
-          const nm = row.consultant;
-          if (!nm) continue;
-          if (!psAgg[nm]) psAgg[nm] = { sales: 0, today: 0, count: 0, docs: 0, partials: 0, finals: 0 };
-          // Consultant tiles show COMMISSIONABLE sales only (doc/partial/final).
-          // Additional rounds etc. stay in the company MTD above, not personal numbers.
-          if (catAll !== 'other') {
-            psAgg[nm].sales += amtAll;
-            psAgg[nm].count++;
-            if (row.date_paid === mirrorTodayStr) psAgg[nm].today += amtAll;
-          }
-          if (catAll === 'doc') psAgg[nm].docs++;
-          else if (catAll === 'partial') psAgg[nm].partials++;
-          else if (catAll === 'final') psAgg[nm].finals++;
-        }
-        paysheetTotals = {
-          mtdSales: Math.round(coSales * 100) / 100,
-          todaySales: Math.round(coToday * 100) / 100,
-          mtdDocs: coDocs, mtdPartials: coPartials, mtdFinals: coFinals
-        };
-        const psNames = Object.keys(psAgg);
-        const firstWord = (s) => String(s || '').toLowerCase().trim().split(/\s+/)[0];
-        const PS_ALIASES = { 'cindy broadstreet': 'Cindy', 'rose benitez': 'Rose' };
-        const findPs = (cName) => {
-          if (!cName) return null;
-          const lower = cName.toLowerCase().trim();
-          if (PS_ALIASES[lower] && psAgg[PS_ALIASES[lower]]) return psAgg[PS_ALIASES[lower]];
-          if (psAgg[cName]) return psAgg[cName];
-          const cf = firstWord(cName);
-          if (cf.length > 1) { const fm = psNames.filter(pn => firstWord(pn) === cf); if (fm.length === 1) return psAgg[fm[0]]; }
-          const cWords = lower.split(/\s+/).filter(Boolean);
-          const cm = psNames.filter(pn => { const pw = pn.toLowerCase().split(/\s+/).filter(Boolean); return cWords.every(w => pw.includes(w)) || pw.every(w => cWords.includes(w)); });
-          if (cm.length === 1) return psAgg[cm[0]];
-          return null;
-        };
-        for (const [n, d] of Object.entries(consultantsObj || {})) {
-          const match = findPs(d.name || n);
-          if (match) {
-            d.totalSales = Math.round(match.sales);
-            d.mtdDocs = match.docs;
-            d.mtdPartials = match.partials;
-            d.mtdFinals = match.finals;
-            d.thisMonthClientCount = match.count;
-            if (!d.today) d.today = {};
-            d.today.sales = Math.round(match.today);
-            d.paysheetMirrored = true;
-          }
-        }
-        return true;
-      } catch (e) { console.error('[paysheet-mirror] failed:', e.message); return false; }
-    };
-    // ===== END PAYSHEET MIRROR (shared) =====
+    // Google Sheets paysheet mirror removed (Joe 8/17) - MTD now comes only from live consultant_payments, never a spreadsheet.
 
     // Response cache: this function does a lot of live Pipedrive work, so we serve a cached result
     // (per month) and only recompute when it's older than the TTL or ?refresh=1 is passed. Keeps the
@@ -162,21 +79,6 @@ exports.handler = async (event) => {
           // Always serve cache on the live page load, even if a little stale. The scheduled warm
           // function (and ?refresh=1) do the slow recompute, so the team never blocks on it and the
           // page never fails to load. Freshness comes from the every-10-min warm.
-          // Still apply the paysheet mirror to the cached body so MTD always matches the Payment Dashboard.
-          try {
-            const cachedObj = JSON.parse(priorCacheBody);
-            if (cachedObj && cachedObj.consultants) {
-              await applyPaysheetMirror(cachedObj.consultants);
-              if (paysheetTotals && cachedObj.teamTotals) {
-                cachedObj.teamTotals.mtdSales = paysheetTotals.mtdSales;
-                cachedObj.teamTotals.todaySales = paysheetTotals.todaySales;
-                cachedObj.teamTotals.mtdDocs = paysheetTotals.mtdDocs;
-                cachedObj.teamTotals.mtdPartials = paysheetTotals.mtdPartials;
-                cachedObj.teamTotals.mtdFinals = paysheetTotals.mtdFinals;
-              }
-              return { statusCode: 200, headers, body: JSON.stringify(cachedObj) };
-            }
-          } catch (_) { /* fall through to raw cache if parse/mirror fails */ }
           return { statusCode: 200, headers, body: priorCacheBody };
         }
       }
@@ -1502,15 +1404,12 @@ exports.handler = async (event) => {
       d.today = { sales: Math.round(tS), docs: tD, partials: tP, finals: tF, payments: myToday.length };
     }
 
-    // Apply the paysheet mirror to the freshly computed results before caching/returning.
-    await applyPaysheetMirror(results);
-    // Override company totals from the paysheet so the leaderboard's company MTD matches the
-    // Payment Dashboard exactly (the per-consultant numbers were mirrored inside the function).
-    const teamMtdSales = paysheetTotals ? paysheetTotals.mtdSales : mtdSales;
-    const teamTodaySales = paysheetTotals ? paysheetTotals.todaySales : todaySales;
-    const teamMtdDocs = paysheetTotals ? paysheetTotals.mtdDocs : mtdDocs;
-    const teamMtdPartials = paysheetTotals ? paysheetTotals.mtdPartials : mtdPartials;
-    const teamMtdFinals = paysheetTotals ? paysheetTotals.mtdFinals : mtdFinals;
+    // Live, from real transactions only - no Google Sheet involved (Joe 8/17).
+    const teamMtdSales = mtdSales;
+    const teamTodaySales = todaySales;
+    const teamMtdDocs = mtdDocs;
+    const teamMtdPartials = mtdPartials;
+    const teamMtdFinals = mtdFinals;
 
     // Auto-save newly detected one-time bonuses
     for (const [n, d] of Object.entries(results)) {
