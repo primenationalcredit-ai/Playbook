@@ -14,7 +14,8 @@ const PD_BASE = 'https://api.pipedrive.com/v1';
 const F = {
   DOC_1: '314d267ebc05d3623ffd8aab701baae7bea29aa8',
   PARTIAL_1: '35c626c805984517bacdba0b20aa20ab7ee3c48a',
-  FINAL_1: '6a56ae5c67b53d1d25f0182790d7d84953a860c4'
+  FINAL_1: '6a56ae5c67b53d1d25f0182790d7d84953a860c4',
+  TODAYS_DATE: '7cd0b70520acc393591f6b4d569d7c4c80ae98cb'
 };
 const YES = { DOC_1: '1104', PARTIAL_1: '1106', FINAL_1: '1108' };
 const sb = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -89,7 +90,7 @@ exports.handler = async (event) => {
       };
       const toWrite = [];
       if (needsQD) toWrite.push({ ...base, event_type: 'qualified_doc' });
-      if (needsPif) toWrite.push({ ...base, event_type: bizDaysSince(deal.add_time, now) <= 5 ? 'pif_fast_start' : 'pif' });
+      if (needsPif) toWrite.push({ ...base, event_type: bizDaysSince(deal[F.TODAYS_DATE] || deal.add_time, pay.payment_date || now) <= 7 ? 'pif_fast_start' : 'pif' });
       if (toWrite.length && !dryRun) {
         const ins = await sb('consultant_bonus_events', {
           method: 'POST', headers: { Prefer: 'return=minimal,resolution=merge-duplicates' },

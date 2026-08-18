@@ -408,6 +408,22 @@ exports.handler = async (event) => {
       dealValueCache[dealId] = v;
       return v;
     }
+    // Fast Start anchor date (Joe 8/18, Kevin Lewis ticket): the real rule is 7
+    // business days from the "Todays Date" Pipedrive field (when the agreement
+    // went out) to the qualifying payment - not from the doc fee payment date,
+    // which is what this used to anchor on.
+    const dealTodaysDateCache = {};
+    async function getDealTodaysDate(dealId) {
+      if (!dealId) return null;
+      if (dealId in dealTodaysDateCache) return dealTodaysDateCache[dealId];
+      let v = null;
+      try {
+        const r = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals/${dealId}?api_token=${PIPEDRIVE_API_KEY}`);
+        if (r.ok) { const j = await r.json(); v = j.data?.['7cd0b70520acc393591f6b4d569d7c4c80ae98cb'] || j.data?.add_time || null; }
+      } catch (e) {}
+      dealTodaysDateCache[dealId] = v;
+      return v;
+    }
 
     // (Removed the live "lost deals" Pipedrive fetch — its result was never used in any metric and it
     //  was one more request-time Pipedrive call that could rate-limit. Closing % uses consults + paid
@@ -821,17 +837,18 @@ exports.handler = async (event) => {
           ? (Number(client.totalPaid) >= dealValue * 0.95)
           : (Number(finalPayment.amount) >= Number(docPayment.amount));
         if (!paidInFull) continue;
-        // Count business days between doc fee and final
-        const docDate = new Date(docPayment.payment_date);
+        // Count business days from the "Todays Date" field (agreement sent) to final
+        const todaysDateVal = await getDealTodaysDate(client.dealId);
+        const anchorDate = todaysDateVal ? new Date(todaysDateVal) : new Date(docPayment.payment_date);
         const finalDate = new Date(finalPayment.payment_date);
         let bizDays = 0;
-        let d = new Date(docDate);
+        let d = new Date(anchorDate);
         d.setDate(d.getDate() + 1); // start counting from next day
         while (d <= finalDate) {
           if (d.getDay() !== 0 && d.getDay() !== 6) bizDays++;
           d.setDate(d.getDate() + 1);
         }
-        const qualified = bizDays <= 5;
+        const qualified = bizDays <= 7;
         if (qualified) pifCount++;
         // Keep clients who paid in full but missed the 5 business day window in the list, with the
         // reason, so consultants can see why they did not qualify instead of the client just vanishing.
@@ -839,7 +856,7 @@ exports.handler = async (event) => {
           name: client.name, dealId: client.dealId || nameToDealId[norm(client.name)] || null,
           docDate: docPayment.payment_date, finalDate: finalPayment.payment_date, bizDays,
           docAmount: docPayment.amount, finalAmount: finalPayment.amount, qualified,
-          reason: qualified ? null : `Paid in full on business day ${bizDays} (must be within 5 to qualify)`
+          reason: qualified ? null : `Paid in full on business day ${bizDays} (must be within 7 to qualify)`
         });
       }
       const pifBonus = pifCount * 25;

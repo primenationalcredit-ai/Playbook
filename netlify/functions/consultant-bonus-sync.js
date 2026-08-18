@@ -8,7 +8,8 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const FIELDS = {
   DOC_1: '314d267ebc05d3623ffd8aab701baae7bea29aa8',
   PARTIAL_1: '35c626c805984517bacdba0b20aa20ab7ee3c48a',
-  FINAL_1: '6a56ae5c67b53d1d25f0182790d7d84953a860c4'
+  FINAL_1: '6a56ae5c67b53d1d25f0182790d7d84953a860c4',
+  TODAYS_DATE: '7cd0b70520acc393591f6b4d569d7c4c80ae98cb'
 };
 const DOC1_YES = '1104';
 const PARTIAL1_YES = '1106';
@@ -120,15 +121,16 @@ exports.handler = async (event) => {
 
       if (final1 && !existingSet.has(`${deal.id}-pif`)) {
         let isPifFast = false;
-        if (deal.add_time) {
-          const addDate = new Date(deal.add_time);
+        const todaysDateVal = deal[FIELDS.TODAYS_DATE] || deal.add_time;
+        if (todaysDateVal) {
+          const addDate = new Date(todaysDateVal);
           let bizDays = 0, d = new Date(addDate);
-          d.setDate(d.getDate() + 1); // day AFTER signup is business day 1 (matches the $25 math)
-          while (d <= now && bizDays <= 6) {
+          d.setDate(d.getDate() + 1); // day AFTER Todays Date (agreement sent) is business day 1
+          while (d <= now && bizDays <= 8) {
             if (d.getDay() !== 0 && d.getDay() !== 6) bizDays++;
             d.setDate(d.getDate() + 1);
           }
-          isPifFast = bizDays <= 5;
+          isPifFast = bizDays <= 7;
         }
         batch.push({ ...base, event_type: isPifFast ? 'pif_fast_start' : 'pif' });
         existingSet.add(`${deal.id}-pif`);
