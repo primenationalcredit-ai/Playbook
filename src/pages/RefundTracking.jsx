@@ -236,8 +236,11 @@ export default function RefundTracking() {
     setBusy(false);
   };
 
-  const open = reqs.filter(r => OPEN_STATUSES.includes(r.status));
-  const done = reqs.filter(r => DONE_STATUSES.includes(r.status)).slice(0, 25);
+  // Non-leadership (AMs/Consultants) only see their own submissions (Joe 8/18) -
+  // leadership keeps the full company-wide view for approve/deny.
+  const myReqs = isLeader ? reqs : reqs.filter(r => r.requested_by === currentUser?.email);
+  const open = myReqs.filter(r => OPEN_STATUSES.includes(r.status));
+  const done = myReqs.filter(r => DONE_STATUSES.includes(r.status)).slice(0, 25);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><RefreshCw className="w-8 h-8 animate-spin text-gray-400" /></div>;

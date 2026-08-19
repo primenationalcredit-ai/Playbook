@@ -244,7 +244,7 @@ function App() {
           </ProtectedRoute>
         } />
         <Route path="admin/refunds" element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute>
             <RefundTracking />
           </ProtectedRoute>
         } />
