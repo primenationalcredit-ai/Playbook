@@ -687,6 +687,7 @@ exports.handler = async (event) => {
         if (String(p.payment_type) === 'doc_fee') continue; // exclude only bare doc fees - some legacy rows are typed 'unknown' rather than partial/final and must still count as real prior activity
         if (!orgPaymentHistory[p.referrer_org]) orgPaymentHistory[p.referrer_org] = [];
         orgPaymentHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month, client: p.client_name || null, amount: p.amount || null });
+      }
 
       for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
         const thisMonthPayments = payments.filter(p => p.month === targetMonth).sort((a, b) => a.date.localeCompare(b.date));
