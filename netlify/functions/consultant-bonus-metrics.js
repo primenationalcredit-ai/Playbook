@@ -438,105 +438,34 @@ exports.handler = async (event) => {
     const weekStartStr = monday.toISOString().split('T')[0];
 
     // --- Qualified-doc rule (invoice amounts) ---
-    // A client qualifies if they paid a doc fee this month AND, across their NON-doc invoices,
-    // the invoices paid in full cover at least what is still owed. That captures: a partial paid
-    // in full and >= the final, or the final/full balance paid in full. A token partial payment
-    // against a still-open balance does NOT qualify. If no invoices are on file for the deal we
-    // fall back to the older "has a partial/final ever" check so synced-late clients aren't dropped.
+    // --- Qualified-doc rule (Joe 8/20, Felicia Chaney 253887) ---
+    // REWRITTEN: the old rule reconciled against Zoho INVOICE balances, which
+    // can go stale relative to what the client actually paid (Felicia's real
+    // plan changed - she paid $150+$300+$100+$100 across two months - but her
+    // invoice mirror still only had two old $325 invoices from June that no
+    // longer matched reality, so the balance math silently failed her even
+    // though she genuinely qualified). Joe's actual rule is simpler and does
+    // not depend on invoice bookkeeping at all: doc fee paid (1 of 2) + any
+    // partial OR final payment on record (2 of 2) = qualified. This checks
+    // real consultant_payments rows directly - the money itself, never a
+    // mirrored invoice's balance - so a stale/mismatched invoice can never
+    // block a real qualification again.
     const EPS = 1; // balances under $1 count as paid in full
-    const invoicesForDeal = (dealId) => (!dealId ? [] : invoiceData.filter((inv) => String(inv.pipedrive_deal_id) === String(dealId)));
     function qualifyClient(client) {
-      const invs = invoicesForDeal(client.dealId);
       const docPay = (client.payments || []).find((p) => p.payment_type === 'doc_fee');
       const docAmt = docPay ? parseFloat(docPay.amount) || 0 : 0;
-
-      if (invs.length === 0) {
-        const key = client.dealId || client.name;
-        const mr = masterClientMap[key];
-        const adv = mr && (mr.types.has('partial') || mr.types.has('final') || mr.types.has('paid_in_full'));
-        let fbMonth = null;
-        if (adv) {
-          const pays = (client.payments || []).filter(p => p.payment_type !== 'doc_fee' && p.payment_date).sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
-          const fins = pays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
-          const pick = fins.length ? fins[fins.length - 1] : pays[0];
-          if (pick) fbMonth = String(pick.payment_date).slice(0, 7);
-        }
-        const paidAll = Math.round(docAmt + (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0));
-        return { qualified: !!adv, month: fbMonth, reason: adv ? null : 'no partial or final payment on file', paid: paidAll, owed: 0 };
-      }
-
-      // Drop the doc-fee invoice (closest total to the doc payment; else the smallest invoice)
-      let docIdx = -1, best = Infinity;
-      invs.forEach((inv, i) => {
-        const t = parseFloat(inv.total) || 0;
-        const diff = Math.abs(t - docAmt);
-        if (docAmt > 0 && diff <= 1 && diff < best) { best = diff; docIdx = i; }
-      });
-      // A lone invoice that doesn't match the doc payment is a BALANCE invoice - don't discard it.
-      if (docIdx === -1 && !(invs.length === 1 && docAmt > 0)) { let min = Infinity; invs.forEach((inv, i) => { const t = parseFloat(inv.total) || 0; if (t < min) { min = t; docIdx = i; } }); }
-      const nonDoc = invs.filter((_, i) => i !== docIdx);
-
-      if (nonDoc.length === 0) {
-        // No balance invoice on file - but trust the money before the paperwork:
-        // one-shot payers (whole balance in a single payment, no balance invoice
-        // ever created) still qualify off their actual payment rows.
-        const pays0 = (client.payments || []).filter(p => p.payment_type !== 'doc_fee' && p.payment_date).sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
-        const adv0 = pays0.filter(p => ['partial', 'final', 'paid_in_full'].includes(String(p.payment_type)));
-        if (adv0.length) {
-          const fins0 = adv0.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
-          const pick0 = fins0.length ? fins0[fins0.length - 1] : adv0[adv0.length - 1];
-          const paid0 = pays0.reduce((a, p) => a + (parseFloat(p.amount) || 0), 0);
-          return { qualified: true, month: String(pick0.payment_date).slice(0, 7), reason: null, paid: Math.round(docAmt + paid0), owed: 0 };
-        }
-        return { qualified: false, month: null, reason: 'doc fee only, no balance invoice yet', paid: Math.round(docAmt), owed: 0 };
-      }
-
-      let paidInFull = 0, owed = 0, billed = 0;
-      for (const inv of nonDoc) {
-        const total = parseFloat(inv.total) || 0;
-        const bal = parseFloat(inv.balance) || 0;
-        billed += total; owed += bal;
-        if (bal <= EPS) paidInFull += total;
-      }
-      // RULE (Joe 7/23): qualified the moment ANY single balance invoice is paid
-      // in full - the partial invoice on a partial plan, the final invoice on a
-      // full plan. The rest of the balance being open does NOT block qualification.
-      const paidTotals = nonDoc.filter(inv => (parseFloat(inv.balance) || 0) <= EPS).map(inv => parseFloat(inv.total) || 0).filter(t => t > 0);
-      let qualified = paidTotals.length > 0 || owed <= EPS;
-      // MONEY BEATS STALE PAPERWORK (Fernando Torres 266340, 8/10): the invoice
-      // mirror can lag Zoho (his $275 partial paid 8/7 but INV-052095 still showed
-      // balance 275 from 7/27). If the client's actual balance payments cover the
-      // smallest balance invoice, they qualify off the payments - same doctrine as
-      // the no-balance-invoice branch above.
-      let payTarget = paidTotals.length ? Math.min(...paidTotals) : 0;
-      if (!qualified) {
-        const invTotals = nonDoc.map(inv => parseFloat(inv.total) || 0).filter(t => t > 0);
-        const minInv = invTotals.length ? Math.min(...invTotals) : 0;
-        const balancePaid = (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0);
-        if (minInv > 0 && balancePaid >= minInv - EPS) { qualified = true; payTarget = minInv; }
-      }
-      // MONTH (Joe 7/23): the doc counts in the month that invoice FINISHED. Walk
-      // the client's balance payments in date order until they cover the first
-      // completed invoice; the payment that crosses the line names the month.
+      const advPays = (client.payments || []).filter(p => ['partial', 'final', 'paid_in_full'].includes(String(p.payment_type)) && p.payment_date)
+        .sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
+      const qualified = docAmt > 0 && advPays.length > 0;
       let month = null;
       if (qualified) {
-        const target = payTarget;
-        const pays = (client.payments || []).filter(p => p.payment_type !== 'doc_fee' && p.payment_date).sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
-        let cum = 0;
-        for (const p of pays) { cum += parseFloat(p.amount) || 0; if (cum >= target - EPS) { month = String(p.payment_date).slice(0, 7); break; } }
-        if (!month && pays.length) month = String(pays[pays.length - 1].payment_date).slice(0, 7);
+        const fins = advPays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+        const pick = fins.length ? fins[fins.length - 1] : advPays[advPays.length - 1];
+        month = String(pick.payment_date).slice(0, 7);
       }
-      // Reason text credits the doc fee that was actually received. Without this, a client
-      // who paid $149 against a $550 deal shows as "$550 of $550 balance still owed" because
-      // we silently dropped one of the duplicate invoices as "the doc fee invoice" and the
-      // other untouched $550 is what's in nonDoc. Surfacing the doc fee makes it clear the
-      // client did pay something and only the balance is open.
-      const reason = qualified ? null : (
-        docAmt > 0
-          ? `Doc fee paid ($${Math.round(docAmt)}). $${Math.round(owed)} balance still open.`
-          : `$${Math.round(owed)} of $${Math.round(billed)} balance still owed`
-      );
-      return { qualified, month, reason, paid: Math.round(docAmt + (billed - owed)), owed: Math.round(owed) };
+      const paidAll = Math.round(docAmt + (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0));
+      const reason = qualified ? null : (docAmt > 0 ? 'doc fee paid, no partial or final payment on file yet' : 'no doc fee on file');
+      return { qualified, month, reason, paid: paidAll, owed: 0 };
     }
 
     const results = {};
