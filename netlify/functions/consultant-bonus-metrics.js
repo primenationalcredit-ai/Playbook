@@ -681,7 +681,21 @@ exports.handler = async (event) => {
         orgPaymentHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month, client: p.client_name || null, amount: p.amount || null });
       }
 
-      for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
+      // Joe 8/20, Didier Narcisse 267304 / Anthony Goulart: SEPARATE list, only for
+      // reactivation - never touches orgPaymentHistory (new-affiliate-launch further below
+      // still needs the doc fee in that list). Reactivation must be keyed to a genuine
+      // PAYING referral, never a bare doc fee.
+      const orgQualifyingHistory = {};
+      for (const p of affiliateHistory) {
+        if (!p.referrer_org) continue;
+        const pFirst2 = (p.consultant_name || '').split(' ')[0].toLowerCase();
+        if (pFirst2 !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
+        if (String(p.payment_type) === 'doc_fee') continue;
+        if (!orgQualifyingHistory[p.referrer_org]) orgQualifyingHistory[p.referrer_org] = [];
+        orgQualifyingHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month, client: p.client_name || null, amount: p.amount || null });
+      }
+
+      for (const [orgName, payments] of Object.entries(orgQualifyingHistory)) {
         const thisMonthPayments = payments.filter(p => p.month === targetMonth).sort((a, b) => a.date.localeCompare(b.date));
         const priorPayments = payments.filter(p => p.month < targetMonth).sort((a, b) => b.date.localeCompare(a.date));
         
@@ -879,7 +893,7 @@ exports.handler = async (event) => {
       // can see where every referred client stands.
       const nowTs = new Date();
       const reactivationProgress = [];
-      for (const [orgName, payments] of Object.entries(orgPaymentHistory)) {
+      for (const [orgName, payments] of Object.entries(orgQualifyingHistory)) {
         const sorted = payments.slice().sort((a, b) => a.date.localeCompare(b.date));
         const thisMonthPays = sorted.filter(p => p.month === targetMonth);
         const priorPays = sorted.filter(p => p.month < targetMonth);
