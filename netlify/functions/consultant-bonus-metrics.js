@@ -97,7 +97,7 @@ exports.handler = async (event) => {
 
     // Full affiliate payment history (all time, small subset, few columns) so the reactivation kicker
     // and new-affiliate-launch can measure dormancy beyond the rolling window.
-    const affiliateHistory = await supaGet('consultant_payments', `is_affiliate_deal=eq.true&select=referrer_org,payment_date,payment_month,consultant_name,client_name,amount,payment_type&order=payment_date.asc`);
+    const affiliateHistory = await supaGet('consultant_payments', `is_affiliate_deal=eq.true&select=referrer_org,payment_date,payment_month,consultant_name,client_name,amount&order=payment_date.asc`);
 
     // Build a master client map: deal_id → all payment types ever
     const masterClientMap = {};
@@ -677,14 +677,6 @@ exports.handler = async (event) => {
         const pFirst = (p.consultant_name || '').split(' ')[0].toLowerCase();
         if (pFirst !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
 
-        if (!orgPaymentHistory[p.referrer_org]) orgPaymentHistory[p.referrer_org] = [];
-        // Joe 8/20, Didier Narcisse 267304 / Anthony Goulart: reactivation must be
-        // keyed to a genuine PAYING referral (partial/final/paid_in_full), never a bare
-        // doc fee - a doc-fee-only signup isn't a qualified client anywhere else in this
-        // system, so it should not count as "affiliate activity" here either. Without this,
-        // Didier's July doc fee (before he ever paid anything toward his balance) fired the
-        // kicker two weeks before he actually became a real paying client in August.
-        if (String(p.payment_type) === 'doc_fee') continue; // exclude only bare doc fees - some legacy rows are typed 'unknown' rather than partial/final and must still count as real prior activity
         if (!orgPaymentHistory[p.referrer_org]) orgPaymentHistory[p.referrer_org] = [];
         orgPaymentHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month, client: p.client_name || null, amount: p.amount || null });
       }
