@@ -100,6 +100,34 @@ exports.handler = async (event) => {
     }
 
     console.log(`Payment recorded: ${record.client_name} - $${record.amount} - ${record.payment_type} - ${record.consultant_name}`);
+
+    // PIPEDRIVE NOTE + ACTIVITY (Joe 8/20, Jamesha Finney 257336): payments made
+    // via autobill or a manually-sent Zoho invoice never got a note or activity
+    // on the deal - only card-on-file payments did. Every payment through this
+    // webhook now gets both, in the same format Joe/the team already use
+    // ("****<Type> PAYMENT RECEIVED IN THE AMOUNT OF $X.XX FOR <name>").
+    // Awaited (not fire-and-forget) so it can't get killed by the function
+    // returning before it finishes - the exact bug found earlier tonight in
+    // process-initial-payment.js's note posting. Fail-open: wrapped in its own
+    // try/catch so a Pipedrive hiccup never blocks the payment record itself.
+    const PD_TOKEN2 = process.env.PIPEDRIVE_API_TOKEN || process.env.PD_API_TOKEN;
+    if (PD_TOKEN2 && record.pipedrive_deal_id) {
+      try {
+        const TYPE_LABEL = { doc_fee: 'Document Fee', partial: 'Partial', final: 'Final', paid_in_full: 'Final', additional_round: 'Additional Rounds' };
+        const typeLabel = TYPE_LABEL[record.payment_type] || record.payment_type;
+        const amtStr = record.amount.toFixed(2);
+        const activitySubject = `****${typeLabel} PAYMENT RECEIVED IN THE AMOUNT OF $${amtStr} FOR ${record.client_name}`;
+        const noteContent = `<p><b>&#128179; PAYMENT RECEIVED - $${amtStr} (${typeLabel})</b></p><ul><li>Client: ${record.client_name}</li><li>Consultant: ${record.consultant_name}</li>${record.zoho_payment_id ? `<li>Zoho Payment ID: <code>${record.zoho_payment_id}</code></li>` : ''}</ul><p><i>ASAP Payment System (Zoho invoice payment).</i></p>`;
+        await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?api_token=${PD_TOKEN2}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deal_id: parseInt(record.pipedrive_deal_id, 10), content: noteContent })
+        });
+        await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_TOKEN2}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subject: activitySubject, type: 'payment', deal_id: parseInt(record.pipedrive_deal_id, 10), done: 1, due_date: paymentDate })
+        });
+      } catch (e) { console.error('[payment-webhook] note/activity post failed (non-fatal):', e.message); }
+    }
     // EVENT-DRIVEN VERIFY (Joe 7/30): a partial/final recorded in Zoho - via ANY
     // channel (Zapier, portal, manual entry) - triggers the credit verification
     // for that deal the moment it lands: checkbox stamped, events written,
