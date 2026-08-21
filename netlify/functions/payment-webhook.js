@@ -139,16 +139,24 @@ exports.handler = async (event) => {
     const PD_TOKEN2 = process.env.PIPEDRIVE_API_TOKEN || process.env.PD_API_TOKEN;
     if (PD_TOKEN2 && record.pipedrive_deal_id) {
       try {
-        const TYPE_LABEL = { doc_fee: 'Document Fee', partial: 'Partial', final: 'Final', paid_in_full: 'Final', additional_round: 'Additional Rounds' };
+        const TYPE_LABEL = { doc_fee: 'Document Fee', partial: 'Partial', final: 'Final', paid_in_full: 'Paid in Full', additional_round: 'Additional Rounds' };
         const typeLabel = TYPE_LABEL[record.payment_type] || record.payment_type;
         const amtStr = record.amount.toFixed(2);
         const activitySubject = `****${typeLabel} PAYMENT RECEIVED IN THE AMOUNT OF $${amtStr} FOR ${record.client_name}`;
         const noteContent = `<p><b>&#128179; PAYMENT RECEIVED - $${amtStr} (${typeLabel})</b></p><ul><li>Client: ${record.client_name}</li><li>Consultant: ${record.consultant_name}</li>${record.zoho_payment_id ? `<li>Zoho Payment ID: <code>${record.zoho_payment_id}</code></li>` : ''}</ul><p><i>ASAP Payment System (Zoho invoice payment).</i></p>`;
-        await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?api_token=${PD_TOKEN2}`, {
+        // DUPLICATE GUARD (Joe 8/21, Jonathan Smith 269289 double-post): the
+        // autobill engine may have already posted this exact payment seconds
+        // earlier. Check the deal for the amount marker before posting.
+        const dupMarker = `PAYMENT RECEIVED IN THE AMOUNT OF $${amtStr} FOR`;
+        const exN = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?deal_id=${record.pipedrive_deal_id}&api_token=${PD_TOKEN2}&limit=30&sort=add_time DESC`).then(x => x.ok ? x.json() : { data: [] }).catch(() => ({ data: [] }));
+        const hasN = (exN.data || []).some(n => String(n.content || '').includes(dupMarker) && String(n.add_time || '') >= paymentDate);
+        const exA = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${record.pipedrive_deal_id}/activities?api_token=${PD_TOKEN2}&limit=100`).then(x => x.ok ? x.json() : { data: [] }).catch(() => ({ data: [] }));
+        const hasA = (exA.data || []).some(a => String(a.subject || '').includes(dupMarker) && String(a.add_time || '') >= paymentDate);
+        if (!hasN) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?api_token=${PD_TOKEN2}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ deal_id: parseInt(record.pipedrive_deal_id, 10), content: noteContent })
         });
-        await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_TOKEN2}`, {
+        if (!hasA) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_TOKEN2}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subject: activitySubject, type: 'payment', deal_id: parseInt(record.pipedrive_deal_id, 10), done: 0, due_date: paymentDate })
         });

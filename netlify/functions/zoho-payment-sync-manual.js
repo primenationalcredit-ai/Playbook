@@ -176,7 +176,23 @@ exports.handler = async (event) => {
             // customer-level company_name is stale for repeat clients, so any
             // deal it names must be verified - not open + person has an open
             // deal => the payment belongs to the newest OPEN deal instead.
-            dealId = parseDealId(inv.reference_number) || null;
+            // INVOICE IS THE TRUTH (Joe 8/21, Richard Martinez 269602/240401 -
+            // same class as Luis Meza): our own billing records know which deal
+            // owns this exact invoice, so resolve from the invoice FIRST. Only
+            // when the invoice is unknown to us fall back to the company_name /
+            // open-deal guessing below, which picked the wrong deal for repeat
+            // clients with two open deals.
+            try {
+              const ivRows = await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?zoho_invoice_id=eq.${encodeURIComponent(inv.invoice_id)}&select=pipedrive_deal_id&limit=1`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }).then(r => r.ok ? r.json() : []).catch(() => []);
+              let invDeal = ivRows && ivRows[0] && ivRows[0].pipedrive_deal_id ? String(ivRows[0].pipedrive_deal_id) : null;
+              if (!invDeal) {
+                const PROC_KEY = process.env.PROCESSOR_SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkc3hmemR0aGNzbmRsY2pnZmN1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTI4NTYxMSwiZXhwIjoyMDk0ODYxNjExfQ.2_Lx2lpSvogcN4W3nDsl8ZIEa_WgpKQJLwM9T9mANx0';
+                const chRows = await fetch(`https://rdsxfzdthcsndlcjgfcu.supabase.co/rest/v1/scheduled_charges?zoho_invoice_id=eq.${encodeURIComponent(inv.invoice_id)}&select=pipedrive_deal_id&limit=1`, { headers: { apikey: PROC_KEY, Authorization: `Bearer ${PROC_KEY}` } }).then(r => r.ok ? r.json() : []).catch(() => []);
+                invDeal = chRows && chRows[0] && chRows[0].pipedrive_deal_id ? String(chRows[0].pipedrive_deal_id) : null;
+              }
+              if (invDeal) dealId = invDeal;
+            } catch (e) { /* invoice-first lookup is best-effort; contact fallback below */ }
+            if (!dealId) dealId = parseDealId(inv.reference_number) || null;
             if (!dealId) {
               const cnDeal = parseDealId(inv.company_name);
               if (cnDeal) {
@@ -256,7 +272,7 @@ exports.handler = async (event) => {
       // ignore-duplicates re-batches can never double-post. Fail-open per row.
       if (insertRes.ok) {
         const PD_T = process.env.PIPEDRIVE_API_TOKEN || process.env.PD_API_TOKEN;
-        const TYPE_LBL = { doc_fee: 'Document Fee', partial: 'Partial', final: 'Final', paid_in_full: 'Final', additional_round: 'Additional Rounds', unknown: 'Partial' };
+        const TYPE_LBL = { doc_fee: 'Document Fee', partial: 'Partial', final: 'Final', paid_in_full: 'Paid in Full', additional_round: 'Additional Rounds', unknown: 'Partial' };
         for (const r of batch) {
           if (!PD_T || !r.pipedrive_deal_id) continue;
           try {
@@ -266,7 +282,7 @@ exports.handler = async (event) => {
             const exN = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?deal_id=${r.pipedrive_deal_id}&api_token=${PD_T}&limit=30&sort=add_time DESC`).then(x => x.ok ? x.json() : { data: [] });
             const hasN = (exN.data || []).some(n => String(n.content || '').includes(marker) && String(n.add_time || '') >= r.payment_date);
             if (!hasN) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?api_token=${PD_T}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deal_id: parseInt(r.pipedrive_deal_id, 10), content: subj }) });
-            const exA = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${r.pipedrive_deal_id}/activities?api_token=${PD_T}&limit=50`).then(x => x.ok ? x.json() : { data: [] });
+            const exA = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${r.pipedrive_deal_id}/activities?api_token=${PD_T}&limit=100`).then(x => x.ok ? x.json() : { data: [] });
             const hasA = (exA.data || []).some(a => String(a.subject || '').includes(marker) && String(a.add_time || '') >= r.payment_date);
             if (!hasA) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_T}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: subj, type: 'payment', deal_id: parseInt(r.pipedrive_deal_id, 10), done: 0, due_date: r.payment_date }) });
             // Payment received -> clear open DECLINE notifications on the deal
