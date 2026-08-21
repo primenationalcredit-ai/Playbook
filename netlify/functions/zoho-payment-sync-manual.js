@@ -112,6 +112,13 @@ exports.handler = async (event) => {
     });
     const existing = existRes.ok ? await existRes.json() : [];
     const existingSet = new Set(existing.map(e => e.zoho_payment_id).filter(Boolean));
+    // LIVE ROWS (Joe 8/21): rows payment-webhook wrote in real time - no
+    // zoho_payment_id yet. When Zoho later shows the same payment, UPGRADE the
+    // live row (stamp the payment id) instead of inserting a twin.
+    const liveRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${targetMonth}&zoho_payment_id=is.null&select=id,zoho_invoice_id,pipedrive_deal_id,amount,payment_date,payment_type`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    const liveRows = liveRes.ok ? await liveRes.json() : [];
 
     // Pull payments
     if (params.repair_month) {
@@ -163,6 +170,7 @@ exports.handler = async (event) => {
       if (payment.amount <= 0) continue;
 
       let paymentType = 'unknown';
+      let liveInvoiceId = null;
       let dealId = null;
 
       // Look up invoice from list endpoint (has company_name + we can get item info)
@@ -171,6 +179,7 @@ exports.handler = async (event) => {
           const invList = await zohoGet(token, `/invoices?invoice_number=${String(payment.invoice_numbers).split(',')[0].trim()}`);
           if (invList.invoices && invList.invoices.length > 0) {
             const inv = invList.invoices[0];
+            liveInvoiceId = String(inv.invoice_id || '');
             // Get deal_id from company_name
             // Deal resolution (Joe 7/24): invoice's own reference first; the
             // customer-level company_name is stale for repeat clients, so any
@@ -240,6 +249,18 @@ exports.handler = async (event) => {
         if (amt === 149) paymentType = 'doc_fee'; else if (amt === 249 || amt === 299) paymentType = 'additional_round';
       }
 
+      // LIVE-ROW UPGRADE (Joe 8/21): the dashboard already holds this payment as a
+      // real-time row written at charge time. Stamp the Zoho payment id onto it and
+      // move on - never insert a twin.
+      const liveMatch = liveRows.find(lr => !lr._used && ((liveInvoiceId && lr.zoho_invoice_id && String(lr.zoho_invoice_id) === liveInvoiceId) || (dealId && lr.pipedrive_deal_id && String(lr.pipedrive_deal_id) === String(dealId) && Math.abs(parseFloat(lr.amount) - parseFloat(payment.amount)) < 0.01 && Math.abs(new Date(lr.payment_date) - new Date(payment.date)) <= 86400000)));
+      if (liveMatch) {
+        liveMatch._used = true;
+        const up = { zoho_payment_id: payment.payment_id, source: 'zoho_api' };
+        if (paymentType !== 'unknown') up.payment_type = paymentType;
+        await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?id=eq.${liveMatch.id}`, { method: 'PATCH', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }, body: JSON.stringify(up) }).catch(e => console.error('live-row upgrade failed:', e.message));
+        skipped++;
+        continue;
+      }
       batch.push({
         payment_date: payment.date,
         payment_month: targetMonth,
