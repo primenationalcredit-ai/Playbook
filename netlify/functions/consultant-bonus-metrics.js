@@ -97,7 +97,7 @@ exports.handler = async (event) => {
 
     // Full affiliate payment history (all time, small subset, few columns) so the reactivation kicker
     // and new-affiliate-launch can measure dormancy beyond the rolling window.
-    const affiliateHistory = await supaGet('consultant_payments', `is_affiliate_deal=eq.true&select=referrer_org,payment_date,payment_month,consultant_name,client_name,amount&order=payment_date.asc`);
+    const affiliateHistory = await supaGet('consultant_payments', `is_affiliate_deal=eq.true&select=referrer_org,payment_date,payment_month,consultant_name,client_name,amount,payment_type&order=payment_date.asc`);
 
     // Build a master client map: deal_id → all payment types ever
     const masterClientMap = {};
