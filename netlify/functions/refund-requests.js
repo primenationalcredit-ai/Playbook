@@ -306,6 +306,16 @@ exports.handler = async (event) => {
           }
           if (!req.deduction_recorded) {
             const today3 = new Date().toISOString().slice(0, 10);
+            // RULING (Joe 8/21): deduct ONLY on commission already paid out.
+            // The UI sends commission_paid_amount from the split modal; when it is
+            // absent (legacy/API caller) fall back to full-target but stamp the
+            // numbers used and flag AUTO for payroll review - never invisible.
+            const isVa3 = !!(((pays.json || [])[0] || {}).is_va);
+            const splitSent3 = b.commission_paid_amount != null;
+            const paid3 = splitSent3 ? Math.max(0, Math.min(parseFloat(b.commission_paid_amount) || 0, target)) : target;
+            const pct3 = Math.max(0, parseFloat(b.deduction_rate != null ? b.deduction_rate : (isVa3 ? 10 : 14)) || 0);
+            const ded3 = Math.round(paid3 * pct3) / 100;
+            const unpaid3 = Math.round((target - paid3) * 100) / 100;
             const dIns2 = await supa('refunds', {
               method: 'POST', headers: { Prefer: 'return=minimal' },
               body: JSON.stringify({
@@ -313,16 +323,18 @@ exports.handler = async (event) => {
                 pipedrive_deal_id: String(req.pipedrive_deal_id || ''), consultant_name: req.consultant_name || 'Unknown',
                 refund_amount: target, refund_reason: req.reason || `check refund #${String(b.check_number)}`,
                 refund_date: b.mailed_date || today3,
-                deduction_percentage: (!!((pays.json || [])[0] || {}).is_va ? 10 : 14),
-                deduction_amount: Math.round(target * ((!!((pays.json || [])[0] || {}).is_va) ? 10 : 14)) / 100,
+                deduction_percentage: pct3,
+                deduction_amount: ded3,
                 status: 'approved',
                 payroll_period: (b.mailed_date || today3).slice(0, 7),
-                notes: `Auto-recorded on check mailed (request ${req.id}); payments marked: ${marked.length}${remaining2 > 0.009 ? ` - UNALLOCATED $${remaining2.toFixed(2)}, review` : ''}`,
+                notes: `${splitSent3 ? '' : 'AUTO (no split provided - verify against payroll). '}From refund request #${req.id} (check mailed). Commission already paid on $${paid3.toFixed(2)} -> deduct $${ded3.toFixed(2)} (${pct3}%).` +
+                  (unpaid3 > 0.009 ? ` Remaining $${unpaid3.toFixed(2)} never paid out - remove from paysheet, no deduction.` : '') +
+                  ` Payments marked: ${marked.length}${remaining2 > 0.009 ? ` - UNALLOCATED $${remaining2.toFixed(2)}, review` : ''}`,
                 created_by: b.requested_by || null
               })
             });
             if (dIns2.ok) {
-              await supa(`refund_requests?id=eq.${req.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ deduction_recorded: true }) });
+              await supa(`refund_requests?id=eq.${req.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ commission_paid_amount: paid3, deduction_rate: pct3, deduction_recorded: true }) });
             }
           }
           try { await fetch(`${process.env.URL || 'https://cute-cat-d9631c.netlify.app'}/.netlify/functions/consultant-bonus-metrics?month=${(b.mailed_date || new Date().toISOString().slice(0, 10)).slice(0, 7)}&refresh=1`); } catch (e2) {}

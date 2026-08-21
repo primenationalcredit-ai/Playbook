@@ -222,11 +222,18 @@ export default function RefundTracking() {
     const today = new Date().toISOString().slice(0, 10);
     const mailedDate = window.prompt('Date the check was mailed (yyyy-mm-dd):', today);
     if (mailedDate === null) return;
+    // RULING (Joe 8/21): the split modal runs here too - deduction only on
+    // commission already paid out. openSplit skips straight to confirm when
+    // the deduction was already recorded earlier in the flow.
+    const checkAmt = Math.max(0, parseFloat(r.check_amount) || 0);
+    openSplit(r, checkAmt, `Record check #${num} mailed for ${r.client_name} ($${checkAmt.toFixed(2)})?`, (splitVals) => doMarkCheckMailed(r, num, mailedDate || today, splitVals));
+  };
+  const doMarkCheckMailed = async (r, num, mailedDate, splitVals) => {
     setBusy(true);
     try {
       const resp = await fetch('/.netlify/functions/refund-requests', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'check_mailed', request_id: r.id, check_number: num, mailed_date: mailedDate || today, requested_by: currentUser?.email })
+        body: JSON.stringify({ action: 'check_mailed', request_id: r.id, check_number: num, mailed_date: mailedDate, requested_by: currentUser?.email, ...splitVals })
       });
       const d = await resp.json();
       if (!resp.ok || d.error) throw new Error(d.error || 'Failed');
