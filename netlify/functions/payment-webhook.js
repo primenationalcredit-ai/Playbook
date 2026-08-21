@@ -81,6 +81,32 @@ exports.handler = async (event) => {
       source: body.source || 'zapier'
     };
 
+
+    // INVOICE IS THE TRUTH (Joe 8/20, Luis Meza 239862/239967 - repeat clients
+    // with two deals kept getting payments pushed to the WRONG deal because the
+    // Zap reads the deal id off the Zoho CONTACT, and duplicate/repeat-client
+    // contacts carry stale or doubled deal ids). The payment always knows which
+    // INVOICE it paid, and our own records know which deal owns each invoice -
+    // so resolve the deal FROM THE INVOICE first, and only trust the
+    // contact-supplied deal id when the invoice is unknown to us.
+    if (record.zoho_invoice_id) {
+      try {
+        const invRows = await fetch(`${SUPABASE_URL}/rest/v1/consultant_invoices?zoho_invoice_id=eq.${encodeURIComponent(record.zoho_invoice_id)}&select=pipedrive_deal_id&limit=1`, {
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }).then(r => r.ok ? r.json() : []);
+        let trueDeal = invRows && invRows[0] && invRows[0].pipedrive_deal_id ? String(invRows[0].pipedrive_deal_id) : null;
+        if (!trueDeal) {
+          const chRows = await fetch(`https://rdsxfzdthcsndlcjgfcu.supabase.co/rest/v1/scheduled_charges?zoho_invoice_id=eq.${encodeURIComponent(record.zoho_invoice_id)}&select=pipedrive_deal_id&limit=1`, {
+            headers: { 'apikey': process.env.PROCESSOR_SUPABASE_KEY || '', 'Authorization': `Bearer ${process.env.PROCESSOR_SUPABASE_KEY || ''}` }
+          }).then(r => r.ok ? r.json() : []).catch(() => []);
+          trueDeal = chRows && chRows[0] && chRows[0].pipedrive_deal_id ? String(chRows[0].pipedrive_deal_id) : null;
+        }
+        if (trueDeal && String(record.pipedrive_deal_id || '') !== trueDeal) {
+          console.log(`[deal-correction] invoice ${record.zoho_invoice_id}: contact said deal ${record.pipedrive_deal_id}, invoice belongs to deal ${trueDeal} - using the invoice's deal`);
+          record.pipedrive_deal_id = trueDeal;
+        }
+      } catch (e) { console.error('[deal-correction] lookup failed, keeping provided deal id:', e.message); }
+    }
     // Insert to Supabase
     const res = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments`, {
       method: 'POST',
