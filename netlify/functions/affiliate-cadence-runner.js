@@ -320,6 +320,36 @@ exports.handler = async (event) => {
           body: JSON.stringify({ status: 'open' })
         });
       }
+      // ===== MORNING TOP-UP (Joe 8/20, Cindy's "only 13 showed" ticket) =====
+      // The cadence only births call tasks when an affiliate's step is a CALL step,
+      // so a fast caller can drain their pool below 20. If the fill above leaves a
+      // consultant short of the cap on a weekday, top up the difference straight
+      // from their due affiliate book (oldest-touched first, orgs with no open call
+      // task), so every consultant starts every weekday with a full 20. Same-day
+      // "done means done" is untouched - this only guarantees the MORNING number.
+      if (isWeekday) {
+        const openNow = await supa('affiliate_call_tasks?status=in.(open,queued)&select=affiliate_org_id');
+        const orgsWithTask = new Set((openNow.json || []).map((t) => t.affiliate_org_id));
+        const bookRes = await supa(`affiliate_orgs?paused=eq.false&opted_out=eq.false&missing_contact=eq.false&super_affiliate=eq.false&or=(next_touch_due.is.null,next_touch_due.lte.${todayCT})&select=id,pipedrive_org_id,org_name,contact_phone,segment,owner_name,last_touch_at&order=last_touch_at.asc.nullsfirst&limit=1000`);
+        const topupRows = [];
+        for (const aff of (bookRes.json || [])) {
+          const k = String(aff.owner_name || 'team').toLowerCase();
+          if ((openBy[k] || 0) >= CALL_CAP) continue;
+          if (orgsWithTask.has(aff.id)) continue;
+          topupRows.push({
+            affiliate_org_id: aff.id, pipedrive_org_id: aff.pipedrive_org_id, org_name: aff.org_name,
+            contact_phone: aff.contact_phone || null, segment: aff.segment || null, step_number: 0,
+            assigned_to: aff.owner_name || null, stats_line: null,
+            talking_points: 'Check-in call (auto top-up): reconnect, ask how their clients are doing, remind them referrals earn.',
+            due_date: todayCT, status: 'open'
+          });
+          openBy[k] = (openBy[k] || 0) + 1;
+          orgsWithTask.add(aff.id);
+        }
+        if (topupRows.length > 0) {
+          await supa('affiliate_call_tasks', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(topupRows) });
+        }
+      }
     } catch (e) { /* surfacer is best-effort; never blocks the run */ }
     // due affiliates: never touched (next_touch_due null) or due today/earlier
     const segPriority = ['new_never', 'dormant', 'slowing', 'producing', 'cold'];
