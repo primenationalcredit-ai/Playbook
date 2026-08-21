@@ -150,8 +150,17 @@ exports.handler = async (event) => {
         });
         await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_TOKEN2}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subject: activitySubject, type: 'payment', deal_id: parseInt(record.pipedrive_deal_id, 10), done: 1, due_date: paymentDate })
+          body: JSON.stringify({ subject: activitySubject, type: 'payment', deal_id: parseInt(record.pipedrive_deal_id, 10), done: 0, due_date: paymentDate })
         });
+        // Payment received -> clear open DECLINE notifications (Joe 8/21)
+        try {
+          const opnA = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${record.pipedrive_deal_id}/activities?api_token=${PD_TOKEN2}&limit=50&done=0`).then(x => x.ok ? x.json() : { data: [] });
+          for (const oa of (opnA.data || [])) {
+            if (/DECLINE/i.test(String(oa.subject || ''))) {
+              await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities/${oa.id}?api_token=${PD_TOKEN2}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ done: 1 }) });
+            }
+          }
+        } catch (e) { /* decline-clear is best-effort */ }
       } catch (e) { console.error('[payment-webhook] note/activity post failed (non-fatal):', e.message); }
     }
     // EVENT-DRIVEN VERIFY (Joe 7/30): a partial/final recorded in Zoho - via ANY
@@ -179,3 +188,4 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
   }
 };
+

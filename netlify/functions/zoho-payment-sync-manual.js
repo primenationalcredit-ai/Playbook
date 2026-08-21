@@ -268,7 +268,17 @@ exports.handler = async (event) => {
             if (!hasN) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?api_token=${PD_T}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deal_id: parseInt(r.pipedrive_deal_id, 10), content: subj }) });
             const exA = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${r.pipedrive_deal_id}/activities?api_token=${PD_T}&limit=50`).then(x => x.ok ? x.json() : { data: [] });
             const hasA = (exA.data || []).some(a => String(a.subject || '').includes(marker) && String(a.add_time || '') >= r.payment_date);
-            if (!hasA) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_T}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: subj, type: 'payment', deal_id: parseInt(r.pipedrive_deal_id, 10), done: 1, due_date: r.payment_date }) });
+            if (!hasA) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_T}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: subj, type: 'payment', deal_id: parseInt(r.pipedrive_deal_id, 10), done: 0, due_date: r.payment_date }) });
+            // Payment received -> clear open DECLINE notifications on the deal
+            // (Joe 8/21): once money is in, nobody should see a decline chase.
+            try {
+              const opnA = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${r.pipedrive_deal_id}/activities?api_token=${PD_T}&limit=50&done=0`).then(x => x.ok ? x.json() : { data: [] });
+              for (const oa of (opnA.data || [])) {
+                if (/DECLINE/i.test(String(oa.subject || ''))) {
+                  await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities/${oa.id}?api_token=${PD_T}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ done: 1 }) });
+                }
+              }
+            } catch (e) { /* decline-clear is best-effort */ }
           } catch (e) { console.error('note/activity post failed (non-fatal) deal ' + r.pipedrive_deal_id + ':', e.message); }
         }
       }
@@ -305,3 +315,4 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message, selfHeal: String(error && error.message || '').includes('Zoho 401') ? 'token cache evicted - next run recovers' : undefined }) };
   }
 };
+
