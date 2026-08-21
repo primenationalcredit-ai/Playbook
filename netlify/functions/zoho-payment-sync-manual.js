@@ -249,6 +249,29 @@ exports.handler = async (event) => {
         body: JSON.stringify(batch)
       });
       if (!insertRes.ok) console.error('Insert error:', await insertRes.text());
+      // PIPEDRIVE NOTE + ACTIVITY (Joe 8/21, Victor Argueta 267884 + 13 others):
+      // zoho_api-sourced payments recorded money but never told Pipedrive - the
+      // third ingestion path missing this (autobill + payment-webhook fixed 8/20).
+      // Idempotent: checks the deal for the exact marker first, so re-syncs and
+      // ignore-duplicates re-batches can never double-post. Fail-open per row.
+      if (insertRes.ok) {
+        const PD_T = process.env.PIPEDRIVE_API_TOKEN || process.env.PD_API_TOKEN;
+        const TYPE_LBL = { doc_fee: 'Document Fee', partial: 'Partial', final: 'Final', paid_in_full: 'Final', additional_round: 'Additional Rounds', unknown: 'Partial' };
+        for (const r of batch) {
+          if (!PD_T || !r.pipedrive_deal_id) continue;
+          try {
+            const amt2 = parseFloat(r.amount).toFixed(2);
+            const marker = `PAYMENT RECEIVED IN THE AMOUNT OF $${amt2} FOR`;
+            const subj = `****${TYPE_LBL[String(r.payment_type)] || 'Partial'} PAYMENT RECEIVED IN THE AMOUNT OF $${amt2} FOR ${r.client_name}`;
+            const exN = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?deal_id=${r.pipedrive_deal_id}&api_token=${PD_T}&limit=30&sort=add_time DESC`).then(x => x.ok ? x.json() : { data: [] });
+            const hasN = (exN.data || []).some(n => String(n.content || '').includes(marker) && String(n.add_time || '') >= r.payment_date);
+            if (!hasN) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/notes?api_token=${PD_T}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deal_id: parseInt(r.pipedrive_deal_id, 10), content: subj }) });
+            const exA = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${r.pipedrive_deal_id}/activities?api_token=${PD_T}&limit=50`).then(x => x.ok ? x.json() : { data: [] });
+            const hasA = (exA.data || []).some(a => String(a.subject || '').includes(marker) && String(a.add_time || '') >= r.payment_date);
+            if (!hasA) await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_T}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject: subj, type: 'payment', deal_id: parseInt(r.pipedrive_deal_id, 10), done: 1, due_date: r.payment_date }) });
+          } catch (e) { console.error('note/activity post failed (non-fatal) deal ' + r.pipedrive_deal_id + ':', e.message); }
+        }
+      }
       // New payments landed: bust the bonus caches for every month written so the
       // next page load recomputes. No payment may exist that a report can't see.
       if (insertRes.ok) {
