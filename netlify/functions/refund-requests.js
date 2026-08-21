@@ -299,7 +299,7 @@ exports.handler = async (event) => {
             if (amt <= 0 || amt > remaining2 + 0.009) continue;
             const m = await supa(`consultant_payments?id=eq.${p.id}`, {
               method: 'PATCH', headers: { Prefer: 'return=minimal' },
-              body: JSON.stringify({ refunded_at: new Date().toISOString(), refund_reason: `Check refund #${String(b.check_number)} (request ${req.id})` })
+              body: JSON.stringify({ refunded_at: new Date().toISOString(), refund_reason: `Check refund #${String(b.check_number)} (request ${req.id})`, excluded_from_bonus: true })
             });
             if (m.ok) { marked.push(p.id); remaining2 = Math.round((remaining2 - amt) * 100) / 100; }
             if (remaining2 <= 0.009) break;

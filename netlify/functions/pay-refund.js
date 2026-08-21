@@ -117,6 +117,30 @@ exports.handler = async (event) => {
       body: JSON.stringify(patch)
     });
 
+    // ESTRELLA RULE (Joe 8/21): refunded money must stop counting toward
+    // qualification and bonuses. Mark payment rows refunded + excluded_from_bonus
+    // (the column the bonus compute actually filters on), oldest-first up to the
+    // refunded amount, skipping rows already marked (idempotent if the processor
+    // or a retry marked them first), then refresh the bonus cache so a refunded
+    // doc fee de-qualifies the client immediately.
+    if (refunded > 0.009 && req.pipedrive_deal_id) {
+      try {
+        let remainingMark = Math.round(refunded * 100) / 100;
+        const payRows = await supa(`consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(String(req.pipedrive_deal_id))}&refunded_at=is.null&select=id,amount,payment_date&order=payment_date.asc`);
+        for (const p of (payRows.json || [])) {
+          const amt = Math.round((parseFloat(p.amount) || 0) * 100) / 100;
+          if (amt <= 0 || amt > remainingMark + 0.009) continue;
+          const m = await supa(`consultant_payments?id=eq.${p.id}`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ refunded_at: new Date().toISOString(), refund_reason: `Card refund (request ${req.id})`, excluded_from_bonus: true })
+          });
+          if (m.ok) remainingMark = Math.round((remainingMark - amt) * 100) / 100;
+          if (remainingMark <= 0.009) break;
+        }
+        try { await fetch(`${process.env.URL || 'https://cute-cat-d9631c.netlify.app'}/.netlify/functions/consultant-bonus-metrics?month=${new Date().toISOString().slice(0, 7)}&refresh=1`); } catch (e2) {}
+      } catch (e) { console.error('card refund payment-marking failed (refund still recorded):', e.message); }
+    }
+
     // Consultant payroll deduction - once per request, at the first pay action
     let deduction = null;
     if (!req.deduction_recorded && b.commission_paid_amount != null) {
