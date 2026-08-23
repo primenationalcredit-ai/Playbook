@@ -104,6 +104,22 @@ exports.handler = async (event) => {
         if (trueDeal && String(record.pipedrive_deal_id || '') !== trueDeal) {
           console.log(`[deal-correction] invoice ${record.zoho_invoice_id}: contact said deal ${record.pipedrive_deal_id}, invoice belongs to deal ${trueDeal} - using the invoice's deal`);
           record.pipedrive_deal_id = trueDeal;
+          // BRANDON JACKSON (Eric's ticket, 8/22, deal 269915): the consultant in
+          // the payload was resolved from the WRONG deal (repeat client's contact
+          // carried the old deal id, owned by a different consultant). When the
+          // deal is corrected, the consultant must be re-resolved from the TRUE
+          // deal's owner - otherwise the credit lands on the old deal's owner.
+          try {
+            const PDT = process.env.PIPEDRIVE_API_TOKEN || process.env.PD_API_TOKEN;
+            if (PDT) {
+              const dj2 = await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/deals/${trueDeal}?api_token=${PDT}`).then(x => x.ok ? x.json() : null);
+              const trueOwner = (dj2 && dj2.data && (dj2.data.owner_name || (dj2.data.owner_id && dj2.data.owner_id.name))) || null;
+              if (trueOwner && trueOwner !== record.consultant_name) {
+                console.log(`[deal-correction] consultant re-resolved: ${record.consultant_name} -> ${trueOwner}`);
+                record.consultant_name = trueOwner;
+              }
+            }
+          } catch (e2) { console.error('[deal-correction] owner re-resolve failed, keeping payload consultant:', e2.message); }
         }
       } catch (e) { console.error('[deal-correction] lookup failed, keeping provided deal id:', e.message); }
     }
