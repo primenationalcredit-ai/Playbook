@@ -188,6 +188,25 @@ export default function AMBonus() {
       loadData();
     } catch (e) { setError(e.message); }
   };
+  // Upload with retry: supabase-js's cross-tab auth lock can transiently abort
+  // a call ("signal is aborted without reason") when another Playbook tab holds
+  // the session lock. The contention clears in moments - retry wins. Also gives
+  // a real error message with the file size instead of the browser's riddle.
+  const uploadProof = async (path, fileObj, fallbackType, label) => {
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { error } = await supabase.storage.from('credit-proofs').upload(path, fileObj, { upsert: attempt > 1, contentType: fileObj.type || fallbackType });
+      if (!error) return null;
+      lastErr = error;
+      const aborted = /abort/i.test(error.message || '');
+      if (!aborted && attempt === 1) break; // real errors (policy, size) won't heal on retry
+      await new Promise(r => setTimeout(r, 900 * attempt));
+    }
+    const mb = (fileObj.size / 1024 / 1024).toFixed(1);
+    const hint = /abort/i.test(lastErr?.message || '') ? ' The connection was interrupted - close other Playbook tabs and try once more.' : '';
+    return `${label} upload failed (${mb}MB file): ${lastErr?.message || 'unknown error'}.${hint}`;
+  };
+
   const submitCreditBuilding = async () => {
     if (!formData.client_name || !formData.product_name) return;
     if (!proofFile && !editExisting.proofUrl) { setError('A proof screenshot is required.'); return; }
@@ -199,8 +218,8 @@ export default function AMBonus() {
       if (proofFile) {
         const ext = (proofFile.name.split('.').pop() || 'png').toLowerCase();
         const path = `${currentUser?.id || 'unknown'}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('credit-proofs').upload(path, proofFile, { upsert: false, contentType: proofFile.type || 'image/png' });
-        if (upErr) { setError('Image upload failed: ' + upErr.message); setUploading(false); return; }
+        const upMsg = await uploadProof(path, proofFile, 'image/png', 'Image');
+        if (upMsg) { setError(upMsg); setUploading(false); return; }
         const { data: pub } = supabase.storage.from('credit-proofs').getPublicUrl(path);
         proofUrl = pub?.publicUrl || null;
       }
@@ -209,8 +228,8 @@ export default function AMBonus() {
       if (audioFile) {
         const aext = (audioFile.name.split('.').pop() || 'm4a').toLowerCase();
         const apath = `${currentUser?.id || 'unknown'}/audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${aext}`;
-        const { error: aErr } = await supabase.storage.from('credit-proofs').upload(apath, audioFile, { upsert: false, contentType: audioFile.type || 'audio/mpeg' });
-        if (aErr) { setError('Audio upload failed: ' + aErr.message); setUploading(false); return; }
+        const aMsg = await uploadProof(apath, audioFile, 'audio/mpeg', 'Audio');
+        if (aMsg) { setError(aMsg); setUploading(false); return; }
         const { data: apub } = supabase.storage.from('credit-proofs').getPublicUrl(apath);
         audioUrl = apub?.publicUrl || null;
       }
