@@ -268,6 +268,7 @@ exports.handler = async (event) => {
         payment_type: paymentType,
         client_name: payment.customer_name,
         zoho_payment_id: payment.payment_id,
+        zoho_invoice_id: liveInvoiceId || null,
         pipedrive_deal_id: dealId,
         consultant_name: 'pending_enrichment', // Will be filled by enrichment step
         source: 'zoho_api'
