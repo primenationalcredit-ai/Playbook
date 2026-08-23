@@ -66,20 +66,6 @@ async function getDeal(dealId, dealCache) {
 // Find a Pipedrive deal id for a payment that has no deal id, using email first
 // then client name. Returns a deal id or null. Prefers an OPEN/most-recent deal.
 async function searchDealId(payment) {
-  const tryTerm = async (term, fields) => {
-    if (!term || String(term).trim().length < 3) return null;
-    try {
-      const url = `https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals/search?term=${encodeURIComponent(term)}&fields=${fields}&exact_match=false&limit=10&api_token=${PIPEDRIVE_API_KEY}`;
-      const r = await fetch(url);
-      if (!r.ok) return null;
-      const d = await r.json();
-      const items = d.data?.items || [];
-      if (items.length === 0) return null;
-      // Prefer the highest deal id (most recently created) among matches.
-      const ids = items.map(it => it.item?.id).filter(Boolean).sort((a, b) => b - a);
-      return ids[0] || null;
-    } catch (e) { return null; }
-  };
   // Email is the strongest signal: search the person by email, then read their deals.
   if (payment.client_email) {
     try {
@@ -101,13 +87,14 @@ async function searchDealId(payment) {
           }
         }
       }
-    } catch (e) { /* fall through to term search */ }
-    // Direct deal search by the email term as a backup.
-    const byEmail = await tryTerm(payment.client_email, 'custom_fields,notes');
-    if (byEmail) return byEmail;
+    } catch (e) { /* email-person lookup failed - no guessing below */ }
   }
-  // Name search last (looser).
-  return await tryTerm(payment.client_name, 'title');
+  // NO-GUESS RULE (Joe's ticket 8/21, shipped 8/22 - Brandon Jackson class):
+  // fuzzy term search and name search are GONE. A payment attaches to a deal
+  // with hard proof (exact email -> person -> their deal) or it goes to
+  // needs_manual for human review. Wrong-deal attribution beats a blank row
+  // zero times out of ten.
+  return null;
 }
 
 // Given a payment and a resolved deal, compute consultant + affiliate fields and
