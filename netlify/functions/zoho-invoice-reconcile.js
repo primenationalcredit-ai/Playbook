@@ -1,4 +1,4 @@
-// zoho-invoice-reconcile.js  (Playbook)
+﻿// zoho-invoice-reconcile.js  (Playbook)
 // The invoice sync is upsert-only: invoices deleted in Zoho live forever in
 // consultant_invoices with their last-known balance, and payments recorded in
 // Zoho after the last sync leave stale balances. This function re-checks every
@@ -30,7 +30,8 @@ async function supa(path, opts = {}) {
   return { ok: r.ok, status: r.status, json, text };
 }
 
-async function getZohoToken() {
+async function getZohoToken() { return require('./zoho-token').get(); } // 8/21 shared-token port; legacy body below is unused
+async function getZohoTokenLegacy() {
   // Cached in app_config so all scheduled runs share one token (~55 min life).
   // Uncached per-run refreshes were tripping Zoho's refresh-endpoint rate
   // limit, 401-ing entire runs.
@@ -159,3 +160,4 @@ exports.handler = async (event) => {
     return respond(500, { error: String(e.message || e).slice(0, 300) });
   }
 };
+

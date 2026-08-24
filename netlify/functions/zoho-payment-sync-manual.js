@@ -16,8 +16,9 @@ async function clearZohoTokenCache() {
     });
   } catch (e) {}
 }
-async function getZohoToken(force) {
-  if (force) await clearZohoTokenCache();
+async function getZohoToken(force) { return require('./zoho-token').get(force); } // 8/21 shared-token port; legacy body below is unused
+async function getZohoTokenLegacy(force) {
+  if (force) await require('./zoho-token').clear();
   // Reuse a cached access token (Zoho tokens last ~1 hour). Minting a new one on
   // every call trips Zoho's refresh rate limit, which 500s the whole sync.
   try {
@@ -389,8 +390,9 @@ exports.handler = async (event) => {
     // Self-heal: a Zoho 401 means the cached token was invalidated (Zoho keeps
     // a limited number of live access tokens; new mints kill old ones). Evict
     // it so the next run - 5 minutes away - mints fresh and succeeds.
-    if (String(error && error.message || '').includes('Zoho 401')) { await clearZohoTokenCache(); }
+    if (String(error && error.message || '').includes('Zoho 401')) { await require('./zoho-token').clear(); }
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message, selfHeal: String(error && error.message || '').includes('Zoho 401') ? 'token cache evicted - next run recovers' : undefined }) };
   }
 };
+
 

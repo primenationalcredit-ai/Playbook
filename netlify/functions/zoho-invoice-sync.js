@@ -1,4 +1,4 @@
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+﻿const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
@@ -7,7 +7,8 @@ const ZOHO_ORG_ID = process.env.ZOHO_ORG_ID;
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 
-async function getZohoToken() {
+async function getZohoToken() { return require('./zoho-token').get(); } // 8/21 shared-token port; legacy body below is unused
+async function getZohoTokenLegacy() {
   const res = await fetch(`https://accounts.zoho.com/oauth/v2/token?refresh_token=${ZOHO_REFRESH_TOKEN}&client_id=${ZOHO_CLIENT_ID}&client_secret=${ZOHO_CLIENT_SECRET}&grant_type=refresh_token`, { method: 'POST' });
   const data = await res.json();
   return data.access_token;
@@ -29,7 +30,7 @@ exports.handler = async (event) => {
     const page = parseInt(params.page) || 1;
     const perPage = 25;
     
-    // Pull invoices — can filter by status or date range
+    // Pull invoices â€” can filter by status or date range
     // Default: pull all invoices to get full picture
     const statusFilter = params.status || ''; // overdue, partially_paid, unpaid, paid
     let url = `/invoices?sort_column=date&sort_order=D&per_page=${perPage}&page=${page}`;
@@ -94,3 +95,4 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
   }
 };
+

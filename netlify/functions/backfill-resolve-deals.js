@@ -1,4 +1,4 @@
-// backfill-resolve-deals.js
+﻿// backfill-resolve-deals.js
 // The fast backfill inserted payments with the right dollars but no deal id / type, so the normal
 // enrichment (which needs a deal id) can't touch them. This fills that in: for each backfilled row it
 // finds the payment's Zoho invoice number (from the customerpayments list, one call per page), maps that
@@ -21,7 +21,8 @@ const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'applicati
 const supa = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 const BATCH = 60; // rows resolved per run
 
-async function getZohoToken() {
+async function getZohoToken() { return require('./zoho-token').get(); } // 8/21 shared-token port; legacy body below is unused
+async function getZohoTokenLegacy() {
   try {
     const c = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.zoho_access_token&select=cache_value`, { headers: supa });
     if (c.ok) { const rows = await c.json(); if (rows[0]) { const t = JSON.parse(rows[0].cache_value); if (t.token && t.expiresAt > Date.now() + 60000) return t.token; } }
@@ -128,3 +129,4 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
   }
 };
+

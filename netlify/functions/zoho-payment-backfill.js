@@ -1,4 +1,4 @@
-// zoho-payment-backfill.js
+﻿// zoho-payment-backfill.js
 // One-shot backfill that pulls EVERY customer payment for a year and inserts any that are missing from
 // consultant_payments. Unlike the hourly sync, this paginates through all pages of every month, and it
 // SKIPS the slow per-payment invoice lookups (deal id + payment type) so it can cover the whole year in
@@ -18,7 +18,8 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
 
-async function getZohoToken() {
+async function getZohoToken() { return require('./zoho-token').get(); } // 8/21 shared-token port; legacy body below is unused
+async function getZohoTokenLegacy() {
   try {
     const c = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.zoho_access_token&select=cache_value`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
@@ -140,3 +141,4 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
   }
 };
+
