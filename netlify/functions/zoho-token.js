@@ -43,4 +43,7 @@ async function get(force) {
 async function clear() {
   try { await fetch(`${PROC_URL}/rest/v1/app_cache?cache_key=eq.zoho_access_token_shared`, { method: 'DELETE', headers: { ...H, Prefer: 'return=minimal' } }); } catch (e) {}
 }
-module.exports = { get, getZohoToken: get, clear, clearZohoTokenCache: clear };
+export { get, clear };
+export const getZohoToken = get;
+export const clearZohoTokenCache = clear;
+
