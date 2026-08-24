@@ -1,5 +1,5 @@
-// netlify/functions/zoho-payment-sync-manual.js - keyed on-demand twin (Joe 8/14, Nathan Reyes 253584: AR payment missing from consultant_payments, needed a way to fire this on demand instead of guessing at scheduled-run behavior - same pattern as every other -manual door built tonight, since Netlify blocks direct HTTP on functions registered with a schedule regardless of the function's own code). Identical logic to the scheduled original.
-// Zoho Payment Sync v2 — Faster: pulls payments + invoice list data only
+﻿// netlify/functions/zoho-payment-sync-manual.js - keyed on-demand twin (Joe 8/14, Nathan Reyes 253584: AR payment missing from consultant_payments, needed a way to fire this on demand instead of guessing at scheduled-run behavior - same pattern as every other -manual door built tonight, since Netlify blocks direct HTTP on functions registered with a schedule regardless of the function's own code). Identical logic to the scheduled original.
+// Zoho Payment Sync v2 â€” Faster: pulls payments + invoice list data only
 // Enrichment (Pipedrive deal lookups) done separately to avoid timeouts
 const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
@@ -164,6 +164,7 @@ exports.handler = async (event) => {
 
     let newRecords = 0, skipped = 0;
     const batch = [];
+    const parked = []; // NEVER GUESS (8/21): payments with no certain deal - recorded unattached + tasked for review
 
     for (const payment of payments) {
       if (existingSet.has(payment.payment_id)) { skipped++; continue; }
@@ -216,9 +217,21 @@ exports.handler = async (event) => {
                     const odRes = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/persons/${personId}/deals?status=open&limit=50&api_token=${pdTok}`);
                     const odj = await odRes.json().catch(() => null);
                     const open = (odj && odj.data) || [];
-                    if (open.length) {
-                      open.sort((a, b) => String(b.update_time || '').localeCompare(String(a.update_time || '')));
+                    // NEVER GUESS (Joe 8/21, Brandon Jackson class - mirror of the
+                    // scheduled sync patch): one open deal is evidence, several is a
+                    // refused coin flip, zero means the closed company_name deal is
+                    // trusted only if active in the last 90 days.
+                    if (open.length === 1) {
                       dealId = open[0].id;
+                    } else if (open.length > 1) {
+                      console.error(`zoho-payment-sync-manual: ${open.length} open deals for person ${personId}, refusing to guess for payment ${payment.payment_id}`);
+                      dealId = null;
+                    } else {
+                      const cutoff90 = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+                      if (String(d.update_time || '') < cutoff90) {
+                        console.error(`zoho-payment-sync-manual: company_name deal ${cnDeal} closed + stale (updated ${d.update_time}), refusing for payment ${payment.payment_id}`);
+                        dealId = null;
+                      }
                     }
                   }
                 } catch (e) { /* verification failure keeps cnDeal - never blocks the payment import */ }
@@ -261,7 +274,7 @@ exports.handler = async (event) => {
         skipped++;
         continue;
       }
-      batch.push({
+      const row = {
         payment_date: payment.date,
         payment_month: targetMonth,
         amount: payment.amount,
@@ -272,10 +285,37 @@ exports.handler = async (event) => {
         pipedrive_deal_id: dealId,
         consultant_name: 'pending_enrichment', // Will be filled by enrichment step
         source: 'zoho_api'
-      });
+      };
+      if (!dealId) { parked.push(row); } else { batch.push(row); }
       newRecords++;
     }
 
+    if (parked.length > 0) {
+      // Parked payments insert INDIVIDUALLY fail-open (a NOT NULL constraint or bad row
+      // must never block the resolved batch), and each NEWLY inserted row opens a review
+      // task. ignore-duplicates + return=representation = task fires exactly once per
+      // payment, re-syncs skip silently.
+      for (const p of parked) {
+        try {
+          const pr = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments`, {
+            method: 'POST',
+            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=representation,resolution=ignore-duplicates' },
+            body: JSON.stringify([p])
+          });
+          if (!pr.ok) { console.error('PARKED INSERT FAILED (payment ' + p.zoho_payment_id + '): ' + (await pr.text().catch(() => pr.status))); continue; }
+          const ins = await pr.json().catch(() => []);
+          if (ins.length) {
+            const PD_T2 = process.env.PIPEDRIVE_API_TOKEN || process.env.PD_API_TOKEN;
+            if (PD_T2) {
+              await fetch(`https://asapcreditrepair.pipedrive.com/api/v1/activities?api_token=${PD_T2}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subject: `PAYMENT NEEDS REVIEW - ${p.client_name} $${parseFloat(p.amount).toFixed(2)} (no certain deal match)`, type: 'task', done: 0, note: `zoho-payment-sync-manual could not attach this payment to a deal with hard evidence and refused to guess (Brandon Jackson class). Zoho payment ${p.zoho_payment_id}, date ${p.payment_date}, type ${p.payment_type}. Find the right deal and set pipedrive_deal_id on the consultant_payments row.` })
+              }).catch(() => {});
+            }
+          }
+        } catch (e) { console.error('Parked handling failed (non-fatal):', e.message); }
+      }
+    }
     if (batch.length > 0) {
       const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments`, {
         method: 'POST',
