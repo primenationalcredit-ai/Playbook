@@ -965,6 +965,44 @@ function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
 // Main component
 // ---------------------------------------------------------------------------
 
+function NeedsAttentionBanner({ na }) {
+  const [open, setOpen] = useState(null);
+  const cats = [
+    { key: 'sold_without_card_capture', list: 'sold_without_card_capture_list', label: 'sold without card capture' },
+    { key: 'paid_no_agreement', list: 'paid_no_agreement_list', label: 'paid without agreement' },
+    { key: 'agreement_no_billing', list: 'agreement_no_billing_list', label: 'agreement but no billing' },
+    { key: 'links_missing_invoice_recent', list: 'links_missing_invoice_recent_list', label: 'new links missing invoice' }
+  ].filter(c => (na[c.key] || 0) > 0);
+  if (!cats.length) return null;
+  const openCat = cats.find(c => c.key === open) || null;
+  const rows = openCat ? (na[openCat.list] || []) : [];
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 font-medium space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span>{'\u26a0'} Needs attention {'\u00b7'} click a category for the client list:</span>
+        {cats.map(c => (
+          <button key={c.key} type="button" onClick={() => setOpen(open === c.key ? null : c.key)}
+            className={`px-2 py-0.5 rounded-full border ${open === c.key ? 'bg-amber-600 text-white border-amber-600' : 'bg-white border-amber-300 hover:bg-amber-100'}`}>
+            {na[c.key]} {c.label}
+          </button>
+        ))}
+      </div>
+      {openCat && (
+        <div className="bg-white rounded border border-amber-200 p-2 max-h-56 overflow-y-auto">
+          {rows.length === 0 && <div className="text-slate-400">List not loaded - hit the refresh arrow above.</div>}
+          {rows.map(r => (
+            <a key={r.deal} href={`https://asapcreditrepair.pipedrive.com/deal/${r.deal}`} target="_blank" rel="noreferrer"
+              className="block py-0.5 text-asap-blue hover:underline">
+              {r.client || 'Unknown client'} {'\u00b7'} deal {r.deal}
+            </a>
+          ))}
+          {(na[openCat.key] || 0) > rows.length && rows.length > 0 && <div className="text-slate-400 pt-1">Showing first {rows.length} of {na[openCat.key]}.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== Billing Overview (autobill ops dashboard) =====
 function MetricCard({ label, count, amount, tone }) {
   const tones = {
@@ -1222,21 +1260,7 @@ function BillingOverview({ isAdmin }) {
           </button>
         </div>
       </div>
-      {(() => {
-        const na = data.needs_attention || {};
-        const items = [
-          na.sold_without_card_capture > 0 && `${na.sold_without_card_capture} sold without card capture`,
-          na.paid_no_agreement > 0 && `${na.paid_no_agreement} paid without agreement`,
-          na.agreement_no_billing > 0 && `${na.agreement_no_billing} agreement but no billing`,
-          na.links_missing_invoice_recent > 0 && `${na.links_missing_invoice_recent} new links missing invoice`
-        ].filter(Boolean);
-        if (!items.length) return null;
-        return (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 font-medium">
-            ⚠ Needs attention: {items.join(' · ')}
-          </div>
-        );
-      })()}
+      <NeedsAttentionBanner na={data.needs_attention || {}} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <MetricCard label="Succeeded" tone="green" count={m.succeeded?.count || 0} amount={m.succeeded?.amount || 0} />
         <MetricCard label="Declined (open)" tone="red" count={m.declined?.count || 0} amount={m.declined?.amount || 0} />
