@@ -15,15 +15,33 @@ exports.handler = async (event) => {
     const entity = body.meta && (body.meta.entity || body.meta.object);
     const cur = body.data || body.current;
     const prev = body.previous;
-    if (entity !== 'deal' || !cur) return ok(out);
+    if (!cur) return ok(out);
+    // two triggers: (a) a note saying the 2nd round is starting, (b) deal enters Additional CRS
+    let dealId = null, trigger = '';
+    if (entity === 'note') {
+      const txt = String(cur.content || '').replace(/<[^>]+>/g, ' ');
+      if (!/2nd round started automation/i.test(txt)) return ok(out);
+      dealId = cur.deal_id; trigger = 'is starting its 2nd round';
+    } else if (entity === 'deal') {
+  
+  
+  
+  
+      dealId = cur.id; trigger = 'entered Additional CRS';
+    } else return ok(out);
+    if (!dealId) return ok(out);
+    // note payloads carry no deal value - fetch the deal either way so both paths read the same
+    const drr = await fetch('https://asapcreditrepair.pipedrive.com/api/v1/deals/' + dealId + '?api_token=' + PD_TOKEN);
+    const dj = drr.ok ? await drr.json() : null;
+    const deal = dj && dj.data;
+    if (!deal) return ok(out);
+    const fee = parseFloat(deal.value) || 0;
 
     const newStage = Number(cur.stage_id);
     const oldStage = prev && prev.stage_id !== undefined ? Number(prev.stage_id) : null;
     const entered = TARGET_STAGES.includes(newStage) && oldStage !== null && !TARGET_STAGES.includes(oldStage);
     if (!entered) return ok(out);
 
-    const dealId = cur.id;
-    const fee = parseFloat(cur.value) || 0;
     out.deal = dealId; out.fee = fee;
     if (fee <= 0) { out.result = 'no fee on deal - nothing to compare'; return ok(out); }
 
@@ -43,9 +61,9 @@ exports.handler = async (event) => {
     const already = nd && nd.data && nd.data.some(n => (n.content || '').includes('CRS PAYMENT GUARD'));
     if (already) { out.result = 'already alerted for this deal - silent'; return ok(out); }
 
-    const title = cur.title || ('deal ' + dealId);
+    const title = deal.title || ('deal ' + dealId);
     const link = 'https://asapcreditrepair.pipedrive.com/deal/' + dealId;
-    const msg = 'CRS PAYMENT GUARD: ' + title + ' moved into CRS but payments do not add up to the fee. ' +
+    const msg = 'CRS PAYMENT GUARD: ' + title + ' ' + trigger + ' but payments do not add up to the fee. ' +
       'Fee $' + fee.toFixed(2) + ', collected $' + paid.toFixed(2) + ', SHORT $' + short.toFixed(2) + '. ' +
       'Please review before services continue: ' + link;
 
@@ -62,7 +80,21 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         personalizations: [{ to: [{ email: ALERT_TO }] }],
         from: { email: 'info@asapcreditrepairusa.com', name: 'ASAP Payment Guard' },
-        subject: 'PAYMENT SHORT: ' + title + ' entered CRS owing $' + short.toFixed(2),
+        subject: 'PAYMENT SHORT: ' + title + ' ' + trigger + ' owing 
+        content: [{ type: 'text/plain', value: msg }]
+      })
+    });
+    out.emailStatus = er.status;
+    out.result = 'ALERTED - short $' + short.toFixed(2);
+    return ok(out);
+  } catch (e) {
+    out.result = 'error: ' + e.message;
+    return ok(out);
+  }
+};
+function ok(o) { return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) }; }
+
+ + short.toFixed(2),
         content: [{ type: 'text/plain', value: msg }]
       })
     });
