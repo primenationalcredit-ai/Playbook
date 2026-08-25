@@ -116,6 +116,7 @@ exports.handler = async (event) => {
     // LIVE ROWS (Joe 8/21): rows payment-webhook wrote in real time - no
     // zoho_payment_id yet. When Zoho later shows the same payment, UPGRADE the
     // live row (stamp the payment id) instead of inserting a twin.
+    const nextMonthStart = (() => { const [y, m] = targetMonth.split("-").map(Number); return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`; })();
     const liveRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_date=gte.${targetMonth}-01&payment_date=lt.${nextMonthStart}&zoho_payment_id=is.null&select=id,zoho_invoice_id,pipedrive_deal_id,amount,payment_date,payment_type`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
