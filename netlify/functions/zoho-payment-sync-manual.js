@@ -116,7 +116,7 @@ exports.handler = async (event) => {
     // LIVE ROWS (Joe 8/21): rows payment-webhook wrote in real time - no
     // zoho_payment_id yet. When Zoho later shows the same payment, UPGRADE the
     // live row (stamp the payment id) instead of inserting a twin.
-    const liveRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_month=eq.${targetMonth}&zoho_payment_id=is.null&select=id,zoho_invoice_id,pipedrive_deal_id,amount,payment_date,payment_type`, {
+    const liveRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?payment_date=gte.${targetMonth}-01&payment_date=lt.${nextMonthStart}&zoho_payment_id=is.null&select=id,zoho_invoice_id,pipedrive_deal_id,amount,payment_date,payment_type`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
     const liveRows = liveRes.ok ? await liveRes.json() : [];
@@ -394,5 +394,6 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: error.message, selfHeal: String(error && error.message || '').includes('Zoho 401') ? 'token cache evicted - next run recovers' : undefined }) };
   }
 };
+
 
 
