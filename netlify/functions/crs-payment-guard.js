@@ -37,10 +37,12 @@ exports.handler = async (event) => {
     if (!deal) return ok(out);
     const fee = parseFloat(deal.value) || 0;
 
-    const newStage = Number(cur.stage_id);
-    const oldStage = prev && prev.stage_id !== undefined ? Number(prev.stage_id) : null;
-    const entered = TARGET_STAGES.includes(newStage) && oldStage !== null && !TARGET_STAGES.includes(oldStage);
-    if (!entered) return ok(out);
+
+
+
+
+
+
 
     out.deal = dealId; out.fee = fee;
     if (fee <= 0) { out.result = 'no fee on deal - nothing to compare'; return ok(out); }
@@ -80,21 +82,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         personalizations: [{ to: [{ email: ALERT_TO }] }],
         from: { email: 'info@asapcreditrepairusa.com', name: 'ASAP Payment Guard' },
-        subject: 'PAYMENT SHORT: ' + title + ' ' + trigger + ' owing 
-        content: [{ type: 'text/plain', value: msg }]
-      })
-    });
-    out.emailStatus = er.status;
-    out.result = 'ALERTED - short $' + short.toFixed(2);
-    return ok(out);
-  } catch (e) {
-    out.result = 'error: ' + e.message;
-    return ok(out);
-  }
-};
-function ok(o) { return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) }; }
-
- + short.toFixed(2),
+        subject: 'PAYMENT SHORT: ' + title + ' ' + trigger + ' owing $' + short.toFixed(2),
         content: [{ type: 'text/plain', value: msg }]
       })
     });
