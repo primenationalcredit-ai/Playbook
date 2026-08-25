@@ -5,7 +5,7 @@ const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
 const PD_TOKEN = process.env.PIPEDRIVE_API_KEY || process.env.PD_API_TOKEN || process.env.PIPEDRIVE_API_TOKEN;
 const SB_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-const TARGET_STAGES = [512, 608];
+const TARGET_STAGES = [608]; // 8/25: CRS entry is normal with doc fee only - watch Additional CRS until 2nd-round trigger is defined
 const ALERT_TO = 'management@asapcreditrepairusa.com';
 
 exports.handler = async (event) => {
@@ -75,3 +75,4 @@ exports.handler = async (event) => {
   }
 };
 function ok(o) { return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) }; }
+
