@@ -1,0 +1,77 @@
+﻿// crs-payment-guard.js - alert-only tripwire (Joe 8/25)
+// When a deal ENTERS CRS (512) or Additional CRS (608), check payments vs fee.
+// Short = email management + note on deal. Never deletes/moves/changes anything.
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const PD_TOKEN = process.env.PIPEDRIVE_API_KEY || process.env.PD_API_TOKEN || process.env.PIPEDRIVE_API_TOKEN;
+const SB_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+const TARGET_STAGES = [512, 608];
+const ALERT_TO = 'management@asapcreditrepairusa.com';
+
+exports.handler = async (event) => {
+  const out = { ranAt: new Date().toISOString(), result: 'noop' };
+  try {
+    const body = JSON.parse(event.body || '{}');
+    const entity = body.meta && (body.meta.entity || body.meta.object);
+    const cur = body.data || body.current;
+    const prev = body.previous;
+    if (entity !== 'deal' || !cur) return ok(out);
+
+    const newStage = Number(cur.stage_id);
+    const oldStage = prev && prev.stage_id !== undefined ? Number(prev.stage_id) : null;
+    const entered = TARGET_STAGES.includes(newStage) && oldStage !== null && !TARGET_STAGES.includes(oldStage);
+    if (!entered) return ok(out);
+
+    const dealId = cur.id;
+    const fee = parseFloat(cur.value) || 0;
+    out.deal = dealId; out.fee = fee;
+    if (fee <= 0) { out.result = 'no fee on deal - nothing to compare'; return ok(out); }
+
+    // add up what this client has actually paid
+    const pr = await fetch(SB_URL + '/rest/v1/consultant_payments?pipedrive_deal_id=eq.' + dealId + '&select=amount', {
+      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY }
+    });
+    const rows = pr.ok ? await pr.json() : [];
+    const paid = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+    const short = fee - paid;
+    out.paid = paid; out.short = short;
+    if (short <= 1) { out.result = 'payments add up - silent'; return ok(out); }
+
+    // dedupe: if we already left a guard note on this deal, do not alert again
+    const nr = await fetch('https://asapcreditrepair.pipedrive.com/api/v1/notes?deal_id=' + dealId + '&limit=25&sort=add_time%20DESC&api_token=' + PD_TOKEN);
+    const nd = nr.ok ? await nr.json() : null;
+    const already = nd && nd.data && nd.data.some(n => (n.content || '').includes('CRS PAYMENT GUARD'));
+    if (already) { out.result = 'already alerted for this deal - silent'; return ok(out); }
+
+    const title = cur.title || ('deal ' + dealId);
+    const link = 'https://asapcreditrepair.pipedrive.com/deal/' + dealId;
+    const msg = 'CRS PAYMENT GUARD: ' + title + ' moved into CRS but payments do not add up to the fee. ' +
+      'Fee $' + fee.toFixed(2) + ', collected $' + paid.toFixed(2) + ', SHORT $' + short.toFixed(2) + '. ' +
+      'Please review before services continue: ' + link;
+
+    // note on the deal (so the file itself shows the warning)
+    await fetch('https://asapcreditrepair.pipedrive.com/api/v1/notes?api_token=' + PD_TOKEN, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deal_id: dealId, content: '\u26a0 ' + msg })
+    });
+
+    // email management
+    const er = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + SENDGRID_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: ALERT_TO }] }],
+        from: { email: 'info@asapcreditrepairusa.com', name: 'ASAP Payment Guard' },
+        subject: 'PAYMENT SHORT: ' + title + ' entered CRS owing $' + short.toFixed(2),
+        content: [{ type: 'text/plain', value: msg }]
+      })
+    });
+    out.emailStatus = er.status;
+    out.result = 'ALERTED - short $' + short.toFixed(2);
+    return ok(out);
+  } catch (e) {
+    out.result = 'error: ' + e.message;
+    return ok(out);
+  }
+};
+function ok(o) { return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o) }; }
