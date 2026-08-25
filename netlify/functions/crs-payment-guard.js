@@ -53,6 +53,9 @@ exports.handler = async (event) => {
     });
     const rows = pr.ok ? await pr.json() : [];
     const paid = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+    // client check: a deal with NO payment history is a lead, not a client - it cannot be short.
+    // Added 8/25 after bad stage events fired the guard on 2019 cold leads mid marketing cadence.
+    if (!rows.length) { out.result = 'no payment history - not a client - silent'; return ok(out); }
     const short = fee - paid;
     out.paid = paid; out.short = short;
     if (short <= 1) { out.result = 'payments add up - silent'; return ok(out); }
