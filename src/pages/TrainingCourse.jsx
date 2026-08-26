@@ -51,15 +51,19 @@ function TrainingCourse() {
         const qs = await supabaseFetch('training_quizzes', `select=id&module_id=eq.${m.id}`);
         if (qs && qs[0]) { qz = qs[0]; break; }
       }
+      if (!qz) { window.alert('Quick Check: this course has no quiz to draw questions from. Tell leadership.'); }
       if (qz) {
         const pool = await supabaseFetch('training_quiz_questions', `select=*&quiz_id=eq.${qz.id}&order=sort_order`);
-        const mc = (pool || []).filter(q => q.question_type === 'multiple_choice' && Array.isArray(q.options) && q.options.length > 1);
+        // FIX 8/26: the table has NO question_type column, so the old filter matched zero
+        // questions and the button silently did nothing. Any question with 2+ options is usable.
+        const mc = (pool || []).filter(q => Array.isArray(q.options) && q.options.length > 1);
+        if (mc.length < 3) { window.alert('Quick Check: only ' + mc.length + ' usable questions found on this course (needs 3). Tell leadership.'); }
         if (mc.length >= 3) {
           const picked = [...mc].sort(() => Math.random() - 0.5).slice(0, 3).map(q => ({ ...q, quiz_id: qz.id }));
           setQcQuestions(picked); setQcAnswers({}); setQcResult(null); setQcOpen(true);
         }
       }
-    } catch (error) { console.error('Quick check load failed:', error); }
+    } catch (error) { console.error('Quick check load failed:', error); window.alert('Quick Check hit an error loading questions - tell leadership.'); }
     setQcBusy(false);
   };
 
