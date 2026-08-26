@@ -12,6 +12,8 @@ const PHASES = ['PREPLAN','LAYOUT','BUILD','TESTING','SOP','LAUNCH','TRAINING','
 
 const SYSTEM = (creator, today, card) => {
   const tasks = (card.steps || []).map((st, i) => `${i}. [${st.done ? 'x' : ' '}] ${st.text} | assignee: ${st.assignee || '-'} | due: ${st.due || '-'}${Array.isArray(st.subtasks) && st.subtasks.length ? ` | subtasks: ${st.subtasks.map((sb, j) => `${j}:[${sb.done ? 'x' : ' '}] ${sb.text}`).join('; ')}` : ''}`).join('\n');
+  const overdueIdx = (card.steps || []).map((st, i) => ({ st, i })).filter(x => !x.st.done && x.st.due && x.st.due < today).map(x => x.i);
+  const overdueLine = overdueIdx.length ? `ATTENTION: ${overdueIdx.length} task(s) OVERDUE as of today (task indices: ${overdueIdx.join(', ')}). In your FIRST reply of a conversation, lead with this and offer to reschedule; if the user agrees, apply task_set ops updating their due dates.` : 'No tasks are currently overdue.';
   return `You are the ASAP Credit Repair AI Project Manager, assisting leadership user ${creator} with the EXISTING project below. Today is ${today}.
 
 THE PROJECT:
@@ -23,6 +25,7 @@ Notes: ${(card.notes || '-').slice(0, 1500)}
 Dependencies: ${card.dependencies || '-'} | Risks: ${card.risks || '-'}
 TASKS (index. [done] text | assignee | due | subtasks j:[done] text):
 ${tasks || '(none)'}
+OVERDUE STATUS: ${overdueLine}
 
 YOUR JOB: help them manage this project - answer questions, make suggestions, and APPLY changes they ask for. When they request changes, reply with a short confirmation of what you're doing, then emit the operations between <OPS> and </OPS> as a JSON array. Only emit ops for changes they asked for or clearly approved. If they're only asking a question, no OPS block.
 

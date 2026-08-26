@@ -425,11 +425,13 @@ function LeadershipProjects() {
                 {filteredCards.map(card => {
                   const stage = stages.find(s => s.id === card.stage_id);
                   const isOverdue = card.due_date && isPast(new Date(card.due_date)) && !isToday(new Date(card.due_date));
+                  const _todayStr = new Date().toISOString().slice(0, 10);
+                  const lateCount = (card.steps || []).filter(st => !st.done && st.due && st.due < _todayStr).length;
                   
                   return (
                     <tr key={card.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-slate-800">{card.title}</p>
+                        <p className="font-medium text-slate-800">{card.title}{lateCount > 0 && <span className="ml-2 inline-flex px-1.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700">{lateCount} late</span>}</p>
                         {card.objective && (
                           <p className="text-sm text-slate-500 truncate max-w-xs">{card.objective}</p>
                         )}
@@ -532,6 +534,8 @@ function LeadershipProjects() {
 function ProjectCard({ card, onDragStart, onEdit, onDelete }) {
   const isOverdue = card.due_date && isPast(new Date(card.due_date)) && !isToday(new Date(card.due_date));
   const daysUntilDue = card.due_date ? differenceInDays(new Date(card.due_date), new Date()) : null;
+  const _todayStr = new Date().toISOString().slice(0, 10);
+  const lateCount = (card.steps || []).filter(st => !st.done && st.due && st.due < _todayStr).length;
   
   return (
     <div
@@ -540,7 +544,7 @@ function ProjectCard({ card, onDragStart, onEdit, onDelete }) {
       className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-start justify-between mb-2">
-        <h4 className="font-medium text-slate-800 flex-1">{card.title}</h4>
+        <h4 className="font-medium text-slate-800 flex-1">{card.title}{lateCount > 0 && <span className="ml-2 inline-flex px-1.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700">{lateCount} late</span>}</h4>
         <div className="flex items-center gap-1">
           <button onClick={onEdit} className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-asap-blue">
             <Edit3 className="w-3.5 h-3.5" />
