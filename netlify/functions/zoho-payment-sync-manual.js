@@ -288,6 +288,23 @@ exports.handler = async (event) => {
         consultant_name: 'pending_enrichment', // Will be filled by enrichment step
         source: 'zoho_api'
       };
+      // ONE ROW PER PAYMENT (Joe 8/26): Zoho sometimes holds TWO payment records for
+      // the same money (fresh payment_id each), and the webhook can write a live row
+      // after the liveRows snapshot. Same deal + same amount + within 1 day = same
+      // money: skip if it is already in this run's batch OR already in the table.
+      if (dealId) {
+        const dupInBatch = batch.some(b => String(b.pipedrive_deal_id) === String(dealId) && Math.abs(parseFloat(b.amount) - parseFloat(payment.amount)) < 0.01 && Math.abs(new Date(b.payment_date) - new Date(payment.date)) <= 86400000);
+        let dupInDb = false;
+        if (!dupInBatch) {
+          try {
+            const d0 = new Date(new Date(payment.date).getTime() - 86400000).toISOString().split('T')[0];
+            const d1 = new Date(new Date(payment.date).getTime() + 86400000).toISOString().split('T')[0];
+            const ex = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?pipedrive_deal_id=eq.${dealId}&amount=eq.${payment.amount}&payment_date=gte.${d0}&payment_date=lte.${d1}&refunded_at=is.null&select=id&limit=1`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }).then(r => r.ok ? r.json() : []);
+            dupInDb = Array.isArray(ex) && ex.length > 0;
+          } catch (e) { /* guard is best-effort - never blocks a real import */ }
+        }
+        if (dupInBatch || dupInDb) { console.log(`skipped duplicate: deal ${dealId} $${payment.amount} ${payment.date} already recorded (zoho payment ${payment.payment_id})`); skipped++; continue; }
+      }
       if (!dealId) { parked.push(row); } else { batch.push(row); }
       newRecords++;
     }
