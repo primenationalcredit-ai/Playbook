@@ -43,7 +43,7 @@ exports.handler = async (event) => {
     let plan; try { plan = JSON.parse(raw); } catch (e) { await save(nonce, { status: 'error', error: 'could not parse the generated course' }); return { statusCode: 200, body: 'err' }; }
     const course = await post('training_courses', { title: plan.title || ('Training: ' + card.title), description: plan.description || '', departments: ['everyone'], due_days: 7, created_by: body.created_by, is_published: false });
     const courseId = Array.isArray(course) && course[0] && course[0].id;
-    if (!courseId) { await save(nonce, { status: 'error', error: 'could not create the course' }); return { statusCode: 200, body: 'err' }; }
+    if (!courseId) { await save(nonce, { status: 'error', error: 'could not create the course: ' + String(JSON.stringify(course)).slice(0, 300) }); return { statusCode: 200, body: 'err' }; }
     let lessonCount = 0, qCount = 0;
     const mods = Array.isArray(plan.modules) ? plan.modules : [];
     for (let i = 0; i < mods.length; i++) {
