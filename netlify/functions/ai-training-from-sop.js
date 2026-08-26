@@ -17,13 +17,14 @@ async function requireLeader(event) {
   const u = await uRes.json().catch(() => null);
   if (!u || !u.id) return null;
   let name = u.email || 'leadership';
+  let dbId = u.id; // users-table id (auth id may differ - FK bug 8/26)
   try {
-    let rows = await fetch(`${SU}/rest/v1/users?select=role,name,email&id=eq.${encodeURIComponent(u.id)}`, { headers: H }).then(r => r.json());
-    if (!Array.isArray(rows) || !rows.length) rows = await fetch(`${SU}/rest/v1/users?select=role,name,email&email=eq.${encodeURIComponent(u.email || '')}`, { headers: H }).then(r => r.json());
+    let rows = await fetch(`${SU}/rest/v1/users?select=id,role,name,email&id=eq.${encodeURIComponent(u.id)}`, { headers: H }).then(r => r.json());
+    if (!Array.isArray(rows) || !rows.length) rows = await fetch(`${SU}/rest/v1/users?select=id,role,name,email&email=eq.${encodeURIComponent(u.email || '')}`, { headers: H }).then(r => r.json());
     const row = Array.isArray(rows) && rows[0];
-    if (row) { name = row.name || name; if (!/leader|admin/i.test(String(row.role || ''))) return null; }
+    if (row) { name = row.name || name; if (row.id) dbId = row.id; if (!/leader|admin/i.test(String(row.role || ''))) return null; }
   } catch (e) { }
-  return { id: u.id, name };
+  return { id: dbId, name };
 }
 exports.handler = async (event) => {
   try {
