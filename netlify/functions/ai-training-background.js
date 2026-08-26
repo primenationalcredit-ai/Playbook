@@ -64,7 +64,7 @@ exports.handler = async (event) => {
             const opts = Array.isArray(q.options) ? q.options : [];
             let ci = Number(q.correct_answer);
             if (!Number.isInteger(ci) || ci < 0 || ci >= opts.length) ci = 0;
-            await post('training_quiz_questions', { quiz_id: qid, question: q.question || '', question_type: 'multiple_choice', options: opts, correct_answer: ci, sort_order: k });
+            await post('training_quiz_questions', { quiz_id: qid, question: q.question || '', options: opts, correct_answer: ci, sort_order: k });
             qCount++;
           }
         }
