@@ -26,12 +26,26 @@ function AdminTraining() {
   const openCompliance = async (course) => {
     setCompCourse(course); setCompBusy(true); setCompRows([]);
     const rows = await supabaseFetch('training_assignments', `select=*&course_id=eq.${course.id}`);
+    // Compliance receipts (Joe 8/26): quiz attempts feed score / how / completed columns.
+    const compMods = await supabaseFetch('training_modules', `select=id&course_id=eq.${course.id}`);
+    const compQuizIds = [];
+    for (const cm of (compMods || [])) {
+      const cqs = await supabaseFetch('training_quizzes', `select=id&module_id=eq.${cm.id}`);
+      (cqs || []).forEach(q => compQuizIds.push(q.id));
+    }
+    let compAttempts = [];
+    if (compQuizIds.length) {
+      compAttempts = (await supabaseFetch('training_quiz_attempts', `select=user_id,quiz_id,score,passed,answers,attempted_at&quiz_id=in.(${compQuizIds.join(',')})&order=attempted_at.desc`)) || [];
+    }
     const byId = {}; (users || []).forEach(u => { byId[u.id] = u; });
     const now = Date.now();
     setCompRows((rows || []).map(r => {
       const u = byId[r.user_id] || {};
+      const ua = compAttempts.filter(a => a.user_id === r.user_id);
+      const pick = ua.find(a => a.passed) || ua.reduce((m2, a) => (!m2 || (a.score || 0) > (m2.score || 0) ? a : m2), null);
       return { id: r.id, name: u.name || 'Unknown user', dept: u.department || '',
         due: r.due_date, done: r.completed_at,
+        score: pick ? pick.score : null, how: pick ? ((pick.answers && pick.answers.quick_check) ? 'Quick Check' : 'Full course') : null,
         late: !r.completed_at && r.due_date && new Date(r.due_date).getTime() < now,
         exempt: u.department === 'leadership' || u.role === 'admin' };
     }).sort((x, y) => (y.late ? 1 : 0) - (x.late ? 1 : 0) || String(x.name).localeCompare(String(y.name))));
@@ -1120,7 +1134,7 @@ function AdminTraining() {
               {!compBusy && compRows.length === 0 && <div className="text-sm text-slate-400 p-4">Nobody is assigned to this course yet.</div>}
               {!compBusy && compRows.length > 0 && (
                 <table className="w-full text-sm">
-                  <thead><tr className="text-xs text-slate-400 uppercase text-left"><th className="py-2">Employee</th><th>Due</th><th>Status</th><th className="text-right">Override</th></tr></thead>
+                  <thead><tr className="text-xs text-slate-400 uppercase text-left"><th className="py-2">Employee</th><th>Due</th><th>Status</th><th>Score</th><th>How</th><th>Completed</th><th className="text-right">Override</th></tr></thead>
                   <tbody>
                     {compRows.map(r => (
                       <tr key={r.id} className="border-t border-slate-100">
@@ -1134,6 +1148,9 @@ function AdminTraining() {
                           : r.late
                             ? <span className="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-700">{r.exempt ? 'Overdue' : 'Overdue - locked out'}</span>
                             : <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">On track</span>}</td>
+                        <td className="text-slate-600 text-xs">{r.score != null ? `${r.score}%` : '-'}</td>
+                        <td className="text-slate-600 text-xs">{r.how || '-'}</td>
+                        <td className="text-slate-600 text-xs">{r.done ? new Date(r.done).toLocaleDateString() : '-'}</td>
                         <td className="text-right whitespace-nowrap">
                           {!r.done && (<>
                             <button onClick={() => extendDue(r, 7)} className="px-2 py-1 text-xs rounded-lg border border-slate-200 hover:bg-slate-50 mr-1">+7 days</button>
