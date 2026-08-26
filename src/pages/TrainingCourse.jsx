@@ -104,7 +104,22 @@ function TrainingCourse() {
         // prior completed row for this course makes the user test-out eligible.
         const qcOpenRow = assignmentData.find(x => !x.completed_at);
         if (qcOpenRow) setAssignment(qcOpenRow);
-        if (qcOpenRow && assignmentData.some(x => x.completed_at)) setQcEligible(true);
+        // One row per person per course: prior completion is proven by a passing
+        // quiz attempt on this course, not by a second assignment row (8/26).
+        if (qcOpenRow) {
+          try {
+            const qcMods = await supabaseFetch('training_modules', `select=id&course_id=eq.${courseId}`);
+            const qcQids = [];
+            for (const qm of (qcMods || [])) {
+              const qqs = await supabaseFetch('training_quizzes', `select=id&module_id=eq.${qm.id}`);
+              (qqs || []).forEach(z => qcQids.push(z.id));
+            }
+            if (qcQids.length) {
+              const priorPass = await supabaseFetch('training_quiz_attempts', `select=id&user_id=eq.${currentUser.id}&passed=eq.true&quiz_id=in.(${qcQids.join(',')})&limit=1`);
+              if (priorPass && priorPass.length) setQcEligible(true);
+            }
+          } catch (e) { console.error('qc eligibility check failed:', e); }
+        }
       }
       
       const modulesData = await supabaseFetch('training_modules', `select=*&course_id=eq.${courseId}&order=sort_order`);

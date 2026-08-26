@@ -37,14 +37,15 @@ async function runRefresherSweep(SU, H, { dryRun }) {
     let latest = null;
     rows.forEach(r => { if (r.completed_at && (!latest || r.completed_at > latest)) latest = r.completed_at; });
     if (!latest || latest > cutoff) return;
-    due.push({ user_id: userId, course_id: courseId, name: u.name, course: pub[courseId], last_completed: latest });
+    due.push({ user_id: userId, course_id: courseId, assignment_id: rows[0].id, name: u.name, course: pub[courseId], last_completed: latest });
   });
   if (dryRun) return { dry_run: true, would_assign: due.length, detail: due.slice(0, 50) };
   let created = 0;
   for (const d of due) {
     const dd = new Date(); dd.setDate(dd.getDate() + GRACE);
-    const r = await fetch(`${SU}/rest/v1/training_assignments`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal' },
-      body: JSON.stringify({ user_id: d.user_id, course_id: d.course_id, due_date: dd.toISOString() }) });
+    // one row per person per course (unique constraint, found 8/26): a refresher RE-OPENS the existing row
+    const r = await fetch(`${SU}/rest/v1/training_assignments?id=eq.${d.assignment_id}`, { method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+      body: JSON.stringify({ due_date: dd.toISOString(), completed_at: null }) });
     if (r.ok) created++;
   }
   return { assigned: created, considered: due.length, detail: due.slice(0, 50) };
