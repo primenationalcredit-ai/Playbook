@@ -63,6 +63,7 @@ function LeadershipProjects() {
   const [editingStage, setEditingStage] = useState(null);
   const [openProjectId, setOpenProjectId] = useState(null); // full-page project view (Joe 8/11)
   const [myTasksOpen, setMyTasksOpen] = useState(false); // My Tasks panel (Joe 8/26)
+  const [myTasksOpen, setMyTasksOpen] = useState(false); // My Tasks panel (Joe 8/26)
   const [aiOpen, setAiOpen] = useState(false); // PHASE A: Create-with-AI interview panel
   
   // Filters
@@ -279,6 +280,49 @@ function LeadershipProjects() {
         </div>
       </div>
 
+      {/* MY TASKS (Joe 8/26): every task assigned to me across all projects, computed from loaded cards */}
+      {(() => {
+        const meName = String(currentUser?.name || '').toLowerCase();
+        const meFirst = meName.split(' ')[0] || '';
+        if (!meName) return null;
+        const todayMt = new Date().toISOString().slice(0, 10);
+        const mine = [];
+        cards.forEach(c => {
+          if (c.on_hold_reason) return;
+          (c.steps || []).forEach((st, si) => {
+            if (st.done) return;
+            const parts = String(st.assignee || '').toLowerCase().split(/[+/&,]|\band\b/).map(x => x.trim()).filter(Boolean);
+            const isMine = parts.some(p => p === meName || p === meFirst || meName.startsWith(p + ' ') || p.startsWith(meFirst) || meFirst.startsWith(p));
+            if (isMine) mine.push({ cardId: c.id, cardTitle: c.title, text: st.text, due: st.due || null, key: c.id + '-' + si });
+          });
+        });
+        if (!mine.length) return null;
+        mine.sort((x, y) => (x.due || '9999-12-31') < (y.due || '9999-12-31') ? -1 : 1);
+        const lateN = mine.filter(m => m.due && m.due < todayMt).length;
+        return (
+          <div className="mb-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <button onClick={() => setMyTasksOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3">
+              <span className="flex items-center gap-2 font-semibold text-slate-800">
+                My Tasks
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">{mine.length}</span>
+                {lateN > 0 && <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700">{lateN} late</span>}
+              </span>
+              <span className="text-xs text-slate-400">{myTasksOpen ? 'Hide' : 'Show'}</span>
+            </button>
+            {myTasksOpen && (
+              <div className="border-t border-slate-100 max-h-80 overflow-y-auto">
+                {mine.map(m => (
+                  <button key={m.key} onClick={() => setOpenProjectId(m.cardId)} className="w-full flex items-center gap-3 px-4 py-2 hover:bg-slate-50 text-left border-b border-slate-50">
+                    <span className={'text-xs whitespace-nowrap ' + (m.due && m.due < todayMt ? 'text-rose-600 font-semibold' : 'text-slate-400')}>{m.due || 'no date'}</span>
+                    <span className="text-sm text-slate-700 flex-1 truncate">{m.text}</span>
+                    <span className="text-xs text-slate-400 whitespace-nowrap">{m.cardTitle}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {/* MY TASKS (Joe 8/26): every task assigned to me across all projects, computed from loaded cards */}
       {(() => {
         const meName = String(currentUser?.name || '').toLowerCase();
