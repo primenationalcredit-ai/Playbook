@@ -32,6 +32,56 @@ function TrainingCourse() {
   const [quizResult, setQuizResult] = useState(null);
   const [expandedModules, setExpandedModules] = useState({});
   const [showCelebration, setShowCelebration] = useState(false);
+  const [qcEligible, setQcEligible] = useState(false);
+  const [qcOpen, setQcOpen] = useState(false);
+  const [qcQuestions, setQcQuestions] = useState([]);
+  const [qcAnswers, setQcAnswers] = useState({});
+  const [qcResult, setQcResult] = useState(null);
+  const [qcBusy, setQcBusy] = useState(false);
+
+  // QUICK CHECK (Joe 8/26): a returning completer can test out of a refresher with
+  // 3 randomly drawn questions from the course quiz - all 3 right marks the
+  // assignment complete; any miss records a failed attempt and the full course applies.
+  const startQuickCheck = async () => {
+    setQcBusy(true);
+    try {
+      const mods = await supabaseFetch('training_modules', `select=id&course_id=eq.${courseId}&order=sort_order`);
+      let qz = null;
+      for (const m of (mods || [])) {
+        const qs = await supabaseFetch('training_quizzes', `select=id&module_id=eq.${m.id}`);
+        if (qs && qs[0]) { qz = qs[0]; break; }
+      }
+      if (qz) {
+        const pool = await supabaseFetch('training_quiz_questions', `select=*&quiz_id=eq.${qz.id}&order=sort_order`);
+        const mc = (pool || []).filter(q => q.question_type === 'multiple_choice' && Array.isArray(q.options) && q.options.length > 1);
+        if (mc.length >= 3) {
+          const picked = [...mc].sort(() => Math.random() - 0.5).slice(0, 3).map(q => ({ ...q, quiz_id: qz.id }));
+          setQcQuestions(picked); setQcAnswers({}); setQcResult(null); setQcOpen(true);
+        }
+      }
+    } catch (error) { console.error('Quick check load failed:', error); }
+    setQcBusy(false);
+  };
+
+  const submitQuickCheck = async () => {
+    const correct = qcQuestions.filter((q, i) => qcAnswers[i] === q.correct_answer).length;
+    const passed = correct === qcQuestions.length;
+    setQcResult({ correct, total: qcQuestions.length, passed });
+    try {
+      await supabasePost('training_quiz_attempts', {
+        user_id: currentUser.id,
+        quiz_id: qcQuestions[0].quiz_id,
+        score: Math.round((correct / qcQuestions.length) * 100),
+        passed,
+        answers: { quick_check: true, ...qcAnswers },
+      });
+      if (passed && assignment && !assignment.completed_at) {
+        await supabasePatch('training_assignments', assignment.id, { completed_at: new Date().toISOString() });
+        setAssignment(prev => ({ ...prev, completed_at: new Date().toISOString() }));
+      }
+      if (!passed) setQcEligible(false);
+    } catch (error) { console.error('Quick check submit failed:', error); }
+  };
 
   useEffect(() => {
     if (currentUser) {
@@ -50,6 +100,11 @@ function TrainingCourse() {
         `select=*&user_id=eq.${currentUser.id}&course_id=eq.${courseId}`);
       if (assignmentData && assignmentData[0]) {
         setAssignment(assignmentData[0]);
+        // Refresher detection (Quick Check): prefer the OPEN assignment row, and a
+        // prior completed row for this course makes the user test-out eligible.
+        const qcOpenRow = assignmentData.find(x => !x.completed_at);
+        if (qcOpenRow) setAssignment(qcOpenRow);
+        if (qcOpenRow && assignmentData.some(x => x.completed_at)) setQcEligible(true);
       }
       
       const modulesData = await supabaseFetch('training_modules', `select=*&course_id=eq.${courseId}&order=sort_order`);
@@ -450,6 +505,41 @@ function TrainingCourse() {
                     <p className="text-white font-bold text-xl">{progress}% Complete</p>
                   </div>
                 </div>
+                {qcEligible && !assignment?.completed_at && (
+                  <button onClick={() => startQuickCheck()} disabled={qcBusy} className="flex items-center gap-2 bg-amber-400/20 text-amber-200 px-4 py-2 rounded-full hover:bg-amber-400/30 font-medium">
+                    {qcBusy ? 'Loading...' : 'Quick Check: test out in 3 questions'}
+                  </button>
+                )}
+                {qcOpen && (
+                  <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl max-w-lg w-full p-6 max-h-[85vh] overflow-y-auto">
+                      <h3 className="text-lg font-bold text-slate-800 mb-1">Quick Check</h3>
+                      <p className="text-sm text-slate-500 mb-4">You have completed this course before. Answer all {qcQuestions.length} correctly to test out. Any miss and the full course applies.</p>
+                      {qcQuestions.map((q, i) => (
+                        <div key={q.id} className="mb-4">
+                          <p className="font-medium text-slate-700 mb-2">{i + 1}. {q.question}</p>
+                          {(q.options || []).map((opt, oi) => (
+                            <label key={oi} className={`block px-3 py-2 rounded border mb-1 cursor-pointer ${qcAnswers[i] === oi ? 'border-asap-blue bg-blue-50' : 'border-slate-200'}`}>
+                              <input type="radio" name={`qc${i}`} className="mr-2" checked={qcAnswers[i] === oi} onChange={() => setQcAnswers(prev => ({ ...prev, [i]: oi }))} />
+                              {opt}
+                            </label>
+                          ))}
+                        </div>
+                      ))}
+                      {qcResult && (
+                        <div className={`p-3 rounded mb-3 text-sm font-medium ${qcResult.passed ? 'bg-green-50 text-green-700' : 'bg-rose-50 text-rose-700'}`}>
+                          {qcResult.passed ? `Passed ${qcResult.correct} of ${qcResult.total}. Course marked complete.` : `${qcResult.correct} of ${qcResult.total}. Not quite - please retake the full course.`}
+                        </div>
+                      )}
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setQcOpen(false)} className="px-4 py-2 rounded border border-slate-200 text-slate-600">Close</button>
+                        {!qcResult && (
+                          <button onClick={() => submitQuickCheck()} disabled={Object.keys(qcAnswers).length < qcQuestions.length} className="px-4 py-2 rounded bg-asap-blue text-white disabled:opacity-50">Submit</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {assignment?.completed_at && (
                   <div className="flex items-center gap-2 bg-green-500/20 text-green-300 px-4 py-2 rounded-full">
                     <Trophy className="w-5 h-5" />
