@@ -30,8 +30,20 @@ exports.handler = async (event) => {
       const g = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/organizations/${aff.pipedrive_org_id}?api_token=${PIPEDRIVE_TOKEN}`);
       const gd = await g.json();
       const existing = (gd && gd.data && gd.data[PD_FU_NOTES_KEY]) ? String(gd.data[PD_FU_NOTES_KEY]) : '';
-      text = (existing ? existing + '\n' : '') + text;
-      if (text.length > 3500) text = text.slice(text.length - 3500);
+      // Archive instead of delete (Joe 8/26): when the field would overflow, the
+      // old contents move to a real PD note and the field starts fresh - history
+      // is never destroyed, newest notes always fit on the left side.
+      if (existing && (existing.length + text.length + 1) > 3500) {
+        const archNote = '<b>F/U NOTES ARCHIVE (through ' + new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago' }) + ')</b><br/>' + existing.split('\n').join('<br/>');
+        await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/notes?api_token=${PIPEDRIVE_TOKEN}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: aff.pipedrive_org_id, content: archNote })
+        });
+        text = String((append != null ? append : notes) || '').slice(0, 4000);
+      } else {
+        text = (existing ? existing + '\n' : '') + text;
+      }
+      // (tail-slice removed - archive note above handles overflow without deleting)
     }
 
     // Pipedrive first - if this fails, we do not want the app claiming success

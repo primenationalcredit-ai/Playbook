@@ -289,10 +289,15 @@ export default function AffiliateOutreach() {
     }]);
     // ...and on the Pipedrive org record
     const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago' });
-    fetch('/.netlify/functions/affiliate-update-fu-notes', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: task.affiliate_org_id, append: `${today}: Call by ${caller} - ${outcome || status}${notes ? `: ${notes}` : ''}` })
-    }).catch(() => {});
+    // AWAITED (Joe 8/26): fire-and-forget silently lost call notes (Ivette/Catori ticket).
+    try {
+      const fuR = await fetch('/.netlify/functions/affiliate-update-fu-notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.affiliate_org_id, append: `${today}: Call by ${caller} - ${outcome || status}${notes ? `: ${notes}` : ''}` })
+      });
+      const fuD = await fuR.json().catch(() => ({}));
+      if (!fuD.success) { const fuAppendFailed = true; window.alert('Heads up: the call note did NOT save to the Pipedrive org (' + (fuD.error || 'unknown error') + '). Please add it to Additional F/U Notes manually.'); }
+    } catch (e) { window.alert('Heads up: the call note did NOT save to the Pipedrive org (network error). Please add it to Additional F/U Notes manually.'); }
     // voicemail? offer went out as a text
     if (status === 'done' && outcome === 'Left voicemail' && sendVmText) {
       fetch('/.netlify/functions/affiliate-checkin-sms', {
