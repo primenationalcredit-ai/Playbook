@@ -40,9 +40,37 @@ const GMB_LOCATIONS = [
 // a small share so they stay active in Google. When every location reaches the
 // target, the system falls back to inverse-count balancing.
 const REVIEW_TARGET = 100;
-const PRIORITY_SHARE = 0.70;      // the current priority location gets 70% of clicks
+const PRIORITY_SHARE = 0.70;      // retired 8/27 (kept so the old function below still parses)
+const AT_TARGET_FLOOR = 0.15;     // DEFICIT REWORK (Joe 8/27): at/above-target locations split this floor so every location stays fresh
+const DEFICIT_SMOOTH = 10;        // softens the deficit curve so near-target locations keep a meaningful share
 const KEEP_ACTIVE_SHARE = 0.10;   // 10% split across all at-or-above-target locations
 // Remaining 20% is split across the other below-target locations by inverse count.
+
+// DEFICIT-PROPORTIONAL WEIGHTS (Joe 8/27): replaces the 70% winner-take-most below.
+// Below-target locations split the pool in proportion to their gap under REVIEW_TARGET
+// (softened by DEFICIT_SMOOTH); at/above-target locations split AT_TARGET_FLOOR so all
+// stay fresh. No scan data = EXCLUDED - a missing count must never be a fake zero
+// (Fort Myers, 120 real reviews, was read as 0 and ate 70% of clicks).
+function assignWeightsDeficit(stats) {
+  stats.forEach(s => { s.weight = 0; s.priority = false; });
+  const usable = stats.filter(s => !s.noData && s.totalReviewCount != null);
+  if (usable.length === 0) return;
+  const below = usable.filter(s => s.totalReviewCount < REVIEW_TARGET);
+  const above = usable.filter(s => s.totalReviewCount >= REVIEW_TARGET);
+  if (below.length === 0) {
+    const maxCount = Math.max(...usable.map(s => s.totalReviewCount), 1);
+    usable.forEach(s => { s.weight = maxCount - s.totalReviewCount + 1; });
+    return;
+  }
+  const floor = above.length > 0 ? AT_TARGET_FLOOR * 100 : 0;
+  above.forEach(s => { s.weight = floor / above.length; });
+  const pool = 100 - floor;
+  const parts = below.map(s => (REVIEW_TARGET - s.totalReviewCount) + DEFICIT_SMOOTH);
+  const totalParts = parts.reduce((a, b) => a + b, 0) || 1;
+  below.forEach((s, i) => { s.weight = pool * (parts[i] / totalParts); });
+  const top = [...below].sort((a, b) => b.weight - a.weight)[0];
+  if (top) top.priority = true;
+}
 
 function assignWeights(stats) {
   const below = stats.filter(s => s.totalReviewCount < REVIEW_TARGET);
@@ -108,6 +136,21 @@ function ReviewRandomizer() {
       // display) from the same data set.
       const reviews = await supabaseFetch('incoming_reviews', `select=location_name,review_date&delisted_at=is.null`);
 
+      // REAL COUNTS (Joe 8/27): weights come from the daily Google scan (app_cache
+      // key gbp_review_counts), never incoming_reviews (bonus tracking, not Google's
+      // tally). City matching so name variants cannot zero a location.
+      const cityKey = (x) => String(x || '').toLowerCase().replace(/[^a-z]/g, '');
+      const gbpByCity = {};
+      try {
+        const cacheRows = await supabaseFetch('app_cache', `cache_key=eq.gbp_review_counts&select=cache_value`);
+        const gbp = cacheRows && cacheRows[0] ? JSON.parse(cacheRows[0].cache_value) : null;
+        if (gbp && gbp.counts) {
+          Object.entries(gbp.counts).forEach(([nm, v]) => {
+            gbpByCity[cityKey(String(nm).replace(/asap credit repair/i, ''))] = v;
+          });
+        }
+      } catch (e) { console.error('gbp_review_counts read failed:', e); }
+
       let threshold = null;
       const now = new Date();
       if (timeframe === 'week') threshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -128,23 +171,25 @@ function ReviewRandomizer() {
 
       const stats = GMB_LOCATIONS.map(loc => ({
         ...loc,
-        totalReviewCount: totalCounts[loc.name] || 0,
+        totalReviewCount: gbpByCity[cityKey(loc.city)] ? gbpByCity[cityKey(loc.city)].total : null, // real Google total; null = no scan data
+        noData: !gbpByCity[cityKey(loc.city)],
+        scannedAt: gbpByCity[cityKey(loc.city)] ? gbpByCity[cityKey(loc.city)].at : null,
         reviewCount: periodCounts[loc.name] || 0,
       }));
 
-      assignWeights(stats);
+      assignWeightsDeficit(stats);
 
       const totalWeight = stats.reduce((sum, s) => sum + s.weight, 0) || 1;
       stats.forEach(s => { s.probability = ((s.weight / totalWeight) * 100).toFixed(1); });
 
       // Sort by all-time count ascending so locations needing the most help are on top.
-      stats.sort((a, b) => a.totalReviewCount - b.totalReviewCount);
+      stats.sort((a, b) => ((a.totalReviewCount == null ? 1e9 : a.totalReviewCount) - (b.totalReviewCount == null ? 1e9 : b.totalReviewCount)));
 
       setLocationStats(stats);
     } catch (err) {
       console.error('Error loading stats:', err);
-      const stats = GMB_LOCATIONS.map(loc => ({ ...loc, totalReviewCount: 0, reviewCount: 0 }));
-      assignWeights(stats);
+      const stats = GMB_LOCATIONS.map(loc => ({ ...loc, totalReviewCount: null, noData: true, reviewCount: 0 })); // load failed: no fake zeros - nothing weighted
+      assignWeightsDeficit(stats);
       const totalWeight = stats.reduce((sum, s) => sum + s.weight, 0) || 1;
       stats.forEach(s => { s.probability = ((s.weight / totalWeight) * 100).toFixed(1); });
       setLocationStats(stats);
