@@ -152,3 +152,7 @@
 
 [functions."payment-integrity-watchdog"]
   schedule = "0 11 * * *"
+
+# Daily real Google review counts for the review randomizer (Outscraper, reviewsLimit=1)
+[functions."gbp-count-scan"]
+  schedule = "30 13 * * *"
