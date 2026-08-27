@@ -236,16 +236,44 @@ exports.handler = async (event) => {
                     dealId = null;
                   } else {
                     const cutoff90 = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+                    // RIGHT-CLIENT RESCUE (Joe 8/27 #2): the Zap stamps Pipedrive ids into
+                    // every Zoho customer, so a manually-invoiced payment on a wrong same-name
+                    // customer is internally consistent and passes the id checks. The client is
+                    // still verifiable BY NAME: if the payer has exactly ONE open deal while this
+                    // deal is closed, the invoice came from the wrong Zoho customer - file onto
+                    // the open deal and scream on both. Several matches = never guess (8/21 rule).
+                    try {
+                      const nmq = encodeURIComponent(String(payment.customer_name || '').trim());
+                      if (nmq) {
+                        const srch = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/search?term=${nmq}&status=open&limit=20&api_token=${pdTok}`);
+                        const sj = await srch.json().catch(() => null);
+                        const items = ((sj && sj.data && sj.data.items) || []).map(it => it.item).filter(Boolean);
+                        const normN = (x) => String(x || '').toLowerCase().replace(/[^a-z]/g, '');
+                        const targetN = normN(payment.customer_name);
+                        const matches = items.filter(it => it.status === 'open' && it.person && normN(it.person.name) === targetN);
+                        if (matches.length === 1) {
+                          const oldDeal = dealId;
+                          dealId = matches[0].id;
+                          payment._rescued = true;
+                          payment._rescuedFrom = oldDeal;
+                          const msg = (did, body) => fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/notes?api_token=${pdTok}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deal_id: did, content: body }) }).catch(() => {});
+                          await msg(parseInt(oldDeal, 10), `<b>WRONG-CUSTOMER INVOICE CAUGHT:</b> $${payment.amount} (Zoho payment ${payment.payment_id}, ${payment.date}) was invoiced from THIS closed deal's Zoho customer, but the payer's name has exactly one OPEN deal (${dealId}). The payment was auto-filed onto the open deal. Fix the Zoho side: move the payment to the correct customer's invoice and void the stray here.`);
+                          await msg(parseInt(dealId, 10), `<b>PAYMENT RESCUED TO THIS DEAL:</b> $${payment.amount} (${payment.date}) was invoiced from the wrong Zoho customer (same name, closed deal ${oldDeal}). The dashboard row is filed here and tagged repointed_wrong_customer. Verify in Zoho that the payment gets moved to this client's invoice.`);
+                        } else if (matches.length > 1) {
+                          console.error(`zoho-payment-sync: ${matches.length} open same-name deals for '${payment.customer_name}', not guessing (payment ${payment.payment_id})`);
+                        }
+                      }
+                    } catch (re) { console.error('right-client rescue failed:', re.message); }
                     // WRONG-DEAL TRIPWIRE (Joe 8/27, Michael Flores x2 - $150 filed on the OTHER
                     // Michael's 2024 won deal 212266 because his Zoho customer was the old person
                     // with zero open deals and recent note activity): trusting a CLOSED deal is
                     // sometimes right (final payment on a just-won deal) but must NEVER be silent.
                     // Mark the row and scream on the deal so a human verifies the same hour.
-                    if (String(d.update_time || '') >= cutoff90) {
+                    if (!payment._rescued && String(d.update_time || '') >= cutoff90) {
                       payment._closedSuspect = true;
                       try { await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/notes?api_token=${pdTok}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deal_id: parseInt(cnDeal, 10), content: `<b>WRONG-DEAL SUSPECT:</b> $${payment.amount} (Zoho payment ${payment.payment_id}, ${payment.date}) was filed onto this deal, but this deal is ${d.status.toUpperCase()} and its contact has no open deals. If this client is actually active under a NEWER deal (same or similar name), this invoice was sent from the wrong Zoho customer. Verify and re-point before month-end - payment row is tagged wrong_deal_suspect.` }) }); } catch (nerr) { console.error('suspect note failed:', nerr.message); }
                     }
-                    if (String(d.update_time || '') < cutoff90) {
+                    if (!payment._rescued && String(d.update_time || '') < cutoff90) {
                       console.error(`zoho-payment-sync: company_name deal ${cnDeal} closed + stale (updated ${d.update_time}), refusing for payment ${payment.payment_id}`);
                       dealId = null;
                     }
@@ -304,6 +332,7 @@ exports.handler = async (event) => {
         source: 'zoho_api'
       };
       if (payment._closedSuspect) { row.source += '|wrong_deal_suspect'; }
+      if (payment._rescuedFrom) { row.source += '|repointed_wrong_customer_from_' + payment._rescuedFrom; }
       // ONE ROW PER PAYMENT (Joe 8/26): Zoho sometimes holds TWO payment records for
       // the same money (fresh payment_id each), and the webhook can write a live row
       // after the liveRows snapshot. Same deal + same amount + within 1 day = same
