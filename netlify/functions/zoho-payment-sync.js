@@ -236,6 +236,15 @@ exports.handler = async (event) => {
                     dealId = null;
                   } else {
                     const cutoff90 = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+                    // WRONG-DEAL TRIPWIRE (Joe 8/27, Michael Flores x2 - $150 filed on the OTHER
+                    // Michael's 2024 won deal 212266 because his Zoho customer was the old person
+                    // with zero open deals and recent note activity): trusting a CLOSED deal is
+                    // sometimes right (final payment on a just-won deal) but must NEVER be silent.
+                    // Mark the row and scream on the deal so a human verifies the same hour.
+                    if (String(d.update_time || '') >= cutoff90) {
+                      payment._closedSuspect = true;
+                      try { await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/notes?api_token=${pdTok}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deal_id: parseInt(cnDeal, 10), content: `<b>WRONG-DEAL SUSPECT:</b> $${payment.amount} (Zoho payment ${payment.payment_id}, ${payment.date}) was filed onto this deal, but this deal is ${d.status.toUpperCase()} and its contact has no open deals. If this client is actually active under a NEWER deal (same or similar name), this invoice was sent from the wrong Zoho customer. Verify and re-point before month-end - payment row is tagged wrong_deal_suspect.` }) }); } catch (nerr) { console.error('suspect note failed:', nerr.message); }
+                    }
                     if (String(d.update_time || '') < cutoff90) {
                       console.error(`zoho-payment-sync: company_name deal ${cnDeal} closed + stale (updated ${d.update_time}), refusing for payment ${payment.payment_id}`);
                       dealId = null;
@@ -294,6 +303,7 @@ exports.handler = async (event) => {
         consultant_name: 'pending_enrichment', // Will be filled by enrichment step
         source: 'zoho_api'
       };
+      if (payment._closedSuspect) { row.source += '|wrong_deal_suspect'; }
       // ONE ROW PER PAYMENT (Joe 8/26): Zoho sometimes holds TWO payment records for
       // the same money (fresh payment_id each), and the webhook can write a live row
       // after the liveRows snapshot. Same deal + same amount + within 1 day = same

@@ -235,6 +235,23 @@ exports.handler = async (event) => {
         if (deal && await enrichFromDeal(payment, deal, personToAM)) { enriched++; searched++; continue; }
       }
 
+      // OWNER FALLBACK (Joe 8/27): a payment that HAS a deal id must never park as
+      // needs_manual while that deal still resolves - one transient Pipedrive hiccup in
+      // Tier 1 did exactly that to Michael Flores' $125 on Cindy's own deal. Last attempt:
+      // fetch the deal directly; a live owner_name IS the consultant (marked owner_derived).
+      if (payment.pipedrive_deal_id) {
+        try {
+          const pdTok2 = process.env.PIPEDRIVE_API_KEY || process.env.PIPEDRIVE_API_TOKEN;
+          const dr = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/${payment.pipedrive_deal_id}?api_token=${pdTok2}`);
+          const dj2 = await dr.json().catch(() => null);
+          const own = dj2 && dj2.data && dj2.data.owner_name;
+          if (own) {
+            await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?id=eq.${payment.id}`, { method: 'PATCH', headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }, body: JSON.stringify({ consultant_name: own, source: (payment.source ? payment.source + '|' : '') + 'owner_derived' }) });
+            enriched++; continue;
+          }
+        } catch (e2) { /* fall through to needs_manual */ }
+      }
+
       // ---- Tier 3: cannot resolve -> mark so it stops being retried/counted ----
       // The deal is deleted/merged and there's no sibling or search hit. Flag it
       // for manual fixing via the All Payments Edit button and drop it from the
