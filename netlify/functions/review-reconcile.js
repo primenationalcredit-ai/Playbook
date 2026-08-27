@@ -80,6 +80,11 @@ async function fetchLiveReviews(locationName) {
   return { live, oldest, capped };
 }
 
+function bonusMonthStart() {
+  const n = new Date();
+  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}
+
 function isLive(stored, live) {
   // 1) direct google review id match
   if (stored.google_review_id) {
@@ -104,9 +109,13 @@ exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
 
     // Build the worklist: locations that currently have pending/assigned reviews.
-    // (Completed reviews are skipped: bonus already credited, and it saves cost.)
+    // BONUS INTEGRITY (Joe 8/27): completed reviews from the CURRENT bonus month are
+    // re-checked too - Google deleting an already-credited review must pull it out of
+    // this month's bonus counts (both bonus calculators filter delisted_at=is.null).
+    // Completed reviews from closed/paid months stay untouched: clawbacks are a human
+    // policy call, never silent code.
     const actRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/incoming_reviews?status=in.(pending,assigned)&select=location_name`,
+      `${SUPABASE_URL}/rest/v1/incoming_reviews?or=(status.in.(pending,assigned),and(status.eq.completed,review_date.gte.${bonusMonthStart()}))&select=location_name`,
       { headers: supa }
     );
     const actRows = actRes.ok ? await actRes.json() : [];
@@ -167,7 +176,7 @@ exports.handler = async (event) => {
 async function reconcileLocation(locationName) {
   // Our pending/assigned reviews for this location.
   const rRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/incoming_reviews?status=in.(pending,assigned)&location_name=eq.${encodeURIComponent(locationName)}&select=id,google_review_id,reviewer_name,rating,review_text,review_date,delisted_at`,
+    `${SUPABASE_URL}/rest/v1/incoming_reviews?or=(status.in.(pending,assigned),and(status.eq.completed,review_date.gte.${bonusMonthStart()}))&location_name=eq.${encodeURIComponent(locationName)}&select=id,google_review_id,reviewer_name,rating,review_text,review_date,delisted_at,status,assigned_to,notes`,
     { headers: supa }
   );
   const stored = rRes.ok ? await rRes.json() : [];
@@ -192,7 +201,7 @@ async function reconcileLocation(locationName) {
 
     const liveNow = isLive(s, live);
     if (!liveNow && !s.delisted_at) {
-      await patch(s.id, { delisted_at: new Date().toISOString(), notes: appendNote(s.notes, `Delisted ${new Date().toISOString().slice(0, 10)} — no longer on Google.`) });
+      await patch(s.id, { delisted_at: new Date().toISOString(), notes: appendNote(s.notes, `Delisted ${new Date().toISOString().slice(0, 10)}${s.status === 'completed' ? ' [WAS CREDITED' + (s.assigned_to ? ' to ' + s.assigned_to : '') + ' - removed from this month bonus counts]' : ''} — no longer on Google.`) });
       flagged++;
     } else if (liveNow && s.delisted_at) {
       // Reappeared on Google — clear the flag.
