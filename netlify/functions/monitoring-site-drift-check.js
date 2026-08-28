@@ -51,7 +51,7 @@ exports.handler = async (event) => {
 
   try {
     const rows = await fetch(
-      `${SUPABASE_URL}/rest/v1/cs_deals?monitoring_site=not.is.null&select=deal_id,monitoring_site&order=deal_id.asc&limit=${limit}&offset=${offset}`,
+      `${SUPABASE_URL}/rest/v1/cs_deals?monitoring_site=not.is.null&select=deal_id,monitoring_site,person_id,call_center_rep_name&order=deal_id.asc&limit=${limit}&offset=${offset}`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
     ).then((r) => r.json());
 
@@ -62,6 +62,32 @@ exports.handler = async (event) => {
         const pdJson = await pd.json().catch(() => ({}));
         const deal = pdJson.data;
         if (!deal) { report.noLongerTracked++; continue; }
+
+        // REP DRIFT HEAL (Joe 8/28, Araceli x2 + Erick Rivera Perez 269286 in one
+        // day): the Call Center Rep lives on the PERSON and the deal-event webhook
+        // never sees person edits, so the mirror's rep goes stale/blank and deals
+        // vanish from CSR lists. Opposite direction from the site heal: Pipedrive
+        // is the truth, the mirror gets corrected. Runs BEFORE the site continue
+        // so every tracked row gets the rep check every cycle.
+        try {
+          const personIdSw = row.person_id || (deal.person_id && (deal.person_id.value || deal.person_id));
+          if (personIdSw) {
+            const pRes = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/persons/${personIdSw}?api_token=${PD_TOKEN}`);
+            const pJson = await pRes.json().catch(() => ({}));
+            const repF = pJson.data && pJson.data['fee42f0cb3d515239d602de62533887bfd58d384'];
+            const repName = repF ? (typeof repF === 'object' ? repF.name : String(repF)) : null;
+            if (repName && repName !== row.call_center_rep_name) {
+              const repId = repF && typeof repF === 'object' ? (repF.id || repF.value || null) : null;
+              await fetch(`${SUPABASE_URL}/rest/v1/cs_deals?deal_id=eq.${row.deal_id}`, {
+                method: 'PATCH', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+                body: JSON.stringify({ call_center_rep_name: repName, call_center_rep_id: repId, synced_at: new Date().toISOString() })
+              });
+              if (!report.repHealed) report.repHealed = [];
+              report.repHealed.push({ deal_id: row.deal_id, from: row.call_center_rep_name || '(blank)', to: repName });
+            }
+            await sleep(80);
+          }
+        } catch (eRep) { report.errors.push({ deal_id: row.deal_id, error: 'rep heal: ' + eRep.message }); }
 
         const liveValue = deal[FIELD];
         if (liveValue) { report.stillMatching++; continue; }
