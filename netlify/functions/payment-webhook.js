@@ -123,12 +123,16 @@ exports.handler = async (event) => {
         }
       } catch (e) { console.error('[deal-correction] lookup failed, keeping provided deal id:', e.message); }
     }
-    // LIVE-ROW DUP GUARD (Joe 8/21): live rows carry no zoho_payment_id, so the
+    // LIVE-ROW DUP GUARD (Joe 8/21; widened 8/29 Lenny/Miheret 269931/269162): a live
+    // row is provisional - refuse it when ANY row (zoho or live) already holds this
+    // deal+amount+date. Old version only matched id-less rows, so a live row arriving
+    // seconds AFTER the Zoho sync's row slipped past and double-counted. Skipping a
+    // live row never loses money (the sync backfills from Zoho truth); the original:
     // unique key cannot stop a double POST (two doors announcing the same charge).
     // Same deal + amount + date with no payment id = already recorded live; skip.
     if (!record.zoho_payment_id && record.pipedrive_deal_id) {
       try {
-        const dupQ = `${SUPABASE_URL}/rest/v1/consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(record.pipedrive_deal_id)}&amount=eq.${record.amount}&payment_date=eq.${record.payment_date}&zoho_payment_id=is.null&select=id&limit=1`;
+        const dupQ = `${SUPABASE_URL}/rest/v1/consultant_payments?pipedrive_deal_id=eq.${encodeURIComponent(record.pipedrive_deal_id)}&amount=eq.${record.amount}&payment_date=eq.${record.payment_date}&select=id&limit=1`;
         const dupRows = await fetch(dupQ, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }).then(r => r.ok ? r.json() : []);
         if (Array.isArray(dupRows) && dupRows.length) {
           console.log(`[payment-webhook] live row already exists for deal ${record.pipedrive_deal_id} $${record.amount} ${record.payment_date} - skipping duplicate`);
