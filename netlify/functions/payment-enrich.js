@@ -82,7 +82,10 @@ async function searchDealId(payment) {
               // Prefer an open deal; otherwise the most recent by id.
               const open = deals.filter(x => x.status === 'open').map(x => x.id);
               if (open.length) return open.sort((a, b) => b - a)[0];
-              return deals.map(x => x.id).sort((a, b) => b - a)[0];
+              // NO-GUESS 8/29 (Juan Romero 149448/270149): zero open deals means the email
+              // matched a STALE duplicate person - filing on their old/won deal is the
+              // wrong-deal disease at its source. Park for a human instead.
+              return null;
             }
           }
         }
