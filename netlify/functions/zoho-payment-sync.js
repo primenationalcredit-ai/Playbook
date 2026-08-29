@@ -201,13 +201,13 @@ exports.handler = async (event) => {
                 const chRows = await fetch(`https://rdsxfzdthcsndlcjgfcu.supabase.co/rest/v1/scheduled_charges?zoho_invoice_id=eq.${encodeURIComponent(inv.invoice_id)}&select=pipedrive_deal_id&limit=1`, { headers: { apikey: PROC_KEY, Authorization: `Bearer ${PROC_KEY}` } }).then(r => r.ok ? r.json() : []).catch(() => []);
                 invDeal = chRows && chRows[0] && chRows[0].pipedrive_deal_id ? String(chRows[0].pipedrive_deal_id) : null;
               }
-              if (invDeal) dealId = invDeal;
+              if (invDeal) { dealId = invDeal; payment._resolvedBy = 'invoice_records'; }
             } catch (e) { /* invoice-first lookup is best-effort; contact fallback below */ }
             const cnNums = String(inv.company_name || '').match(/\d{4,}/g) || [];
             const cnDeal = cnNums[0] || null;
             const cnPerson = cnNums[1] || null;
             if (!dealId && cnDeal) {
-              dealId = cnDeal;
+              dealId = cnDeal; payment._resolvedBy = 'company_field';
               try {
                 const pdTok = process.env.PIPEDRIVE_API_KEY || process.env.PIPEDRIVE_API_TOKEN;
                 const dRes = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/${cnDeal}?api_token=${pdTok}`);
@@ -230,7 +230,7 @@ exports.handler = async (event) => {
                   // deals means the closed company_name deal is trusted only if recently
                   // active (final payment on a just-won deal), never a years-stale contact.
                   if (open.length === 1) {
-                    dealId = open[0].id;
+                    dealId = open[0].id; payment._resolvedBy = 'single_open_deal';
                   } else if (open.length > 1) {
                     console.error(`zoho-payment-sync: ${open.length} open deals for person ${personId}, refusing to guess for payment ${payment.payment_id}`);
                     dealId = null;
@@ -281,7 +281,7 @@ exports.handler = async (event) => {
                 }
               } catch (e) { /* verification failure keeps cnDeal - never blocks the payment import */ }
             }
-            if (!dealId) dealId = parseDealId(inv.reference_number) || null;
+            if (!dealId) { dealId = parseDealId(inv.reference_number) || null; if (dealId) payment._resolvedBy = 'reference_number'; }
             
             // Get payment type from full invoice (need line_items)
             try {
@@ -333,6 +333,8 @@ exports.handler = async (event) => {
       };
       if (payment._closedSuspect) { row.source += '|wrong_deal_suspect'; }
       if (payment._rescuedFrom) { row.source += '|repointed_wrong_customer_from_' + payment._rescuedFrom; }
+      // resolver-audit 8/29: every insert names WHICH resolver chose its deal, in the row itself
+      row.source += dealId ? ('|' + (payment._rescued ? 'name_rescue' : (payment._resolvedBy || 'resolver_unknown'))) : '|unresolved';
       // ONE ROW PER PAYMENT (Joe 8/26): Zoho sometimes holds TWO payment records for
       // the same money (fresh payment_id each), and the webhook can write a live row
       // after the liveRows snapshot. Same deal + same amount + within 1 day = same
