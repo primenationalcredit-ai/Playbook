@@ -239,7 +239,14 @@ function AllPayments({ embedded = false }) {
   };
 
   const filtered = payments.filter(p => (!dayFilter || String(p.payment_date || '').slice(0, 10) === dayFilter) && (!search || (p.client_name || '').toLowerCase().includes(search.toLowerCase()) || String(p.pipedrive_deal_id || '').includes(search)));
-  const total = filtered.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  // collected-formula 8/31 (Joe): the headline total = payments collected MINUS
+  // additional rounds (those credit the Account Manager, not the consultant) and
+  // minus refunds/deductions (refunded rows are excluded server-side; negative
+  // rows subtract naturally). Rounds are shown on their own line, never blended -
+  // this makes the dashboard number match the Bonus Tracker's totalSales exactly.
+  const roundsRows = filtered.filter(p => p.payment_type === 'additional_round');
+  const roundsTotal = roundsRows.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const total = filtered.reduce((s, p) => s + (Number(p.amount) || 0), 0) - roundsTotal;
 
   const monthOptions = ['all'];
   for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); monthOptions.push(monthKey(d)); }
@@ -307,7 +314,7 @@ function AllPayments({ embedded = false }) {
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between text-sm">
           <span className="text-slate-500">{filtered.length} payment{filtered.length === 1 ? '' : 's'}</span>
-          <span className="font-semibold text-slate-800">Total: {fmt(total)}</span>
+          <span className="font-semibold text-slate-800">Total: {fmt(total)}</span>{roundsTotal > 0 && <span className="text-xs text-slate-500 ml-3">+ Additional Rounds (AM credit): {fmt(roundsTotal)} ({roundsRows.length})</span>}
         </div>
         {loading ? (
           <div className="p-8 text-center text-slate-500">Loading...</div>
