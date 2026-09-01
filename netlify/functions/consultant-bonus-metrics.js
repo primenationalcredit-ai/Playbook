@@ -664,6 +664,24 @@ exports.handler = async (event) => {
         return { org, clientCount: cls.length, qualifiedCount, producing: qualifiedCount >= 3, clients: cls.sort((a, b) => Number(b.qualified) - Number(a.qualified)) };
       }).sort((a, b) => (Number(b.producing) - Number(a.producing)) || (b.qualifiedCount - a.qualifiedCount) || (b.clientCount - a.clientCount));
 
+      // ORG-OWNER MAP 9/1 (Joe/Astrid, 'Referred to Cindy' showed under Eric): a
+      // consultant-owned referral org (label 2993) belongs to its OWNER. When another
+      // consultant covers a payment for that org's client, the sale credit stays with
+      // whoever did the work, but the reactivation kicker follows the org owner.
+      // Fetched once per recompute (37 orgs today) and cached with everything else.
+      let _orgOwner = {};
+      try {
+        const _pdt = process.env.PIPEDRIVE_API_KEY || process.env.PIPEDRIVE_API_TOKEN;
+        let _s = 0, _more = true;
+        while (_more && _s < 20000) {
+          const _r = await fetch('https://asapcreditrepairusa.pipedrive.com/api/v1/organizations?start=' + _s + '&limit=500&api_token=' + _pdt).then(r => r.json()).catch(() => null);
+          const _d = (_r && _r.data) || [];
+          for (const _o of _d) { if (_o.label === 2993 && _o.owner_id && _o.owner_id.name && _o.owner_id.name !== 'Zapier') _orgOwner[_o.name] = _o.owner_id.name; }
+          _more = !!(_r && _r.additional_data && _r.additional_data.pagination && _r.additional_data.pagination.more_items_in_collection);
+          _s += 500;
+        }
+      } catch (e) { console.error('org-owner map failed (kicker falls back to payment consultant):', e.message); }
+
       // === REACTIVATION KICKER ($75 one-time for reviving dormant affiliate) ===
       // Dormant = affiliate org with no clients for 90+ days, then sends a new one this month
       let reactivationCount = 0;
@@ -688,9 +706,24 @@ exports.handler = async (event) => {
       const orgQualifyingHistory = {};
       for (const p of affiliateHistory) {
         if (!p.referrer_org) continue;
-        const pFirst2 = (p.consultant_name || '').split(' ')[0].toLowerCase();
-        if (pFirst2 !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
+        // OWNER DECIDES 9/1 (Joe/Astrid): when the referring org is consultant-owned,
+        // the reactivation belongs to the OWNER even if someone else covered the payment
+        // (Eric took a payment for Cindy's affiliate while she was out - the sale stays his,
+        // the affiliate stays hers). Orgs with no consultant owner keep the old behaviour:
+        // whoever took the payment.
+        const _own = _orgOwner[p.referrer_org] || null;
+        if (_own) {
+          const _oF = _own.split(' ')[0].toLowerCase();
+          if (_oF !== firstName && !(lastName.length > 3 && _own.toLowerCase().includes(lastName))) continue;
+        } else {
+          const pFirst2 = (p.consultant_name || '').split(' ')[0].toLowerCase();
+          if (pFirst2 !== firstName && !(lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName))) continue;
+        }
         if (String(p.payment_type) === 'doc_fee') continue;
+        // ORG-OWNER KICKER 9/1 (Joe/Astrid): additional rounds never count toward a
+        // reactivation - the round is an upsell on an existing client, not a revived
+        // affiliate relationship.
+        if (String(p.payment_type) === 'additional_round') continue;
         if (!orgQualifyingHistory[p.referrer_org]) orgQualifyingHistory[p.referrer_org] = [];
         orgQualifyingHistory[p.referrer_org].push({ date: p.payment_date, month: p.payment_month, client: p.client_name || null, amount: p.amount || null });
       }
