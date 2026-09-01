@@ -154,6 +154,14 @@ exports.handler = async (event) => {
 
     if (!res.ok) {
       const err = await res.text();
+      // DB-LEVEL DUP (Joe 9/1, Joel Baker 268608): two doors announced the same charge in
+      // the SAME second, so the lookup-then-insert guard could not see either row. A unique
+      // index now refuses the second write at the database itself. A 23505 conflict is not a
+      // failure - it means the payment is already recorded, so answer like the guard does.
+      if (res.status === 409 || String(err).indexOf('23505') >= 0 || String(err).indexOf('duplicate key') >= 0) {
+        console.log('[payment-webhook] db-level duplicate refused for deal ' + record.pipedrive_deal_id + ' $' + record.amount + ' ' + record.payment_date);
+        return { statusCode: 200, headers, body: JSON.stringify({ success: true, duplicate: true, guard: 'db_unique_index' }) };
+      }
       console.error('Supabase insert error:', err);
       return { statusCode: 500, headers, body: JSON.stringify({ error: 'Failed to save payment', detail: err }) };
     }
