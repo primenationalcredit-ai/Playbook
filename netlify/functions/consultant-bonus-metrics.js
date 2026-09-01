@@ -910,7 +910,13 @@ exports.handler = async (event) => {
         if (!kind) continue;
         const roster = {};
         for (const p of allPayments) {
-          if (p.referrer_org === orgName && p.is_affiliate_deal) {
+          // ROSTER OWNERSHIP 9/1 (Astrid): the kicker was already right - an org counts
+          // only for the consultant whose payment revived it. The client roster under each
+          // org pulled EVERY client that affiliate referred, including other consultants'.
+          // Filtered to the viewing consultant per Astrid's rule. Reactivation panel only.
+          const _rFirst = (p.consultant_name || '').split(' ')[0].toLowerCase();
+          const _rMine = _rFirst === firstName || (lastName.length > 3 && (p.consultant_name || '').toLowerCase().includes(lastName));
+          if (p.referrer_org === orgName && p.is_affiliate_deal && _rMine) {
             const key = p.pipedrive_deal_id || p.client_name;
             if (!roster[key]) roster[key] = { name: p.client_name, dealId: p.pipedrive_deal_id || null, hasDoc: false, hasAdvanced: false };
             if (p.payment_type === 'doc_fee') roster[key].hasDoc = true;
