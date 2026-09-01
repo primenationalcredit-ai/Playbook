@@ -669,10 +669,21 @@ exports.handler = async (event) => {
       // consultant covers a payment for that org's client, the sale credit stays with
       // whoever did the work, but the reactivation kicker follows the org owner.
       // Fetched once per recompute (37 orgs today) and cached with everything else.
+      // ORG-OWNER CACHE 9/1: paging every organization on each recompute added ~40
+      // Pipedrive calls and pushed the function to a 502 on a cold cache. Owners change
+      // rarely, so the map is cached for 24h in app_cache and only rebuilt when stale.
       let _orgOwner = {};
+      let _ownerCached = false;
+      try {
+        const _cr = await supaGet('app_cache', "cache_key=eq.org_owner_map&select=cache_value,updated_at");
+        if (_cr && _cr[0] && _cr[0].cache_value) {
+          const _age = Date.now() - new Date(_cr[0].updated_at).getTime();
+          if (_age < 86400000) { _orgOwner = JSON.parse(_cr[0].cache_value); _ownerCached = true; }
+        }
+      } catch (e) {}
       try {
         const _pdt = process.env.PIPEDRIVE_API_KEY || process.env.PIPEDRIVE_API_TOKEN;
-        let _s = 0, _more = true;
+        let _s = 0, _more = !_ownerCached;
         while (_more && _s < 20000) {
           const _r = await fetch('https://asapcreditrepairusa.pipedrive.com/api/v1/organizations?start=' + _s + '&limit=500&api_token=' + _pdt).then(r => r.json()).catch(() => null);
           const _d = (_r && _r.data) || [];
@@ -681,6 +692,11 @@ exports.handler = async (event) => {
           _s += 500;
         }
       } catch (e) { console.error('org-owner map failed (kicker falls back to payment consultant):', e.message); }
+      if (!_ownerCached && Object.keys(_orgOwner).length) {
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/app_cache?on_conflict=cache_key`, { method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cache_key: 'org_owner_map', cache_value: JSON.stringify(_orgOwner), updated_at: new Date().toISOString() }) });
+        } catch (e) {}
+      }
 
       // === REACTIVATION KICKER ($75 one-time for reviving dormant affiliate) ===
       // Dormant = affiliate org with no clients for 90+ days, then sends a new one this month
