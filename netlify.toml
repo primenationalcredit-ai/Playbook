@@ -156,3 +156,8 @@
 # Daily real Google review counts for the review randomizer (Outscraper, reviewsLimit=1)
 [functions."gbp-count-scan"]
   schedule = "30 13 * * *"
+
+# Org-owner map (Joe 9/1): which consultant owns each referral org, for the
+# reactivation kicker. Built here so the bonus page only ever reads the cache.
+[functions."org-owner-map-refresh"]
+  schedule = "20 * * * *"

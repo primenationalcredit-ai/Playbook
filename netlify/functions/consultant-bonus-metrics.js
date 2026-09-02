@@ -678,7 +678,7 @@ exports.handler = async (event) => {
         const _cr = await supaGet('app_cache', "cache_key=eq.org_owner_map&select=cache_value,updated_at");
         if (_cr && _cr[0] && _cr[0].cache_value) {
           const _age = Date.now() - new Date(_cr[0].updated_at).getTime();
-          if (_age < 86400000) { _orgOwner = JSON.parse(_cr[0].cache_value); _ownerCached = true; }
+          if (_age < 604800000) { _orgOwner = JSON.parse(_cr[0].cache_value); _ownerCached = true; } // 7d: the hourly refresher keeps this fresh; a week of slack means the page never rebuilds it inline and never times out
         }
       } catch (e) {}
       try {
