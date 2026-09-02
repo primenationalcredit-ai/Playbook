@@ -354,6 +354,7 @@ function Layout() {
     { path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' },
     { path: '/admin/tasks', icon: ListTodo, label: 'Manage Tasks' },
     { path: '/admin/users', icon: UserCog, label: 'Manage Users' },
+  { path: '/admin/consults', icon: Search, label: 'Consult Records' },
     { path: '/admin/backups', icon: UserCheck, label: 'Backup Settings' },
     { path: '/admin/onboarding', icon: UserPlus, label: 'Onboarding' },
     { path: '/admin/refunds', icon: DollarSign, label: 'Refund Tracking' },

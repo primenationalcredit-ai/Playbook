@@ -16,6 +16,7 @@ import CommandCenter from './pages/CommandCenter';
 import AdditionalRounds from './pages/AdditionalRounds';
 import Automations from './pages/Automations';
 import AdminUsers from './pages/AdminUsers';
+import AdminConsults from './pages/AdminConsults';
 import AdminUpdates from './pages/AdminUpdates';
 import AdminTraining from './pages/AdminTraining';
 import AdminTrainingCourse from './pages/AdminTrainingCourse';
@@ -176,6 +177,11 @@ function App() {
         <Route path="admin/users" element={
           <ProtectedRoute adminOnly>
             <AdminUsers />
+          </ProtectedRoute>
+        } />
+        <Route path="admin/consults" element={
+          <ProtectedRoute adminOnly>
+            <AdminConsults />
           </ProtectedRoute>
         } />
         <Route path="admin/updates" element={
