@@ -151,17 +151,6 @@ exports.handler = async (event) => {
     let invoiceData = [];
     try {
       invoiceData = await supaGet('consultant_invoices', `select=*`);
-    } catch (e) {}
-    // THRESHOLD QUALIFY 9/2 (Joe, Cindy 360 -> 280): a doc qualifies when payments past
-    // the doc fee reach the client's second-payment threshold, in the month that happens.
-    // doc-threshold-map caches (Total Fee - 149)/2 for partial plans, the full remainder
-    // for full plans. Loaded here so qualifyClient never needs a deal lookup.
-    let thresholdMap = {};
-    try {
-      const _tm = await supaGet('app_cache', 'cache_key=eq.doc_threshold_map&select=cache_value');
-      if (_tm && _tm[0] && _tm[0].cache_value) thresholdMap = JSON.parse(_tm[0].cache_value);
-    } catch (e) {}
-    try {
     } catch(e) {}
     // Monthly payments only (for commission calc)
     const payments = allPayments.filter(p => p.payment_month === targetMonth);
@@ -470,20 +459,8 @@ exports.handler = async (event) => {
       const qualified = docAmt > 0 && advPays.length > 0;
       let month = null;
       if (qualified) {
-        // THRESHOLD QUALIFY 9/2: walk advance payments oldest first and take the month
-        // the running total first reaches the client's threshold. Locked - a later final
-        // never moves a doc out of the month it was earned. No threshold on file falls back
-        // to the old behaviour so nobody loses credit they have today.
-        const _th = thresholdMap[String(client.dealId)];
-        let pick = null;
-        if (_th && _th.t > 0) {
-          let _run = 0;
-          for (const _p of advPays) {
-            _run += parseFloat(_p.amount) || 0;
-            if (_run + 0.01 >= _th.t) { pick = _p; break; }
-          }
-        }
-        if (!pick) { const fins = advPays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full'); pick = fins.length ? fins[fins.length - 1] : advPays[advPays.length - 1]; }
+        const fins = advPays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+        const pick = fins.length ? fins[fins.length - 1] : advPays[advPays.length - 1];
         month = String(pick.payment_date).slice(0, 7);
       }
       const paidAll = Math.round(docAmt + (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0));
