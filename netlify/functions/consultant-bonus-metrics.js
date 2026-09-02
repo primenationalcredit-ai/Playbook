@@ -459,13 +459,8 @@ exports.handler = async (event) => {
       const qualified = docAmt > 0 && advPays.length > 0;
       let month = null;
       if (qualified) {
-        // FIRST ADVANCE 9/2 (Joe, Cindy's accelerator dropped $360 -> $280): a doc
-        // qualifies when the client makes their SECOND payment - partial or final,
-        // whichever comes first. Crediting the LAST payment (and preferring a final over
-        // an earlier partial) moved docs out of the month they were earned whenever a
-        // client's final landed in the next month. Four of Cindy's August docs jumped to
-        // September on 9/01 for exactly that reason. The first advance payment decides.
-        const pick = advPays[0];
+        const fins = advPays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+        const pick = fins.length ? fins[fins.length - 1] : advPays[advPays.length - 1];
         month = String(pick.payment_date).slice(0, 7);
       }
       const paidAll = Math.round(docAmt + (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0));
