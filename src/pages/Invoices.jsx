@@ -867,7 +867,12 @@ function AddCardModal({ info, onClose, onSaved, mode = 'add' }) {
         zip: form.zip,
         fullName: form.cardholderName
       });
+      // SEND MERCHANT 9/2: tell the backend which Authorize.net account this token was
+      // minted on, so it can attach the card to a profile on the SAME account. Jacob
+      // Chapman's profile is on AMEX and his new card is a Mastercard - without this the
+      // backend adds a primary-minted token to an AMEX profile and Authorize.net rejects it.
       await callApi(isUpdate ? 'update_card_on_file' : 'collect_and_save_card', {
+        merchant_id: cardIsAmex(num) ? 'amex' : 'primary',
         deal_id: info.deal_id,
         opaqueData,
         cardholderName: form.cardholderName,
