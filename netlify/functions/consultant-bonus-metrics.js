@@ -459,11 +459,8 @@ exports.handler = async (event) => {
       const qualified = docAmt > 0 && advPays.length > 0;
       let month = null;
       if (qualified) {
-        // NO FINAL PREFERENCE 9/2 (Joe, Cindy 360 -> 280): preferring a final over an
-        // earlier partial pulled a doc into the month the final landed. Zoey Tillman paid
-        // doc + partial in August and her final on 9/01, and the whole doc jumped months.
-        // Take the last advance payment as it falls, no type preference.
-        const pick = advPays[advPays.length - 1];
+        const fins = advPays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
+        const pick = fins.length ? fins[fins.length - 1] : advPays[advPays.length - 1];
         month = String(pick.payment_date).slice(0, 7);
       }
       const paidAll = Math.round(docAmt + (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0));
