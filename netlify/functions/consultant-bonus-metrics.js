@@ -523,6 +523,14 @@ exports.handler = async (event) => {
         const wc = windowClientMap[key];
         wc.totalPaid += parseFloat(p.amount) || 0;
         wc.payments.push(p);
+        // AFFILIATE UPGRADE 9/2 (Joe, Cindy - Michel-Ange Chaperon showed 2 of 3 clients):
+        // orgName/isAffiliate were stamped once from whichever payment processed FIRST and
+        // never revisited. Timothy Collins' doc fee was mis-credited to another consultant
+        // (unflagged, no org), so his client record locked in as non-affiliate even though
+        // his partial and final are correctly flagged for this org. A client is affiliate
+        // if ANY of their payments says so - later rows can upgrade, never downgrade.
+        if (p.is_affiliate_deal && !wc.isAffiliate) { wc.isAffiliate = true; if (p.referrer_org) wc.orgName = p.referrer_org; }
+        if (!wc.orgName && p.referrer_org) wc.orgName = p.referrer_org;
         if (p.payment_type === 'doc_fee') wc.hasDocFee = true;
         if (p.payment_type === 'partial') wc.hasPartial = true;
         if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') wc.hasFinal = true;
