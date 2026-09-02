@@ -47,7 +47,14 @@ const chargeLabel = (idx, total) => {
 // saves the card to. TEST values below mirror pay.html; swap to production
 // (js.authorize.net + production API Login ID / Client Key) before launch.
 const ACCEPT_JS_URL = 'https://js.authorize.net/v1/Accept.js';
+// MERCHANT ROUTING 9/2 (Joe, Eric hit E00116 saving Jacob Chapman's card): this page
+// tokenized every card with the PRIMARY merchant's key. Authorize.net rejects a token
+// minted on one merchant when it is used against the other, so any client on the AMEX
+// account failed. pay.html already switches on card type; this now does the same.
 const AUTH_NET_API_LOGIN_ID = '28Rt3gAu5';
+const AMEX_API_LOGIN_ID = '9NRft592';
+const AMEX_CLIENT_KEY = '4df7Q6M7X7pyqfN4hsWjBGSMTLb5Wt7d7hn8nT7DCFHBHu3qxa5uCsAeVsSqz5Rm';
+function cardIsAmex(num) { const n = String(num || '').replace(/[^0-9]/g, ''); return n.indexOf('34') === 0 || n.indexOf('37') === 0; }
 const AUTH_NET_CLIENT_KEY = '23Cz947fH6EdMnj59seGRJjJTw93Fe78GDgEZQ4wFeBQULM7pgwRvNMDUWhQLR62';
 
 let _acceptJsPromise = null;
@@ -74,7 +81,7 @@ function isDiscoverCard(num) {
 function tokenizeCard({ cardNumber, expMonth, expYear, cardCode, zip, fullName }) {
   return new Promise((resolve, reject) => {
     const secureData = {
-      authData: { clientKey: AUTH_NET_CLIENT_KEY, apiLoginID: AUTH_NET_API_LOGIN_ID },
+      authData: cardIsAmex(cardNumber) ? { clientKey: AMEX_CLIENT_KEY, apiLoginID: AMEX_API_LOGIN_ID } : { clientKey: AUTH_NET_CLIENT_KEY, apiLoginID: AUTH_NET_API_LOGIN_ID },
       cardData: { cardNumber, month: expMonth, year: expYear, cardCode, zip, fullName }
     };
     window.Accept.dispatchData(secureData, (response) => {
