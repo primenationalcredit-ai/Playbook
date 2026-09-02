@@ -66,7 +66,9 @@ exports.handler = async (event) => {
     // page loading instantly for the team and avoids the timeout.
     const CACHE_KEY = `consultant_bonus_${targetMonth}`;
     const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes (warmed every 10 min in business hours)
-    const forceRefresh = params.refresh === '1' || params.refresh === 'true';
+    // DRYRUN FORCES 9/2: dryrun must always compute fresh, never serve the cache -
+    // otherwise the dryrun log would be empty on any cached page load.
+    const forceRefresh = params.refresh === '1' || params.refresh === 'true' || !!params.dryrun;
     // Read the existing cache once. On a normal load we serve it immediately. On a recompute we KEEP
     // it as a fallback so a failed Pipedrive fetch can never wipe out good closing-rate data.
     let priorCacheBody = null, priorConsultTotal = null;
@@ -151,6 +153,17 @@ exports.handler = async (event) => {
     let invoiceData = [];
     try {
       invoiceData = await supaGet('consultant_invoices', `select=*`);
+    } catch (e) {}
+    // THRESHOLD V2 9/2 (Joe, doc accelerator rebuild - Cindy 360 -> 280 -> 450 -> 90):
+    // doc-threshold-map caches each deal's (Total Fee - 149)/2 for a partial plan, or
+    // the full remainder for a full plan. A missing threshold is NEVER silently guessed -
+    // it flags needsReview and is excluded from the count, visible rather than wrong.
+    let thresholdMapV2 = {};
+    try {
+      const _tmv2 = await supaGet('app_cache', 'cache_key=eq.doc_threshold_map&select=cache_value');
+      if (_tmv2 && _tmv2[0] && _tmv2[0].cache_value) thresholdMapV2 = JSON.parse(_tmv2[0].cache_value);
+    } catch (e) {}
+    try {
     } catch(e) {}
     // Monthly payments only (for commission calc)
     const payments = allPayments.filter(p => p.payment_month === targetMonth);
@@ -456,22 +469,47 @@ exports.handler = async (event) => {
     // block a real qualification again.
     const EPS = 1; // balances under $1 count as paid in full
     function qualifyClient(client) {
+      const _r0 = qualifyClientInner(client);
+      if (_isDryrun) _dryrunLog.push({ name: client.name, dealId: client.dealId, payments: (client.payments || []).map(p => ({ type: p.payment_type, amount: p.amount, date: p.payment_date })), threshold: (thresholdMapV2[String(client.dealId)] || null), result: _r0 });
+      return _r0;
+    }
+    function qualifyClientInner(client) {
       const docPay = (client.payments || []).find((p) => p.payment_type === 'doc_fee');
       const docAmt = docPay ? parseFloat(docPay.amount) || 0 : 0;
       const advPays = (client.payments || []).filter(p => ['partial', 'final', 'paid_in_full'].includes(String(p.payment_type)) && p.payment_date)
         .sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
       const qualified = docAmt > 0 && advPays.length > 0;
       let month = null;
+      let pick = null, needsReview = false; // SCOPE FIX 9/2: declared outside the if so finalQualified below can always read them
       if (qualified) {
-        const fins = advPays.filter(p => p.payment_type === 'final' || p.payment_type === 'paid_in_full');
-        const pick = fins.length ? fins[fins.length - 1] : advPays[advPays.length - 1];
-        month = String(pick.payment_date).slice(0, 7);
+        // THRESHOLD PICK 9/2 (Joe, doc accelerator rebuild): the qualifying month is the
+        // month cumulative payments past the doc fee first reach this client's threshold.
+        // No threshold on file = flagged needsReview, never silently guessed via fallback.
+        const _thV2 = thresholdMapV2[String(client.dealId)];
+        if (_thV2 && _thV2.t > 0) {
+          let _run = 0;
+          for (const _p of advPays) { _run += parseFloat(_p.amount) || 0; if (_run + 0.01 >= _thV2.t) { pick = _p; break; } }
+          if (!pick) pick = null; // paid something, but not enough to cross threshold yet - correctly not qualified
+        } else {
+          needsReview = true;
+        }
+        // WIRE PICK 9/2: qualified now depends on pick actually resolving, not just on
+        // advPays existing - a client who hasn't reached their threshold yet is correctly
+        // NOT qualified this month, and a client with no threshold on file is flagged for
+        // review rather than silently defaulting to old behaviour.
+        if (pick) { month = String(pick.payment_date).slice(0, 7); }
       }
+      const finalQualified = qualified && !!pick && !needsReview;
       const paidAll = Math.round(docAmt + (client.payments || []).filter(p => p.payment_type !== 'doc_fee').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0));
-      const reason = qualified ? null : (docAmt > 0 ? 'doc fee paid, no partial or final payment on file yet' : 'no doc fee on file');
-      return { qualified, month, reason, paid: paidAll, owed: 0 };
+      const reason = finalQualified ? null : (needsReview ? 'no threshold on file - needs review' : (docAmt > 0 ? (qualified ? 'paid, but not enough yet to cross the qualification threshold' : 'doc fee paid, no partial or final payment on file yet') : 'no doc fee on file'));
+      return { qualified: finalQualified, month, reason, paid: paidAll, owed: 0, needsReview };
     }
 
+    // DRYRUN 9/2 (Joe, doc accelerator rebuild): collects every qualifyClient() call
+    // with its full input/output so a human can eyeball real clients before this touches
+    // production. ?dryrun=1 returns this report instead of the normal payload.
+    const _dryrunLog = [];
+    const _isDryrun = !!(event && event.queryStringParameters && event.queryStringParameters.dryrun);
     const results = {};
 
     for (const consultant of consultants) {
@@ -1472,6 +1510,9 @@ exports.handler = async (event) => {
       }
     }
 
+    if (_isDryrun) {
+      return { statusCode: 200, headers, body: JSON.stringify({ dryrun: true, count: _dryrunLog.length, clients: _dryrunLog }) };
+    }
     const responseBody = JSON.stringify({
         month: monthLabel, monthKey: targetMonth,
         teamTotals: { todaySales: teamTodaySales, todayDocs, todayPartials, todayFinals, mtdSales: teamMtdSales, mtdDocs: teamMtdDocs, mtdPartials: teamMtdPartials, mtdFinals: teamMtdFinals, mtdProjection, ytdSales, ytdDocs, totalPayments: payments.length,
