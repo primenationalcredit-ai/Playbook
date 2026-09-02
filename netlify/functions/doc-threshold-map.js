@@ -34,7 +34,13 @@ exports.handler = async (event) => {
     if (prev && prev[0] && prev[0].cache_value) map = JSON.parse(prev[0].cache_value);
   } catch (e) {}
   try {
-    const rows = await fetch(SB + '/rest/v1/consultant_payments?payment_date=gte.' + since + '&pipedrive_deal_id=not.is.null&select=pipedrive_deal_id&limit=5000', { headers: H }).then(r => r.json()).catch(() => []);
+    // PAGED FETCH 9/2 (Joe, 39 August deals silently missing from the threshold map):
+    // Supabase caps a single request at 1000 rows regardless of the limit param - this
+    // was one unpaged fetch, so it silently returned only the first ~1000 rows with no
+    // explicit sort, and 39 real deals never entered the worklist at all. Page through
+    // everything instead.
+    let rows = [];
+    { let off = 0; while (off < 20000) { const batch = await fetch(SB + '/rest/v1/consultant_payments?payment_date=gte.' + since + '&pipedrive_deal_id=not.is.null&select=pipedrive_deal_id&order=pipedrive_deal_id&limit=1000&offset=' + off, { headers: H }).then(r => r.json()).catch(() => []); if (!Array.isArray(batch) || batch.length === 0) break; rows = rows.concat(batch); if (batch.length < 1000) break; off += 1000; } }
     const ids = [...new Set((Array.isArray(rows) ? rows : []).map(r => String(r.pipedrive_deal_id)))];
     out.deals = ids.length;
     for (const id of ids) {
