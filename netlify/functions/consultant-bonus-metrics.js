@@ -762,6 +762,16 @@ exports.handler = async (event) => {
           }
         }
       }
+      // KICKER DEBUG 9/2: print what the kicker actually sees for the orgs Eric flagged.
+      if (firstName === 'eric') {
+        for (const _dbg of ['Carlos Velez', 'Tai Nguyen', 'Selam Afework']) {
+          const _h = orgQualifyingHistory[_dbg];
+          if (!_h) { console.log('KICKER DEBUG 9/2 ' + _dbg + ': NOT IN HISTORY'); continue; }
+          const _tm = _h.filter(p => p.month === targetMonth);
+          const _pr = _h.filter(p => p.month < targetMonth);
+          console.log('KICKER DEBUG 9/2 ' + _dbg + ': total=' + _h.length + ' thisMonth=' + _tm.length + ' prior=' + _pr.length + ' lastPrior=' + (_pr.length ? _pr[_pr.length-1].date : 'none') + ' firstThis=' + (_tm.length ? _tm[0].date : 'none'));
+        }
+      }
       const reactivationBonus = reactivationCount * 75;
 
       // === NEW AFFILIATE LAUNCH ($75 one-time for new affiliate with 3+ clients in first 60 days) ===
