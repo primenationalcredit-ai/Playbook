@@ -268,7 +268,11 @@ exports.handler = async (event) => {
     }
     for (const p of allPayments) {
       if (p.payment_type === 'doc_fee') {
-        if (p.pipedrive_deal_id) dealIdsWithDocFee.add(p.pipedrive_deal_id);
+        // STRING KEYS 9/2 (Joe, Carlos - September closing % showed 0%): dealIdsWithDocFee
+        // stored raw numbers while consult deal ids can come through as strings. Set.has()
+        // is type-strict, so 270321 !== '270321' and every lookup silently failed - Wasiq
+        // Mubashir paid his doc fee the same day as his consult and still showed unpaid.
+        if (p.pipedrive_deal_id) dealIdsWithDocFee.add(String(p.pipedrive_deal_id));
         else if (p.client_name) { // orphan (no deal id): remember WHICH consultant it pays, so only their deals can claim it (Astrid 7/24: repeat clients were crediting both old and new deal owners)
           const nk = norm(p.client_name);
           if (!docFeeNames.has(nk)) docFeeNames.set(nk, new Set());
@@ -885,13 +889,13 @@ exports.handler = async (event) => {
         for (const e of set) { if (e && (e.split(' ')[0] === firstName || (lastName.length > 3 && e.includes(lastName)))) return true; }
         return false;
       };
-      const isPaid = (id) => dealIdsWithDocFee.has(id) || orphanDocMine(id);
+      const isPaid = (id) => dealIdsWithDocFee.has(String(id)) || orphanDocMine(id);
       const myDocsPaid = myConsultDealIds.filter(isPaid).length;
       const closingPct = myConsultCount > 0 ? Math.round((myDocsPaid / myConsultCount) * 100) : 0;
 
       // Per-deal breakdown behind the closing % — which quoted deals paid a doc fee, and how they matched
       const closeDetail = myConsultDealIds.map(id => {
-        const byId = dealIdsWithDocFee.has(id);
+        const byId = dealIdsWithDocFee.has(String(id));
         const byName = !byId && orphanDocMine(id);
         const paidDocFee = byId || byName;
         // Show the doc fee actually paid. If no doc fee was paid, show 0, never the Pipedrive quote
