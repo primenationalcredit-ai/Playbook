@@ -454,7 +454,7 @@ exports.handler = async (event) => {
     function qualifyClient(client) {
       const docPay = (client.payments || []).find((p) => p.payment_type === 'doc_fee');
       const docAmt = docPay ? parseFloat(docPay.amount) || 0 : 0;
-      const advPays = (client.payments || []).filter(p => ['partial', 'final', 'paid_in_full'].includes(String(p.payment_type)) && p.payment_date)
+      const advPays = (client.payments || []).filter(p => ['partial', 'final', 'paid_in_full'].includes(String(p.payment_type)) && p.payment_date && String(p.payment_date).slice(0, 7) <= targetMonth) // NO FUTURE PAYMENTS 9/2 (Joe, Cindy 360 -> 280): the payment window has no upper bound, so computing August saw a client's SEPTEMBER final and moved the doc there - Zoey Tillman paid doc + partial in August, final 9/01. A month can only be decided by payments made by the end of it.
         .sort((a, b) => String(a.payment_date).localeCompare(String(b.payment_date)));
       const qualified = docAmt > 0 && advPays.length > 0;
       let month = null;
