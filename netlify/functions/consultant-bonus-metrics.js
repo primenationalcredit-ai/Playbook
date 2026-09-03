@@ -146,7 +146,15 @@ exports.handler = async (event) => {
     // Get refunds for refund rate
     let refunds = [];
     try {
-      refunds = await supaGet('refunds', `refund_date=gte.${monthStart}&select=*`);
+// REFUND MONTH SHIFT (Joe 9/3): a refund issued in month M hits payroll the
+      // FOLLOWING month, not the month it happened in - Cindy's Aug 3/4 refunds
+      // should show as September's deductions, not August's or forever-onward.
+      // Was: refund_date >= this month's start, no upper bound (wrong on both ends -
+      // excluded the prior month entirely, and would never stop showing once passed).
+      const [tY, tM] = targetMonth.split('-').map(Number);
+      const priorMonthDate = new Date(tY, tM - 2, 1); // tM is 1-based; -2 = prior month
+      const priorMonthStart = `${priorMonthDate.getFullYear()}-${String(priorMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
+      refunds = await supaGet('refunds', `refund_date=gte.${priorMonthStart}&refund_date=lt.${monthStart}&select=*`);
     } catch(e) { /* table may not exist yet */ }
 
     // Get invoice data for collection metrics
