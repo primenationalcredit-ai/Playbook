@@ -4,8 +4,7 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import FloatingTools from './FloatingTools';
 import EventNotifications from './EventNotifications';
-import {
-  Award,
+import {Award,
   LayoutDashboard,
   ClipboardList,
   Users,
@@ -41,7 +40,9 @@ import {
   Link,
   BarChart3,
   Trophy,
-  FileText, Video } from 'lucide-react';
+  FileText, Video,
+  Search,
+} from 'lucide-react';
 import CoverageAlerts from './CoverageAlerts';
 import { useTrainingLock, TrainingLockScreen } from './TrainingLockGate';
 
