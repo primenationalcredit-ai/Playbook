@@ -328,6 +328,9 @@ export default function CSRBonus() {
           for (const n of (onlyName ? [onlyName] : names)) {
             const r = data.csrs[n];
             if (kind === 'reports') for (const d of (r.details?.reports || [])) { if (inR(d.date)) out.push({ title: d.title, sub: `${n} · ${d.site || ''}`, href: DEAL_URL(d.dealId), tag: TYPE_TAG[d.type] || 'Other' }); }
+            // CLAIMED CLICKABLE 9/3 (Joe): monthDeals mirrors backend ops[rep].monthDealList -
+            // every deal this CSR claimed this month, regardless of whether a report was pulled.
+            if (kind === 'claimed') for (const d of (r.details?.monthDeals || [])) { out.push({ title: d.title, sub: n, date: d.date || d.created }); }
             if (kind === 'docs') for (const d of (r.details?.docsDeals || [])) { if (inR(d.date)) out.push({ title: d.title, sub: `${n} · ${d.site || ''}`, href: DEAL_URL(d.dealId), tag: 'Doc Fee' }); }
             if (kind === 'reviews') for (const d of (r.details?.reviews || [])) { if (inR(d.date)) out.push({ title: d.reviewer, sub: `${n} · ${d.location || ''}`, href: null, tag: d.bbb ? 'BBB' : '' }); }
           }
@@ -376,13 +379,13 @@ export default function CSRBonus() {
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
                     <th className="text-left font-medium px-4 py-2">CSR</th>
-                    <th className="text-right font-medium px-4 py-2" title="Deals where a credit monitoring site was set in this period. A deal only counts as a report once its Monitoring Site field is filled in Pipedrive.">Reports</th>
-                    <th className="text-right font-medium px-4 py-2" title="Report deals whose doc fee was PAID (confirmed in payment records) in this period.">Doc fees</th>
-                    <th className="text-right font-medium px-4 py-2" title="Client reviews assigned to this CSR, credited to the month the review was left. Standard: 10/month. Pay: $5 each past 10, plus $50 per BBB review.">Reviews</th>
-                    <th className="text-right font-medium px-4 py-2" title="Claimed leads: deals CREATED this month with this CSR as the Call Center Rep, regardless of the date range picked above.">Claimed (mo)</th>
-                    <th className="text-right font-medium px-4 py-2" title="Cohort conversion: of the deals this CSR claimed THIS MONTH, the % that have a monitoring site set (got a report). Same-cohort math - old-deal reports do not inflate it.">Conv (mo)</th>
-                    <th className="text-right font-medium px-4 py-2" title="Reports to Quote: % of this period's report deals that moved into Quoted 2.0 or beyond. Target: 50%. Feeds the $50 conversion bonus.">R→Q</th>
-                    <th className="text-right font-medium px-4 py-2" title="Quote to Doc Fee: % of quoted report deals that paid a doc fee. Target: 40%. Feeds the $50 conversion bonus.">Q→Doc</th>
+                    <th className="text-right font-medium px-4 py-2" title="Deals where a credit monitoring site was set in this period. A deal only counts as a report once its Monitoring Site field is filled in Pipedrive.">Reports <span className="text-slate-400 font-normal cursor-help">ⓘ</span></th>
+                    <th className="text-right font-medium px-4 py-2" title="Report deals whose doc fee was PAID (confirmed in payment records) in this period.">Doc fees <span className="text-slate-400 font-normal cursor-help">ⓘ</span></th>
+                    <th className="text-right font-medium px-4 py-2" title="Client reviews assigned to this CSR, credited to the month the review was left. Standard: 10/month. Pay: $5 each past 10, plus $50 per BBB review.">Reviews <span className="text-slate-400 font-normal cursor-help">ⓘ</span></th>
+                    <th className="text-right font-medium px-4 py-2" title="Claimed leads: deals CREATED this month with this CSR as the Call Center Rep, regardless of the date range picked above.">Claimed (mo) <span className="text-slate-400 font-normal cursor-help">ⓘ</span></th>
+                    <th className="text-right font-medium px-4 py-2" title="Cohort conversion: of the deals this CSR claimed THIS MONTH, the % that have a monitoring site set (got a report). Same-cohort math - old-deal reports do not inflate it.">Conv (mo) <span className="text-slate-400 font-normal cursor-help">ⓘ</span></th>
+                    <th className="text-right font-medium px-4 py-2" title="Reports to Quote: % of this period's report deals that moved into Quoted 2.0 or beyond. Target: 50%. Feeds the $50 conversion bonus.">R→Q <span className="text-slate-400 font-normal cursor-help">ⓘ</span></th>
+                    <th className="text-right font-medium px-4 py-2" title="Quote to Doc Fee: % of quoted report deals that paid a doc fee. Target: 40%. Feeds the $50 conversion bonus.">Q→Doc <span className="text-slate-400 font-normal cursor-help">ⓘ</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -396,7 +399,7 @@ export default function CSRBonus() {
                       </td>
                       <td className={`px-4 py-2 text-right cursor-pointer hover:bg-emerald-50 ${x.docs > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-300'}`} onClick={(e) => { e.stopPropagation(); if (x.docs > 0) openTeam(x.name + ' - doc fees', 'docs', x.name); }}>{x.docs}</td>
                       <td className={`px-4 py-2 text-right cursor-pointer hover:bg-slate-100 ${x.reviews > 0 ? '' : 'text-slate-300'}`} onClick={(e) => { e.stopPropagation(); if (x.reviews > 0) openTeam(x.name + ' - reviews', 'reviews', x.name); }}>{x.reviews}</td>
-                      <td className={`px-4 py-2 text-right ${x.claimed > 0 ? 'text-slate-700 font-semibold' : 'text-slate-300'}`}>{x.claimed}</td>
+                      <td className={`px-4 py-2 text-right cursor-pointer hover:bg-slate-100 ${x.claimed > 0 ? 'text-slate-700 font-semibold' : 'text-slate-300'}`} onClick={(e) => { e.stopPropagation(); if (x.claimed > 0) openTeam(x.name + ' - claimed', 'claimed', x.name); }}>{x.claimed}</td> {/* CLAIMED TD 9/3 */}
                       <td className={`px-4 py-2 text-right text-xs font-semibold ${x.conv >= 50 ? 'text-emerald-600' : x.conv >= 30 ? 'text-amber-600' : x.claimed > 0 ? 'text-rose-600' : 'text-slate-300'}`}>{x.claimed > 0 ? x.conv + '%' : '-'}</td>
                       <td className={`px-4 py-2 text-right text-xs ${x.rq >= 50 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>{x.rq}%</td>
                       <td className={`px-4 py-2 text-right text-xs ${x.qd >= 40 ? 'text-emerald-600 font-semibold' : 'text-slate-500'}`}>{x.qd}%</td>
