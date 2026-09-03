@@ -228,7 +228,7 @@ exports.handler = async (event) => {
     const dist = {};
     for (const name of staff) {
       tally[name] = { idiq: 0, smart: 0, other: 0, total: 0, convTotal: 0, reachedQuote: 0, reachedDocs: 0, outOfMonth: 0, gatedOut: 0, reportList: [], quoteList: [], docsList: [], todayTotal: 0, todayIdiq: 0, todaySmart: 0, todayOther: 0, todayList: [], todayDocFees: 0, todayDocFeeList: [], missingSiteList: [], lateCredited: 0, lateExcluded: 0 };
-      ops[name] = { newDeals: 0, claimedGotReport: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [] };
+      ops[name] = { newDeals: 0, claimedGotReport: 0, reachedReports: 0, reachedQuoted: 0, docFeeCollected: 0, monthDealList: [], todayNewDeals: 0, todayClaimedGotReport: 0 };
       dist[name] = { total: 0, byStage: {}, allDeals: [] };
     }
 
@@ -299,6 +299,13 @@ exports.handler = async (event) => {
         const hasDocFee = docFeeDealIds.has(String(r.deal_id));
         ops[rep].newDeals++;
         if (r.monitoring_site) ops[rep].claimedGotReport++;
+        // DAILY CLAIM TRACKING 9/2 (Joe, CSR leads-vs-reports conversion): same claim event,
+        // just scoped to today instead of the month - lets the tab show a daily rate alongside
+        // the monthly one without a second data pass.
+        if (viewingCurrentMonth && String(r.deal_created_at || '').slice(0, 10) === todayStr) {
+          ops[rep].todayNewDeals++;
+          if (r.monitoring_site) ops[rep].todayClaimedGotReport++;
+        }
         if (dealRank >= REPORTS_RANK) ops[rep].reachedReports++;
         if (dealRank >= QUOTE_RANK) ops[rep].reachedQuoted++;
         if (hasDocFee) ops[rep].docFeeCollected++;
@@ -463,7 +470,14 @@ exports.handler = async (event) => {
           claimedGotReport: ops[name].claimedGotReport,
           reachedReports: ops[name].reachedReports,
           reachedQuoted: ops[name].reachedQuoted,
-          docFeeCollected: ops[name].docFeeCollected
+          docFeeCollected: ops[name].docFeeCollected,
+          // CONVERSION PCT OUTPUT 9/2 (Joe, CSR leads-vs-reports): how many of the leads a rep
+          // claimed (set themselves as Call Center Rep) actually got a report pulled - daily and
+          // month to date. Same zero-guard style as stageDistribution above.
+          todayNewDeals: ops[name].todayNewDeals,
+          todayClaimedGotReport: ops[name].todayClaimedGotReport,
+          conversionPctToday: ops[name].todayNewDeals ? Math.round((ops[name].todayClaimedGotReport / ops[name].todayNewDeals) * 100) : 0,
+          conversionPctMonth: ops[name].newDeals ? Math.round((ops[name].claimedGotReport / ops[name].newDeals) * 100) : 0
         },
         stageDistribution: {
           total: dist[name].total,
