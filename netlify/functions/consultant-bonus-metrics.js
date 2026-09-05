@@ -1117,6 +1117,23 @@ exports.handler = async (event) => {
       }
       let weekNum = weeks.length + 1;
       while (wStart <= now && wStart.getMonth() === mStart.getMonth()) {
+        // TRAILING-STUB ABSORPTION (Joe 9/4): symmetric to the leading-stub rule above -
+        // a month whose last week would only have 1-2 real days left (e.g. Aug 2026,
+        // where Aug 31 is itself a Monday) used to spin up its own near-empty sprint
+        // week instead of folding into the week before it. Mirrors the same <=2-day
+        // threshold: fold the tail into the PREVIOUS week and stop, rather than
+        // creating a stray final week.
+        const monthEndForStub = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0);
+        const daysLeftInMonth = Math.round((monthEndForStub - wStart) / 86400000) + 1;
+        if (daysLeftInMonth <= 2 && weeks.length > 0) {
+          const monthEndStr = monthEndForStub.toISOString().split('T')[0];
+          const lastWeek = weeks[weeks.length - 1];
+          const extraPays = myPayments.filter(p => p.payment_type === 'doc_fee' && p.payment_date > lastWeek.end && p.payment_date <= monthEndStr);
+          lastWeek.end = monthEndStr;
+          lastWeek.docs += extraPays.length;
+          lastWeek.clients = lastWeek.clients.concat(extraPays.map(p => ({ name: p.client_name, amount: p.amount, date: p.payment_date, dealId: p.pipedrive_deal_id })));
+          break;
+        }
         const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 6);
         const endStr = wEnd.toISOString().split('T')[0];
         const startStr = wStart.toISOString().split('T')[0];
