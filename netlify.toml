@@ -26,6 +26,13 @@
 [functions."consultant-bonus-sync"]
   schedule = "0 12-23 * * 1-6"
 
+# Doc production accelerator threshold map (Joe 9/4, Ralph Evans Jr 265369 + Cristina Gonzalez
+# 270261): was manual-trigger only, went stale 2 days, both clients cleared their real
+# threshold but showed unqualified because their deals weren't in the cached map at all.
+# Same hourly-during-business-hours cadence as consultant-bonus-sync, which reads it.
+[functions."doc-threshold-map"]
+  schedule = "0 12-23 * * 1-6"
+
 # Zoho payment sync - runs hourly during business hours Mon-Sat
 [functions."zoho-payment-sync"]
   schedule = "* 8-23 * * *"
