@@ -1,4 +1,4 @@
-﻿// Zoho Payment Sync v2 Ã¢â‚¬â€ Faster: pulls payments + invoice list data only
+// Zoho Payment Sync v2 Ã¢â‚¬â€ Faster: pulls payments + invoice list data only
 // Enrichment (Pipedrive deal lookups) done separately to avoid timeouts
 const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
@@ -393,6 +393,18 @@ exports.handler = async (event) => {
         body: JSON.stringify(batch)
       });
       if (!insertRes.ok) console.error('Insert error:', await insertRes.text());
+      // IMMEDIATE QUALIFICATION CHECK (Joe 9/4, Ralph Evans Jr + Cristina Gonzalez): a
+      // client should never wait on a scheduled sync to show as qualified. The moment a
+      // partial or final payment lands here, check that one deal right now and cache its
+      // threshold synchronously - fail-open, the payment itself always stands regardless.
+      if (insertRes.ok) {
+        const qualifyDealIds = [...new Set(batch.filter(p => (p.payment_type === 'partial' || p.payment_type === 'final') && p.pipedrive_deal_id).map(p => p.pipedrive_deal_id))];
+        for (const qid of qualifyDealIds) {
+          try {
+            await fetch('https://cute-cat-d9631c.netlify.app/.netlify/functions/doc-threshold-map-manual?deal_id=' + qid, { headers: { 'X-API-Key': process.env.INTERNAL_API_KEY || '' } });
+          } catch (e) { console.error('Immediate qualify check failed (non-fatal):', e.message); }
+        }
+      }
       // PIPEDRIVE NOTE + ACTIVITY (Joe 8/21, Victor Argueta 267884 + 13 others):
       // zoho_api-sourced payments recorded money but never told Pipedrive - the
       // third ingestion path missing this (autobill + payment-webhook fixed 8/20).
