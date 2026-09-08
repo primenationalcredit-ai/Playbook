@@ -110,7 +110,7 @@ function assignWeights(stats) {
 }
 
 function ReviewRandomizer() {
-  const { supabaseFetch } = useApp();
+  const { supabaseFetch, realUser } = useApp();
   
   const [locationStats, setLocationStats] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
@@ -251,6 +251,8 @@ function ReviewRandomizer() {
           channels: { email: sendEmail, text: sendText },
           review_url: selectedLocation.url,
           location_name: selectedLocation.name,
+          sent_by_name: realUser?.name || null,
+          sent_by_email: realUser?.email || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -500,7 +502,7 @@ function ReviewRandomizer() {
                             />
                           </div>
                           <span className={`text-sm font-semibold ${loc.totalReviewCount >= REVIEW_TARGET ? 'text-green-600' : loc.priority ? 'text-blue-600' : 'text-slate-700'}`}>
-                            {loc.totalReviewCount}{loc.priority ? ' ★' : ''}
+                            {loc.totalReviewCount}{loc.priority ? ' â˜…' : ''}
                           </span>
                         </div>
                       </td>
@@ -552,18 +554,18 @@ function ReviewRandomizer() {
 
       {/* Review Script */}
       <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
-        <h4 className="font-semibold text-blue-800 mb-4">📞 Review Request Script</h4>
+        <h4 className="font-semibold text-blue-800 mb-4">ðŸ“ž Review Request Script</h4>
         <div className="space-y-4 text-sm">
           <div className="bg-white rounded-lg p-4 border border-blue-100">
             <div className="font-medium text-blue-700 mb-1">Step 1: The Big Ask</div>
             <p className="text-slate-700 italic">"Can I ask a HUUUUUUGGGEE favor from you?"</p>
-            <p className="text-slate-500 text-xs mt-1">⏸️ Wait for them to say yes...</p>
+            <p className="text-slate-500 text-xs mt-1">â¸ï¸ Wait for them to say yes...</p>
           </div>
           
           <div className="bg-white rounded-lg p-4 border border-blue-100">
             <div className="font-medium text-blue-700 mb-1">Step 2: Set the Stage</div>
             <p className="text-slate-700 italic">"The way I'm graded on my professionalism and level of customer service is by providing a 5-star experience. Do you feel I have been able to do this today?"</p>
-            <p className="text-slate-500 text-xs mt-1">⏸️ Wait for them to respond yes...</p>
+            <p className="text-slate-500 text-xs mt-1">â¸ï¸ Wait for them to respond yes...</p>
           </div>
           
           <div className="bg-white rounded-lg p-4 border border-blue-100">
@@ -575,7 +577,7 @@ function ReviewRandomizer() {
             <div className="font-medium text-blue-700 mb-1">Step 4: Send & Verify</div>
             <p className="text-slate-700">Send them the link while on the phone, then say:</p>
             <p className="text-slate-700 italic mt-1">"Sometimes the link doesn't work. Can you click on it and tell me if it works?"</p>
-            <p className="text-slate-500 text-xs mt-1">⏸️ Wait for them to confirm it works...</p>
+            <p className="text-slate-500 text-xs mt-1">â¸ï¸ Wait for them to confirm it works...</p>
           </div>
           
           <div className="bg-white rounded-lg p-4 border border-blue-100">
