@@ -405,6 +405,17 @@ exports.handler = async (event) => {
           } catch (e) { console.error('Immediate qualify check failed (non-fatal):', e.message); }
         }
       }
+      // IMMEDIATE AFFILIATE/COMMISSION CHECK (Joe 9/8, John Bennett + Ola Emerson + Asmita
+      // Karediya): checks the deal's org label/email the instant a payment lands, so the
+      // commission rate is correct from day one - never waits on any schedule, ever.
+      if (insertRes.ok) {
+        const affiliateDealIds = [...new Set(batch.filter(p => p.pipedrive_deal_id).map(p => p.pipedrive_deal_id))];
+        for (const aid of affiliateDealIds) {
+          try {
+            await fetch('https://cute-cat-d9631c.netlify.app/.netlify/functions/payment-reaffiliate-sweep-manual?deal_id=' + aid, { headers: { 'X-API-Key': process.env.INTERNAL_API_KEY || '' } });
+          } catch (e) { console.error('Immediate affiliate check failed (non-fatal):', e.message); }
+        }
+      }
       // PIPEDRIVE NOTE + ACTIVITY (Joe 8/21, Victor Argueta 267884 + 13 others):
       // zoho_api-sourced payments recorded money but never told Pipedrive - the
       // third ingestion path missing this (autobill + payment-webhook fixed 8/20).
