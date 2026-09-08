@@ -233,6 +233,7 @@ function Layout() {
     { path: '/reviews', icon: Star, label: 'Reviews' },
     // Get Review Link - shown to all employees EXCEPT Credit Team
     ...(!isCreditTeam && !isLeadership ? [{ path: '/review-link', icon: Shuffle, label: 'Get Review Link' }] : []),
+        ...(!isCreditTeam ? [{ path: '/review-link-log', icon: FileText, label: 'Review Link Log' }] : []),
   ];
 
   // Additional nav items (hidden in "More" for leadership only - NOT shown to employees)
@@ -244,6 +245,7 @@ function Layout() {
     { path: '/training', icon: GraduationCap, label: 'Training' },
     { path: '/calendar', icon: Calendar, label: 'Calendar' },
     { path: '/review-link', icon: Shuffle, label: 'Get Review Link' },
+                { path: '/review-link-log', icon: FileText, label: 'Review Link Log' },
     { path: '/updates', icon: Bell, label: 'Updates', badge: unreadNotifications },
   ];
 
@@ -265,6 +267,7 @@ function Layout() {
     { path: '/ask-ai', icon: Sparkles, label: 'Ask AI' },
     { path: '/reviews', icon: Star, label: 'Reviews' },
     { path: '/review-link', icon: Shuffle, label: 'Get Review Link' },
+                { path: '/review-link-log', icon: FileText, label: 'Review Link Log' },
     { path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: approvalsBadge, unread: approvalsUnread },
     { path: '/updates', icon: Bell, label: 'Updates', badge: unreadNotifications },
   ] : coreNavItems;
