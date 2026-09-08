@@ -206,6 +206,8 @@ function Reviews() {
           user,
           thisMonth: 0,
           thisMonthFiveStar: 0,
+          prevMonth: 0,
+          prevMonthFiveStar: 0,
           thisQuarter: 0,
           thisQuarterFiveStar: 0,
           thisYear: 0,
@@ -219,6 +221,7 @@ function Reviews() {
     // review_date like "2026-07-01" is not shifted to the previous day by UTC parsing in
     // timezones west of UTC. This matches the timezone-safe logic used by the personal cards.
     const monthStartStr = format(startOfMonth(now), 'yyyy-MM-dd');
+    const prevMonthStartStr = format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd');
     const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
     const quarterStartStr = format(new Date(now.getFullYear(), quarterMonth, 1), 'yyyy-MM-dd');
     const yearStartStr = format(new Date(now.getFullYear(), 0, 1), 'yyyy-MM-dd');
@@ -235,6 +238,12 @@ function Reviews() {
       if (d >= monthStartStr) {
         statsMap[userId].thisMonth++;
         if (isFiveStar) statsMap[userId].thisMonthFiveStar++;
+      }
+
+      // Previous month
+      if (d >= prevMonthStartStr && d < monthStartStr) {
+        statsMap[userId].prevMonth++;
+        if (isFiveStar) statsMap[userId].prevMonthFiveStar++;
       }
       
       // This quarter
@@ -257,8 +266,7 @@ function Reviews() {
     });
     
     // Sort by current timeframe's 5-star count
-    const sortKey = tableTimeframe === 'month' ? 'thisMonthFiveStar' : 
-                    tableTimeframe === 'quarter' ? 'thisQuarterFiveStar' : 'thisYearFiveStar';
+    const sortKey = tableTimeframe === 'month' ? 'thisMonthFiveStar' : tableTimeframe === 'prevMonth' ? 'prevMonthFiveStar' : tableTimeframe === 'quarter' ? 'thisQuarterFiveStar' : 'thisYearFiveStar';
     const statsArray = Object.values(statsMap).sort((a, b) => b[sortKey] - a[sortKey]);
     
     setEmployeeStats(statsArray);
@@ -403,6 +411,7 @@ function Reviews() {
               className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-asap-blue"
             >
               <option value="month">This Month</option>
+              <option value="prevMonth">Previous Month</option>
               <option value="quarter">This Quarter</option>
               <option value="year">This Year</option>
             </select>
@@ -415,7 +424,7 @@ function Reviews() {
               <tr>
                 <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">Employee</th>
                 <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">
-                  {tableTimeframe === 'month' ? 'This Month' : tableTimeframe === 'quarter' ? 'This Quarter' : 'This Year'}
+                  {tableTimeframe === 'month' ? 'This Month' : tableTimeframe === 'prevMonth' ? 'Previous Month' : tableTimeframe === 'quarter' ? 'This Quarter' : 'This Year'}
                 </th>
                 <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">5-Star ⭐</th>
                 <th className="text-center px-4 py-3 text-sm font-semibold text-slate-600">Avg/Month</th>
@@ -424,10 +433,8 @@ function Reviews() {
             </thead>
             <tbody>
               {employeeStats.map((stat, idx) => {
-                const currentCount = tableTimeframe === 'month' ? stat.thisMonthFiveStar : 
-                                     tableTimeframe === 'quarter' ? stat.thisQuarterFiveStar : stat.thisYearFiveStar;
-                const totalCount = tableTimeframe === 'month' ? stat.thisMonth : 
-                                   tableTimeframe === 'quarter' ? stat.thisQuarter : stat.thisYear;
+                const currentCount = tableTimeframe === 'month' ? stat.thisMonthFiveStar : tableTimeframe === 'prevMonth' ? stat.prevMonthFiveStar : tableTimeframe === 'quarter' ? stat.thisQuarterFiveStar : stat.thisYearFiveStar;
+                const totalCount = tableTimeframe === 'month' ? stat.thisMonth : tableTimeframe === 'prevMonth' ? stat.prevMonth : tableTimeframe === 'quarter' ? stat.thisQuarter : stat.thisYear;
                 const goalProgress = Math.min((stat.thisMonthFiveStar / 10) * 100, 100);
                 const isGoalMet = stat.thisMonthFiveStar >= 10;
                 
