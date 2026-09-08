@@ -24,6 +24,36 @@ exports.handler = async (event) => {
   }
   // BATCHED 9/2: several hundred deal lookups blow the function's time budget, so
   // each run merges into the existing map and stops on a deadline. Repeat until done:0.
+  // SINGLE-DEAL FAST PATH (Joe 9/4, Ralph Evans Jr 265369 + Cristina Gonzalez 270261):
+  // payment-sync calls this immediately after inserting a partial/final payment, for
+  // just that one deal, so qualification is never stuck waiting on the next scheduled
+  // batch pass. Always recomputes, even if already mapped, since this fires because
+  // something just changed for this exact deal. Same formula as the full scan below.
+  if (q.deal_id) {
+    const id1 = String(q.deal_id);
+    let map1 = {};
+    try {
+      const prev1 = await fetch(SB + '/rest/v1/app_cache?cache_key=eq.doc_threshold_map&select=cache_value', { headers: H }).then(r => r.json()).catch(() => []);
+      if (prev1 && prev1[0] && prev1[0].cache_value) map1 = JSON.parse(prev1[0].cache_value);
+    } catch (e) {}
+    try {
+      const d1 = await fetch(PD + '/deals/' + id1 + '?api_token=' + PDT).then(r => r.json()).then(j => j && j.data).catch(() => null);
+      if (!d1) return { statusCode: 200, body: JSON.stringify({ error: 'deal not found', deal_id: id1 }) };
+      const total1 = parseFloat(d1[F_TOTAL]) || 0;
+      if (!total1) return { statusCode: 200, body: JSON.stringify({ noFee: true, deal_id: id1 }) };
+      const payType1 = String(d1[F_PAYTYPE] || '');
+      const agree1 = String(d1[F_AGREE] || '').toUpperCase();
+      let isPartial1;
+      if (payType1 === '74') isPartial1 = true;
+      else if (payType1 === '75') isPartial1 = false;
+      else isPartial1 = agree1.indexOf('PARTIAL') >= 0;
+      const remainder1 = Math.max(0, total1 - 149);
+      const threshold1 = isPartial1 ? Math.round((remainder1 / 2) * 100) / 100 : remainder1;
+      map1[id1] = { t: threshold1, p: isPartial1 ? 1 : 0, f: total1 };
+      await fetch(SB + '/rest/v1/app_cache?on_conflict=cache_key', { method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cache_key: 'doc_threshold_map', cache_value: JSON.stringify(map1), updated_at: new Date().toISOString() }) });
+      return { statusCode: 200, body: JSON.stringify({ deal_id: id1, threshold: threshold1, partial: isPartial1, total: total1 }) };
+    } catch (e) { return { statusCode: 200, body: JSON.stringify({ error: String(e.message).slice(0, 150), deal_id: id1 }) }; }
+  }
   const since = q.since || '2026-07-01';
   const t0 = Date.now();
   const BUDGET = 20000;
