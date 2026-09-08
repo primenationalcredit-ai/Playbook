@@ -269,7 +269,7 @@ export default function ConsultantBonus() {
     // Admins export the full team; consultants export their own statement only.
     const cons = isAdmin
       ? Object.values(data.consultants)
-      : [data.consultants[selectedConsultant]].filter(Boolean);
+      : [data.consultants[currentUser?.name]].filter(Boolean); // SECURITY (Joe 9/9): never trust selectedConsultant for non-admins - it can be changed by clicking another consultant's leaderboard row, and a consultant must never be able to view or export anyone else's commission data
     if (cons.length === 0) return;
     const html = `<!DOCTYPE html><html><head><title>Bonus Report - ${data.month}</title>
     <style>body{font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px;color:#333}
@@ -337,7 +337,7 @@ export default function ConsultantBonus() {
   if (!dailyGate.ready) return <div className="p-6 text-center text-slate-500">Loading…</div>;
   if (!dailyGate.unlocked) return dailyGate.panel;
 
-  const c = data.consultants[selectedConsultant];
+  const c = data.consultants[isAdmin ? selectedConsultant : currentUser?.name]; // SECURITY (Joe 9/9): same reasoning as the export above
   if (!c) return <div className="p-6 text-center text-slate-500">No data found for {selectedConsultant}</div>;
 
   const docsToNext = c.qualifiedDocs < 50 ? 50 - c.qualifiedDocs :
@@ -549,7 +549,7 @@ export default function ConsultantBonus() {
               </tr></thead>
               <tbody className="divide-y">
                 {cons.map((c, i) => (
-                  <tr key={c.name} className="hover:bg-slate-50 cursor-pointer" onClick={() => { setSelectedConsultant(c.name); setTab('bonuses'); }}>
+                  <tr key={c.name} className="hover:bg-slate-50 cursor-pointer" onClick={() => { if (isAdmin) { setSelectedConsultant(c.name); setTab('bonuses'); } }}>
                     <td className="px-3 py-2.5">{i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</td>
                     <td className="px-3 py-2.5 font-medium">{c.name} {(c.weeksWon||0)>0 && <span className="text-xs bg-orange-100 text-orange-700 px-1 rounded">{c.weeksWon}x Sprint</span>}</td>
                     <Cell v={fmtInt(c.today?.sales||0)} good={(c.today?.sales||0)>0} />
