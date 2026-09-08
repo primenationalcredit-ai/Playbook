@@ -168,9 +168,3 @@
 # reactivation kicker. Built here so the bonus page only ever reads the cache.
 [functions."org-owner-map-refresh"]
   schedule = "20 * * * *"
-
-# Re-affiliation sweep (Joe 9/8): catches payments whose consultant is known but whose org's
-# affiliate label/email was added or changed AFTER the payment was already enriched -
-# payment-enrich never revisits a row once consultant_name is set, so this closes that gap.
-[functions."payment-reaffiliate-sweep"]
-  schedule = "40 * * * *"

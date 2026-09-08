@@ -1,4 +1,4 @@
-﻿// payment-reaffiliate-sweep.js (Joe 9/8, John Bennett/Ola Emerson/Asmita Karediya): Eric's
+// payment-reaffiliate-sweep.js (Joe 9/8, John Bennett/Ola Emerson/Asmita Karediya): Eric's
 // referral organization got its "Consultant Referral" label added AFTER these payments were
 // already enriched, and payment-enrich.js never revisits a row once consultant_name is set -
 // a later label change on an org silently never reaches already-enriched payments, so the
@@ -33,6 +33,36 @@ exports.handler = async (event) => {
   if (!scheduled) {
     const k = (event.headers && (event.headers['x-api-key'] || event.headers['X-API-Key'])) || q.key || '';
     if (k !== process.env.INTERNAL_API_KEY) return { statusCode: 401, body: '{"error":"unauthorized"}' };
+  }
+  // SINGLE-PAYMENT IMMEDIATE PATH (Joe 9/8): zoho-payment-sync calls this the instant a
+  // payment inserts, so the commission rate is correct from second one - no schedule, no
+  // sweep, no waiting. Skips the batch query entirely and checks just this one deal's org.
+  if (q.deal_id) {
+    try {
+      const dRes1 = await fetch(`https://${PIPEDRIVE_DOMAIN}.pipedrive.com/api/v1/deals/${q.deal_id}?api_token=${PIPEDRIVE_API_KEY}`);
+      const dJson1 = await dRes1.json().catch(() => null);
+      const deal1 = dJson1 && dJson1.data;
+      if (!deal1) return { statusCode: 200, body: JSON.stringify({ error: 'deal not found' }) };
+      const orgId1 = deal1.org_id?.value || deal1.org_id;
+      if (!orgId1) return { statusCode: 200, body: JSON.stringify({ noOrg: true }) };
+      const org1 = await getOrgDetails(orgId1);
+      if (!org1) return { statusCode: 200, body: JSON.stringify({ error: 'org lookup failed' }) };
+      const isConsultantReferral1 = org1.label === 2993;
+      let orgEmail1 = null;
+      const emailRaw1 = org1[ORG_EMAIL_FIELD];
+      if (emailRaw1) {
+        if (typeof emailRaw1 === 'string') orgEmail1 = emailRaw1;
+        else if (Array.isArray(emailRaw1) && emailRaw1.length > 0) orgEmail1 = emailRaw1[0].value || emailRaw1[0].primary || emailRaw1[0] || null;
+        else if (typeof emailRaw1 === 'object' && emailRaw1.value) orgEmail1 = emailRaw1.value;
+      }
+      const orgHasEmail1 = !!(orgEmail1 && String(orgEmail1).includes('@'));
+      const isAffiliate1 = isConsultantReferral1 || orgHasEmail1;
+      await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?pipedrive_deal_id=eq.${q.deal_id}&is_affiliate_deal=eq.false`, {
+        method: 'PATCH', headers: { ...H, Prefer: 'return=minimal' },
+        body: JSON.stringify({ referrer_org: org1.name || null, is_affiliate_deal: isAffiliate1, org_email: orgEmail1, org_has_email: orgHasEmail1 })
+      });
+      return { statusCode: 200, body: JSON.stringify({ deal_id: q.deal_id, is_affiliate_deal: isAffiliate1, org_name: org1.name }) };
+    } catch (e) { return { statusCode: 200, body: JSON.stringify({ error: String(e.message).slice(0, 150) }) }; }
   }
   const t0 = Date.now();
   const BUDGET = 20000;
