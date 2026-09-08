@@ -168,6 +168,15 @@ exports.handler = async (event) => {
 
     console.log(`Payment recorded: ${record.client_name} - $${record.amount} - ${record.payment_type} - ${record.consultant_name}`);
 
+    // IMMEDIATE AFFILIATE/COMMISSION CHECK (Joe 9/8): this door trusts whatever the caller
+    // sent for is_affiliate_deal/referrer_org - verify it against the deal's REAL current
+    // org label right now, correcting it if the caller was wrong or stale.
+    if (record.pipedrive_deal_id) {
+      try {
+        await fetch('https://cute-cat-d9631c.netlify.app/.netlify/functions/payment-reaffiliate-sweep-manual?deal_id=' + record.pipedrive_deal_id, { headers: { 'X-API-Key': process.env.INTERNAL_API_KEY || '' } });
+      } catch (eAff) { console.error('Immediate affiliate check failed (non-fatal):', eAff.message); }
+    }
+
     // PIPEDRIVE NOTE + ACTIVITY (Joe 8/20, Jamesha Finney 257336): payments made
     // via autobill or a manually-sent Zoho invoice never got a note or activity
     // on the deal - only card-on-file payments did. Every payment through this
