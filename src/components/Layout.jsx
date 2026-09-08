@@ -292,6 +292,8 @@ function Layout() {
     // actually render (departmentItems = isJoe ? [...] : coreDepartmentItems);
     // the earlier inserts sat in leadership-only arrays and never showed.
     ...(isAccountManagerDept ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
+    // Credit Consultants get Additional Rounds too (Joe 9/9) - so they can send the offer to clients who ask for it directly.
+    ...(currentUser?.department === 'credit_consultants' ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
     // AMs and Consultants get their own Refund Tracking view (Joe 8/18) - the page
     // itself narrows admin actions and other people's requests for non-leadership.
     ...((isAccountManagerDept || isConsultant) ? [{ path: '/admin/refunds', icon: DollarSign, label: 'Refund Tracking' }] : []),
@@ -308,6 +310,8 @@ function Layout() {
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     // AMs get Additional Rounds (Joe 8/4) - page's internal admin gates unchanged
     ...(currentUser?.department === 'account_managers' && currentUser?.role !== 'admin' ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
+    // Credit Consultants get Additional Rounds too (Joe 9/9) - so they can send the offer to clients who ask for it directly.
+    ...(currentUser?.department === 'credit_consultants' ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
   ];
 
@@ -322,6 +326,8 @@ function Layout() {
     ...(currentUser?.department === 'account_managers' || currentUser?.role === 'admin' ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     // AMs get Additional Rounds (Joe 8/4) - page's internal admin gates unchanged
     ...(currentUser?.department === 'account_managers' && currentUser?.role !== 'admin' ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
+    // Credit Consultants get Additional Rounds too (Joe 9/9) - so they can send the offer to clients who ask for it directly.
+    ...(currentUser?.department === 'credit_consultants' ? [{ path: '/admin/additional-rounds', icon: DollarSign, label: 'Additional Rounds' }] : []),
     ...((currentUser?.department === 'account_managers' || isConsultant) && currentUser?.role !== 'admin' ? [{ path: '/admin/refunds', icon: DollarSign, label: 'Refund Tracking' }] : []),
     ...(isConsultant ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(isCSR ? [{ path: '/csr-dashboard', icon: Headphones, label: 'CSR Dashboard' }] : []),
