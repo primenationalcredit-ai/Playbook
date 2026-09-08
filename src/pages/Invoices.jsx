@@ -277,6 +277,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-asap-blue bg-white border border-asap-blue rounded hover:bg-blue-50">
                 <CalendarClock size={12} /> Edit Date
               </button>
+              <button onClick={() => onAction({ type: 'update_amount', charge_id: c.id, current_amount: c.amount, due_date: c.due_date })}
+                title="Leadership: correct the dollar amount of this scheduled charge directly"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-teal-700 bg-white border border-teal-500 rounded hover:bg-teal-50">
+                <DollarSign size={12} /> Edit Amount
+              </button>
               {SPLIT_ENABLED && (
               <button onClick={() => onAction({ type: 'split_charge', charge_id: c.id, amount: c.amount, current_due_date: c.due_date })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 rounded hover:bg-purple-700">
@@ -286,6 +291,11 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
               <button onClick={() => onAction({ type: 'pause_admin', charge_id: c.id, current_due_date: c.due_date, amount: c.amount })}
                 className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700">
                 <PauseCircle size={12} /> Pause
+              </button>
+              <button onClick={() => onAction({ type: 'void_charge', charge_id: c.id, amount: c.amount, due_date: c.due_date })}
+                title="Leadership: permanently close this charge - it will never be collected"
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded hover:bg-red-700">
+                <XCircle size={12} /> Void
               </button>
               <button onClick={() => onAction({ type: 'zelle_paid', charge_id: c.id, amount: c.amount })}
                 title="Client paid this outside the card system (Zelle). Enter the confirmation number to record it in Zoho and mark the charge paid."
@@ -1379,6 +1389,8 @@ export default function Invoices() {
     else if (info.type === 'refund_initial' || info.type === 'refund_scheduled') setForm({ reason: '', passcode: '' });
     else if (info.type === 'charge_now') setForm({});
     else if (info.type === 'resume') setForm({});
+    else if (info.type === 'update_amount') setForm({ new_amount: info.current_amount || '' });
+    else if (info.type === 'void_charge') setForm({});
     setNotice(null);
   };
 
@@ -1403,6 +1415,14 @@ export default function Invoices() {
       } else if (modal.type === 'resume') {
         await callApi('resume', { charge_id: modal.charge_id });
         setNotice({ type: 'success', text: 'Charge resumed.' });
+      } else if (modal.type === 'update_amount') {
+        const newAmt = parseFloat(form.new_amount);
+        if (!(newAmt > 0)) throw new Error('Enter a valid amount greater than zero');
+        await callApi('update_amount', { charge_id: modal.charge_id, amount: newAmt });
+        setNotice({ type: 'success', text: 'Amount corrected to $' + newAmt.toFixed(2) + '.' });
+      } else if (modal.type === 'void_charge') {
+        await callApi('void_charge', { charge_id: modal.charge_id });
+        setNotice({ type: 'success', text: 'Charge voided - it will never be collected.' });
       } else if (modal.type === 'charge_now') {
         const r = await callApi('charge_now', { charge_id: modal.charge_id });
         const txn = r.transaction_id || r.transactionId || (r.charge && r.charge.transaction_id) || null;
@@ -1647,6 +1667,22 @@ export default function Invoices() {
                 <label className="block text-xs font-semibold text-slate-500 mb-1">New due date</label>
                 <input type="date" value={form.new_due_date || ''} onChange={e => setForm({ ...form, new_due_date: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+            )}
+
+            {modal.type === 'update_amount' && (
+              <div className="mb-4">
+                <div className="mb-2 text-sm text-slate-600">Current amount: <b>${(parseFloat(modal.current_amount) || 0).toFixed(2)}</b></div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">New amount</label>
+                <input type="number" step="0.01" min="0.01" value={form.new_amount || ''} onChange={e => setForm({ ...form, new_amount: e.target.value })}
+                  placeholder="e.g. 200.00"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
+              </div>
+            )}
+
+            {modal.type === 'void_charge' && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                This will permanently close out the ${(parseFloat(modal.amount) || 0).toFixed(2)} charge due {fmtDate(modal.due_date)}. It will never be collected. This cannot be undone from here.
               </div>
             )}
 
