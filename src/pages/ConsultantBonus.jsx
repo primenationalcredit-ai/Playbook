@@ -266,9 +266,9 @@ export default function ConsultantBonus() {
 
   const exportReport = () => {
     if (!data) return;
-    // Admins export the full team; consultants export their own statement only.
+    // Admins export whichever consultant they're currently viewing; consultants export their own statement only.
     const cons = isAdmin
-      ? Object.values(data.consultants)
+      ? [data.consultants[selectedConsultant]].filter(Boolean) // Astrid 9/9: Export PDF must be tied to whichever consultant the admin is currently viewing, not everyone at once
       : [data.consultants[currentUser?.name]].filter(Boolean); // SECURITY (Joe 9/9): never trust selectedConsultant for non-admins - it can be changed by clicking another consultant's leaderboard row, and a consultant must never be able to view or export anyone else's commission data
     if (cons.length === 0) return;
     const html = `<!DOCTYPE html><html><head><title>Bonus Report - ${data.month}</title>
