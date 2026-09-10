@@ -63,7 +63,7 @@ const AffiliateProfileModal = ({ data, onClose, fallbackName }) => (
               {data.deals.map((d) => (
                 <div key={d.deal_id} className="py-2 flex items-center justify-between gap-3 text-sm">
                   <div className="min-w-0">
-                    <div className="font-medium truncate">{d.client}</div>
+<div className="font-medium truncate"><a href={`https://asapcreditrepair.pipedrive.com/organization/${data.pipedrive_org_id}`} target="_blank" rel="noopener noreferrer" className="hover:underline text-blue-700" title="Open in Pipedrive">{d.client}</a></div>
                     <div className="text-xs text-gray-400">added {d.added || '?'}{d.won ? ` · sold ${d.won}` : ''}{d.lost ? ` · lost ${d.lost}` : ''}</div>
                   </div>
                   <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${d.sold ? 'bg-green-100 text-green-700' : d.status === 'lost' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-700'}`}>{d.sold ? 'SOLD' : d.status}</span>
@@ -532,7 +532,7 @@ export default function AffiliateOutreach() {
                                         {refData[a.id].deals.map((d) => (
                                           <div key={d.deal_id} className="py-2 flex items-center justify-between gap-3 text-sm">
                                             <div className="min-w-0">
-                                              <div className="font-medium truncate">{d.client}</div>
+                          <div className="font-medium truncate"><a href={`https://asapcreditrepair.pipedrive.com/organization/${refData[a.id].pipedrive_org_id}`} target="_blank" rel="noopener noreferrer" className="hover:underline text-blue-700" title="Open in Pipedrive">{d.client}</a></div>
                                               <div className="text-xs text-gray-400">added {d.added || '?'}{d.won ? ` · sold ${d.won}` : ''}{d.lost ? ` · lost ${d.lost}${d.lost_reason ? ` (${d.lost_reason})` : ''}` : ''}</div>
                                             </div>
                                             <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${d.sold ? 'bg-green-100 text-green-700' : d.status === 'lost' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-700'}`}>{d.sold ? 'SOLD' : d.status}</span>
