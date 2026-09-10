@@ -40,7 +40,7 @@ import {Award,
   Link,
   BarChart3,
   Trophy,
-  FileText, Video,
+  FileText, Video, TrendingUp,
   Search,
 } from 'lucide-react';
 import CoverageAlerts from './CoverageAlerts';
@@ -300,6 +300,7 @@ function Layout() {
     ...(isLeadership ? [{ path: '/admin/automations', icon: ShieldCheck, label: 'Automations' }] : []),
     // Employee Incident Reports (Joe 9/9): leadership-only, tracks verbal warnings, write-ups, commendations, and follow-ups per employee.
     ...(isLeadership ? [{ path: '/admin/employee-incidents', icon: FileText, label: 'Employee Incidents' }] : []),
+    ...(isLeadership ? [{ path: '/admin/lead-provider-funnel', icon: TrendingUp, label: 'Lead Provider P&L' }] : []),
     ...(isAccountManagerDept ? [{ path: '/secured-cards', icon: CreditCard, label: 'Secured Cards' }] : []),
     ...(isConsultant && !hideExtras ? [{ path: '/paysheet', icon: Receipt, label: 'My Paysheet' }] : []),
     ...(((isConsultant || isCSR) && !isCreditConsultant) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),

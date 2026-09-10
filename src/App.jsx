@@ -30,6 +30,7 @@ import ClaimReviews from './pages/ClaimReviews';
 import ReviewRandomizer from './pages/ReviewRandomizer';
 import ReviewLinkLog from './pages/ReviewLinkLog';
 import EmployeeIncidents from './pages/EmployeeIncidents';
+import LeadProviderFunnel from './pages/LeadProviderFunnel';
 import ConsultantPayments from './pages/ConsultantPayments';
 import AllPayments from './pages/AllPayments';
 import Invoices from './pages/Invoices';
@@ -148,6 +149,7 @@ function App() {
         <Route path="review-link" element={<ReviewRandomizer />} />
             <Route path="review-link-log" element={<ReviewLinkLog />} />
             <Route path="admin/employee-incidents" element={<EmployeeIncidents />} />
+            <Route path="admin/lead-provider-funnel" element={<LeadProviderFunnel />} />
         <Route path="payments" element={<ConsultantPayments />} />
         <Route path="invoices" element={<Invoices />} />
         <Route path="agreements" element={<Agreements />} />
