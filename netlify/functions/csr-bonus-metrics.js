@@ -162,7 +162,18 @@ exports.handler = async (event) => {
     // Only show a "today" count when viewing the current month (today is meaningless for past months).
     const viewingCurrentMonth = month === todayStr.slice(0, 7);
 
-    const rows = await supaGet('cs_deals', 'select=deal_id,deal_title,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,monitoring_site_set_pipeline,deal_created_at,pipeline_name,stage_name');
+        // PERFORMANCE FIX (Joe 9/10, Araceli's Conversion Bonus ticket): this used to fetch the
+    // ENTIRE cs_deals table (57,000+ rows, no filter at all) on every single call, which is why
+    // this function was timing out (502) whenever it actually had to run the full computation.
+    // Scoped now to exactly what the app's own month-attribution logic can ever use: a row's
+    // relevant date is monitoring_site_set_at (preferred) or deal_created_at (fallback AND the
+    // late-stamp case both explicitly use deal_created_at's month) - so a row can only possibly
+    // matter for this month if EITHER field falls inside it. Nothing the app would have used is
+    // excluded; everything it would never have used is no longer dragged across the wire.
+    const qMonthStart = `${month}-01`;
+    const [qY, qM] = month.split('-').map(Number);
+    const qNextMonthStart = `${new Date(qY, qM, 1).getFullYear()}-${String(new Date(qY, qM, 1).getMonth() + 1).padStart(2, '0')}-01`;
+    const rows = await supaGet('cs_deals', 'select=deal_id,deal_title,call_center_rep_name,account_manager_name,monitoring_site,monitoring_site_set_at,monitoring_site_set_stage,monitoring_site_set_pipeline,deal_created_at,pipeline_name,stage_name&or=(and(deal_created_at.gte.' + qMonthStart + ',deal_created_at.lt.' + qNextMonthStart + '),and(monitoring_site_set_at.gte.' + qMonthStart + ',monitoring_site_set_at.lt.' + qNextMonthStart + '))');
 
     // Review data: reviews are assigned to a user (assigned_to = user id) in the IncomingReviews page.
     // Map each CSR name to their user id, then count this month's assigned reviews. BBB = location name contains "bbb".
