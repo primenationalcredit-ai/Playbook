@@ -220,7 +220,7 @@ exports.handler = async (event) => {
     // Reports-to-Quoted: deals that moved to Quoted 2.0 this month (Pipedrive filter). Falls back to current pipeline if unavailable.
     let movedToQuoted = new Set();
     try { movedToQuoted = await fetchFilterDealIds(MOVED_TO_QUOTED_FILTER); } catch (e) {}
-    const useQuotedFilter = movedToQuoted.size > 0;
+    const useQuotedFilter = viewingCurrentMonth && movedToQuoted.size > 0; // FIX (Joe 9/10, Araceli's missing Conversion Bonus): the Pipedrive filter behind movedToQuoted is scoped to Pipedrive's OWN 'this month', with zero awareness of which month THIS function is being asked about. Checking any past month against it was comparing that month's real deals against essentially unrelated current-month deal IDs, silently collapsing the reports-to-quote rate toward zero for every CSR on every past month. Now only trusted for the current month; past months correctly fall back to the rank-based check that was already implemented but never actually reached.
 
     // Per-CSR tallies for the requested month
     const tally = {};
