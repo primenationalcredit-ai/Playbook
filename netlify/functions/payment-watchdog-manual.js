@@ -5,7 +5,7 @@
 // on ADJACENT days are REPORTED ONLY - never auto-merged (could be a real repeat
 // payment). Real run: scheduled tick (body.next_run) or ?run=1. Else dry-run.
 const SU = process.env.SUPABASE_URL;
-const SK = process.env.SUPABASE_SERVICE_KEY;
+const SK = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SB = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
 const ALERT_TO = process.env.ALERT_TO || 'management@asapcreditrepairusa.com';
@@ -21,7 +21,7 @@ exports.handler = async (event) => {
     const since = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
     const r = await fetch(SU + '/rest/v1/consultant_payments?select=id,client_name,pipedrive_deal_id,amount,payment_date,source,consultant_name,zoho_payment_id,zoho_invoice_id,created_at&payment_date=gte.' + since + '&refunded_at=is.null&pipedrive_deal_id=not.is.null&order=payment_date.desc&limit=1000', { headers: SB });
     const rows = r.ok ? await r.json() : [];
-    report.debug_fetch_ok = r.ok; report.debug_rows_fetched = rows.length; report.debug_status = r.status;
+    
     const byKey = {};
     for (const row of rows) {
       const k = row.pipedrive_deal_id + '|' + row.amount + '|' + row.payment_date;

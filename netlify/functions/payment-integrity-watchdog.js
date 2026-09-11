@@ -5,7 +5,7 @@
 // on ADJACENT days are REPORTED ONLY - never auto-merged (could be a real repeat
 // payment). Real run: scheduled tick (body.next_run) or ?run=1. Else dry-run.
 const SU = process.env.SUPABASE_URL;
-const SK = process.env.SUPABASE_SERVICE_KEY;
+const SK = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SB = { apikey: SK, Authorization: 'Bearer ' + SK, 'Content-Type': 'application/json' };
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
 const ALERT_TO = process.env.ALERT_TO || 'management@asapcreditrepairusa.com';
