@@ -1151,7 +1151,7 @@ export default function ConsultantBonus() {
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-slate-600">Week {w.week} ({fmtDate(w.start)} — {fmtDate(w.end)})</span>
                     <span className={(w.winners || []).includes(c.name) ? 'text-orange-600 font-bold' : 'text-slate-400'}>
-                      {w.winner === c.name ? `🏆 Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs — ${w.winner?.split(' ')[0]} won (${w.docs})`}
+                      {(w.winners || []).includes(c.name) ? `🏆 Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs — ${(w.winners||[]).map(n => n.split(' ')[0]).join(' & ')} won (${w.docs})`}
                     </span>
                   </div>
                 ))}
@@ -1163,7 +1163,7 @@ export default function ConsultantBonus() {
                 const winner = data.weeklyWinners?.find(ww => ww.week === w.week);
                 const won = !!(winner?.complete && (winner?.winners || []).includes(c.name));
                 const leading = !!(!winner?.complete && (winner?.leaders || []).includes(c.name));
-                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? Math.round(150 / ((winner?.winners?.length) || 1)) : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
+                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? Math.round(150 / ((winner?.winners?.length) || 1)) : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winners||[]).map(n => n.split(' ')[0]).join(' & ')} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
               })} onClose={() => { setExpandedSection(null); setSprintWeek(null); }} />
             )}
             {sprintWeek && (
