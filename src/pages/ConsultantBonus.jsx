@@ -802,10 +802,10 @@ export default function ConsultantBonus() {
                   <td className="px-3 py-2.5 font-medium">Wk {w.week} ({fmtDate(w.start)})</td>
                   {cons.map(c => {
                     const wk = (c.weeks||[]).find(cw => cw.week === w.week);
-                    const isLead = w.leader === c.name;
+                    const isLead = (w.leaders || []).includes(c.name);
                     return <td key={c.name} className={`text-center px-3 py-2.5 ${isLead ? 'text-orange-600 font-bold bg-orange-50' : ''}`}>{wk?.docs || 0}{isLead && w.complete ? ' W' : isLead ? ' *' : ''}</td>;
                   })}
-                  <td className="text-center px-3 py-2.5 font-medium">{w.complete ? (w.winner||'').split(' ')[0]+' ('+w.docs+')' : 'In Progress'}</td>
+                  <td className="text-center px-3 py-2.5 font-medium">{w.complete ? (w.winners||[]).map(n => n.split(' ')[0]).join(' & ')+' ('+w.docs+')' : 'In Progress'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1133,16 +1133,16 @@ export default function ConsultantBonus() {
           <div className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Clock size={20} className={data.weeklyWinners?.some(w => w.winner === c.name) ? 'text-orange-500' : 'text-slate-300'} />
+                <Clock size={20} className={data.weeklyWinners?.some(w => (w.winners || []).includes(c.name)) ? 'text-orange-500' : 'text-slate-300'} />
                 <div>
                   <p className="font-medium text-slate-800"><Tip text="$150 awarded each week to the consultant with the most doc fees collected Monday through Sunday. Winner declared after the week ends.">Weekly Sprint ($150/week)</Tip></p>
                   <p className="text-sm text-slate-500">
-                    {(data.weeklyWinners || []).filter(w => w.winner === c.name).length} week{(data.weeklyWinners || []).filter(w => w.winner === c.name).length !== 1 ? 's' : ''} won
+                    {(data.weeklyWinners || []).filter(w => (w.winners || []).includes(c.name)).length} week{(data.weeklyWinners || []).filter(w => (w.winners || []).includes(c.name)).length !== 1 ? 's' : ''} won
                   </p>
                 </div>
               </div>
-              <p className={`text-lg font-bold ${(data.weeklyWinners || []).some(w => w.winner === c.name) ? 'text-orange-600' : 'text-slate-300'}`}>
-                {fmt((data.weeklyWinners || []).filter(w => w.winner === c.name).length * 150)}
+              <p className={`text-lg font-bold ${(data.weeklyWinners || []).some(w => (w.winners || []).includes(c.name)) ? 'text-orange-600' : 'text-slate-300'}`}>
+                {fmt(c.sprintBonus || 0)}
               </p>
             </div>
             {(data.weeklyWinners || []).length > 0 && (
@@ -1150,7 +1150,7 @@ export default function ConsultantBonus() {
                 {(data.weeklyWinners || []).map((w, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-slate-600">Week {w.week} ({fmtDate(w.start)} — {fmtDate(w.end)})</span>
-                    <span className={w.winner === c.name ? 'text-orange-600 font-bold' : 'text-slate-400'}>
+                    <span className={(w.winners || []).includes(c.name) ? 'text-orange-600 font-bold' : 'text-slate-400'}>
                       {w.winner === c.name ? `🏆 Won (${w.docs} docs)` : `${(c.weeks || []).find(cw => cw.week === w.week)?.docs || 0} docs — ${w.winner?.split(' ')[0]} won (${w.docs})`}
                     </span>
                   </div>
@@ -1161,9 +1161,9 @@ export default function ConsultantBonus() {
             {expandedSection === 'sprint' && (
               <ClientPanel title="Weekly Sprint Breakdown" items={(c.weeks || []).map(w => {
                 const winner = data.weeklyWinners?.find(ww => ww.week === w.week);
-                const won = !!(winner?.complete && winner?.winner === c.name);
-                const leading = !!(!winner?.complete && winner?.leader === c.name);
-                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? 150 : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
+                const won = !!(winner?.complete && (winner?.winners || []).includes(c.name));
+                const leading = !!(!winner?.complete && (winner?.leaders || []).includes(c.name));
+                return { name: `Week ${w.week} (${fmtDate(w.start)} — ${fmtDate(w.end)})`, amount: won ? Math.round(150 / ((winner?.winners?.length) || 1)) : 0, type: `${w.docs} doc fees${won ? ' — Won $150' : leading ? ' — Leading' : ''}`, date: winner?.complete ? (won ? '🏆 Winner' : `${(winner?.winner||'').split(' ')[0]} won`) : 'In progress', onClick: () => setSprintWeek(w), clientCount: w.docs };
               })} onClose={() => { setExpandedSection(null); setSprintWeek(null); }} />
             )}
             {sprintWeek && (

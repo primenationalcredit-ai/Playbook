@@ -1394,12 +1394,12 @@ exports.handler = async (event) => {
     const todayStr = new Date().toISOString().split('T')[0];
     for (const week of allWeeks) {
       const weekComplete = week.end < todayStr; // week end (Sunday) is before today
-      let bestName = null, bestDocs = 0;
+      let bestNames = [], bestDocs = 0;
       for (const [n, d] of Object.entries(results)) {
         const w = (d.weeks || []).find(wk => wk.week === week.week);
-        if (w && w.docs > bestDocs) { bestDocs = w.docs; bestName = n; }
+        if (w) { if (w.docs > bestDocs) { bestDocs = w.docs; bestNames = [n]; } else if (w.docs === bestDocs && w.docs > 0) { bestNames.push(n); } }
       }
-      weeklyWinners.push({ week: week.week, start: week.start, end: week.end, winner: weekComplete ? bestName : null, leader: bestName, docs: bestDocs, complete: weekComplete });
+      weeklyWinners.push({ week: week.week, start: week.start, end: week.end, winner: weekComplete ? (bestNames[0] || null) : null, winners: weekComplete ? bestNames : [], leader: bestNames[0] || null, leaders: bestNames, docs: bestDocs, complete: weekComplete, tied: bestNames.length > 1 });
     }
 
     // COTM
@@ -1410,8 +1410,9 @@ exports.handler = async (event) => {
 
     // Second pass: add sprint bonus (needs weeklyWinners computed above)
     for (const [n, d] of Object.entries(results)) {
-      const weeksWon = weeklyWinners.filter(w => w.complete && w.winner === n).length;
-      d.sprintBonus = weeksWon * 150;
+      const wonWeeks = weeklyWinners.filter(w => w.complete && (w.winners || []).includes(n));
+      const weeksWon = wonWeeks.length;
+      d.sprintBonus = Math.round(wonWeeks.reduce((sum, w) => sum + (150 / (w.winners.length || 1)), 0) * 100) / 100;
       d.weeksWon = weeksWon;
       d.totalBonus = Math.round((d.totalBonus + d.sprintBonus) * 100) / 100;
       d.totalEarnings = Math.round((d.totalCommission + d.totalBonus) * 100) / 100;
