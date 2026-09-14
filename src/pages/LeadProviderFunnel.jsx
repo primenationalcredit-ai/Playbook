@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { TrendingUp, TrendingDown, Phone, CheckCircle2, DollarSign, Link2, X } from 'lucide-react';
 
@@ -30,6 +30,7 @@ export default function LeadProviderFunnel() {
 
   const [calls, setCalls] = useState([]);
   const [revenueByDeal, setRevenueByDeal] = useState({});
+  const [closedDeals, setClosedDeals] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [editingCall, setEditingCall] = useState(null);
   const [editDealId, setEditDealId] = useState('');
@@ -46,15 +47,19 @@ export default function LeadProviderFunnel() {
 
       const dealIds = [...new Set(list.filter(c => c.pipedrive_deal_id).map(c => c.pipedrive_deal_id))];
       if (dealIds.length > 0) {
-        const payRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?pipedrive_deal_id=in.(${dealIds.join(',')})&select=pipedrive_deal_id,amount`, { headers: SB });
+        const payRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?pipedrive_deal_id=in.(${dealIds.join(',')})&select=pipedrive_deal_id,amount,payment_type`, { headers: SB });
         const payJson = await payRes.json().catch(() => []);
         const rev = {};
+        const closed = new Set();
         (Array.isArray(payJson) ? payJson : []).forEach(p => {
           rev[p.pipedrive_deal_id] = (rev[p.pipedrive_deal_id] || 0) + parseFloat(p.amount || 0);
+          if (p.payment_type === 'doc_fee') closed.add(String(p.pipedrive_deal_id));
         });
         setRevenueByDeal(rev);
+        setClosedDeals(closed);
       } else {
         setRevenueByDeal({});
+        setClosedDeals(new Set());
       }
     } catch (e) { /* leave state as-is on failure */ }
     setLoading(false);
@@ -90,8 +95,13 @@ export default function LeadProviderFunnel() {
     STAGES.forEach(s => { stageCounts[s.key] = calls.filter(c => (c.funnel_stage || 'transferred') === s.key).length; });
     const clientsSigned = stageCounts['client_signed'] || 0;
     const conversionRate = qualifying.length > 0 ? (clientsSigned / qualifying.length) * 100 : 0;
-    return { totalCalls: calls.length, qualifyingCalls: qualifying.length, totalSpend, totalRevenue, netPL: totalRevenue - totalSpend, stageCounts, conversionRate };
-  }, [calls, revenueByDeal]);
+    // Closes (Joe 9/14): a doc fee collected on the client is what counts as closed,
+    // regardless of what stage the deal shows currently. Closing % is closes over
+    // qualifying calls - the same denominator conversionRate already uses.
+    const closes = calls.filter(c => c.pipedrive_deal_id && closedDeals.has(String(c.pipedrive_deal_id))).length;
+    const closingRate = qualifying.length > 0 ? (closes / qualifying.length) * 100 : 0;
+    return { totalCalls: calls.length, qualifyingCalls: qualifying.length, totalSpend, totalRevenue, netPL: totalRevenue - totalSpend, stageCounts, conversionRate, closes, closingRate };
+  }, [calls, revenueByDeal, closedDeals]);
 
   if (!isLeadership) {
     return <div className="p-6 text-center text-slate-500">Leadership access only.</div>;
@@ -104,7 +114,7 @@ export default function LeadProviderFunnel() {
         <p className="text-slate-500">Vertimedia live-transfer performance, conversion, and profitability.</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <div className="bg-white rounded-xl border shadow-sm p-4">
           <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold uppercase mb-1"><Phone size={14} /> Total Calls</div>
           <div className="text-2xl font-bold text-slate-800">{stats.totalCalls}</div>
@@ -114,6 +124,16 @@ export default function LeadProviderFunnel() {
           <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold uppercase mb-1"><CheckCircle2 size={14} /> Became Clients</div>
           <div className="text-2xl font-bold text-slate-800">{stats.stageCounts.client_signed || 0}</div>
           <div className="text-xs text-slate-400 mt-1">{stats.conversionRate.toFixed(1)}% of qualifying calls</div>
+        </div>
+        <div className="bg-white rounded-xl border shadow-sm p-4">
+          <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold uppercase mb-1"><CheckCircle2 size={14} /> Closes</div>
+          <div className="text-2xl font-bold text-slate-800">{stats.closes}</div>
+          <div className="text-xs text-slate-400 mt-1">Doc fee collected</div>
+        </div>
+        <div className="bg-white rounded-xl border shadow-sm p-4">
+          <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold uppercase mb-1"><CheckCircle2 size={14} /> Closing %</div>
+          <div className="text-2xl font-bold text-slate-800">{stats.closingRate.toFixed(1)}%</div>
+          <div className="text-xs text-slate-400 mt-1">Of qualifying calls</div>
         </div>
         <div className="bg-white rounded-xl border shadow-sm p-4">
           <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold uppercase mb-1"><DollarSign size={14} /> Total Spend</div>
