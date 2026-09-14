@@ -1248,6 +1248,7 @@ function BillingOverview({ isAdmin }) {
   const [err, setErr] = useState(null);
   const [window_, setWindow_] = useState('month');
   const [range, setRange] = useState(7); // upcoming view: 7 / 14 / 30 / 'all'
+  const [billingTab, setBillingTab] = useState('declined'); // Joe 9/14: Declined + Upcoming share one tabbed slot instead of both expanding at once
 
   const load = async () => {
     setLoading(true); setErr(null);
@@ -1317,8 +1318,26 @@ function BillingOverview({ isAdmin }) {
           </div>
         </div>
       )}
-      <BillingList title={range === 'all' ? 'Upcoming (all scheduled)' : `Upcoming (${range} days)`} icon={<CalendarClock size={15} className="text-sky-600" />} rows={(() => { const all = data.upcoming_all || data.upcoming_7_days || []; if (range === 'all') return all; const lim = new Date(Date.now() + range * 86400000).toISOString().slice(0, 10); return all.filter(r => (r.due_date || '') <= lim); })()} emptyText="Nothing scheduled in this window." isAdmin={isAdmin} />
-      <BillingList title="Declined — needs outreach" icon={<XCircle size={15} className="text-red-600" />} rows={data.declined_open || []} emptyText="No open declines. 🎉" showDecline={true} defaultOpen={true} isAdmin={isAdmin} />
+      {(() => {
+        const upcomingRows = data.upcoming_all || data.upcoming_7_days || [];
+        const upcomingFiltered = range === 'all' ? upcomingRows : upcomingRows.filter(r => (r.due_date || '') <= new Date(Date.now() + range * 86400000).toISOString().slice(0, 10));
+        const declinedCount = (data.declined_open || []).length;
+        const upcomingCount = upcomingFiltered.length;
+        return (
+          <div>
+            <div className="flex gap-2 mb-2">
+              <button onClick={() => setBillingTab('declined')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${billingTab === 'declined' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>Declined ({declinedCount})</button>
+              <button onClick={() => setBillingTab('upcoming')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${billingTab === 'upcoming' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>Upcoming ({upcomingCount})</button>
+            </div>
+            {billingTab === 'declined' && (
+              <BillingList title="Declined — needs outreach" icon={<XCircle size={15} className="text-red-600" />} rows={data.declined_open || []} emptyText="No open declines. 🎉" showDecline={true} defaultOpen={true} isAdmin={isAdmin} />
+            )}
+            {billingTab === 'upcoming' && (
+              <BillingList title={range === 'all' ? 'Upcoming (all scheduled)' : `Upcoming (${range} days)`} icon={<CalendarClock size={15} className="text-sky-600" />} rows={upcomingFiltered} emptyText="Nothing scheduled in this window." defaultOpen={true} isAdmin={isAdmin} />
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
