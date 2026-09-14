@@ -1565,10 +1565,8 @@ export default function Invoices() {
               : 'Track doc fees and scheduled payments. Read-only.'}
         </p>
       </div>
-      <BillingOverview isAdmin={isAdmin} />
-
-
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
+      {!isAdmin && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
         <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
           <div className="flex-1">
             <label className="block text-xs font-semibold text-slate-500 mb-1">Pipedrive Deal ID</label>
@@ -1597,6 +1595,39 @@ export default function Invoices() {
           </div>
         )}
       </div>
+      )}
+      <BillingOverview isAdmin={isAdmin} />
+      {isAdmin && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
+        <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1">Pipedrive Deal ID</label>
+            <input
+              type="text"
+              value={dealInput}
+              onChange={e => setDealInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') lookup(); }}
+              placeholder="e.g. 265795"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => lookup()} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-60">
+              <Search size={16} /> Look Up
+            </button>
+            <button onClick={browse} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-white text-asap-blue border border-asap-blue text-sm font-semibold rounded hover:bg-blue-50 disabled:opacity-60">
+              <FileText size={16} /> Show All Invoices
+            </button>
+          </div>
+        </div>
+        {err && (
+          <div className="mt-3 p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700 flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+            <span>{err}</span>
+          </div>
+        )}
+      </div>
+      )}
 
       {loading && (
         <div className="text-center py-12 text-slate-500">
