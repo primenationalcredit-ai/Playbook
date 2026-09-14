@@ -17,8 +17,8 @@ export function useDailyGate(currentUser, role, items, applies) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (skip || !who) { setChecked({}); return; }
-    fetch(`${SB}/rest/v1/role_daily_checklist?user_key=eq.${encodeURIComponent(who)}&day=eq.${day}&select=checked`, { headers: H })
-      .then((r) => r.json()).then((rows) => setChecked((rows[0] && rows[0].checked) || {}))
+    fetch(`/.netlify/functions/daily-checklist-load?user_key=${encodeURIComponent(who)}&day=${day}`)
+      .then((r) => r.json()).then((data) => setChecked(data.checked || {}))
       .catch(() => setChecked({}));
   }, [skip, who, day]); // FIX (Joe 9/9): was [], so if currentUser hadn't loaded yet when this ran, skip evaluated true, checked got set to {} and the fetch never happened - and it never re-ran once currentUser became available a moment later, permanently showing an empty (all-unchecked) checklist for the rest of that page load even though the real completed state was sitting correctly in the database. Re-running when skip/who/day actually change fixes it at the source.
   const toggle = async (key) => {
