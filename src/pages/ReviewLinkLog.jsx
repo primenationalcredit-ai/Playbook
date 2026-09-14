@@ -45,7 +45,8 @@ export default function ReviewLinkLog() {
       setLoading(true);
       setError(null);
       try {
-        const data = await supabaseFetch('review_link_log', 'select=*&order=sent_at.desc&limit=1000');
+        const resp = await fetch('/.netlify/functions/review-link-log-load');
+      const data = await resp.json();
         setRows(Array.isArray(data) ? data : []);
       } catch (e) {
         setError('Could not load the log.');
