@@ -27,9 +27,9 @@ export function useDailyGate(currentUser, role, items, applies) {
     const next = { ...(checked || {}) };
     if (next[key]) delete next[key]; else next[key] = new Date().toISOString();
     try {
-      await fetch(`${SB}/rest/v1/role_daily_checklist?on_conflict=user_key,day`, {
-        method: 'POST', headers: { ...H, Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ user_key: who, role, day, checked: next, updated_at: new Date().toISOString() }),
+      await fetch('/.netlify/functions/daily-checklist-save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_key: who, role, day, checked: next }),
       });
       setChecked(next);
     } catch (e) { alert('Could not save - try again'); }
