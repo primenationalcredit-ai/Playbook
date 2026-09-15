@@ -193,12 +193,14 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
   const isPaused = c.status === 'paused';
   const isFailed = c.status === 'failed';
   const isScheduled = c.status === 'scheduled';
+  const isProcessing = c.status === 'processing';
 
   const leftBorder =
     refunded   ? 'border-l-slate-400 bg-slate-50 opacity-90' :
     pendingApproval ? 'border-l-amber-500 bg-amber-50' :
     isPaid     ? 'border-l-green-500' :
     isScheduled? 'border-l-blue-500' :
+    isProcessing? 'border-l-purple-500 bg-purple-50' :
     isFailed   ? 'border-l-red-500 bg-red-50' :
     isPaused   ? 'border-l-amber-500 bg-amber-50' :
                  'border-l-slate-300';
@@ -247,6 +249,19 @@ function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pen
       {/* Admin direct actions */}
       {isAdmin && !refunded && (
         <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2">
+          {isProcessing && (
+            <>
+              <span className="text-xs text-purple-700 font-semibold w-full">Stuck in processing - verify with Authorize.net before choosing:</span>
+              <button onClick={() => onAction({ type: 'mark_stuck_charged', charge_id: c.id, amount: c.amount })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700">
+                It Charged - Confirm Paid
+              </button>
+              <button onClick={() => onAction({ type: 'reset_stuck_processing', charge_id: c.id })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded hover:bg-red-700">
+                Not Charged - Reset to Retry
+              </button>
+            </>
+          )}
           {(isScheduled || isFailed) && (
             <>
               {c.customer_profile_id ? (
@@ -1410,6 +1425,8 @@ export default function Invoices() {
     else if (info.type === 'resume') setForm({});
     else if (info.type === 'update_amount') setForm({ new_amount: info.current_amount || '' });
     else if (info.type === 'void_charge') setForm({});
+    else if (info.type === 'mark_stuck_charged') setForm({ transaction_id: '' });
+    else if (info.type === 'reset_stuck_processing') setForm({});
     setNotice(null);
   };
 
@@ -1442,6 +1459,13 @@ export default function Invoices() {
       } else if (modal.type === 'void_charge') {
         await callApi('void_charge', { charge_id: modal.charge_id });
         setNotice({ type: 'success', text: 'Charge voided - it will never be collected.' });
+      } else if (modal.type === 'reset_stuck_processing') {
+        await callApi('reset_stuck_processing', { charge_id: modal.charge_id });
+        setNotice({ type: 'success', text: 'Charge reset - it is back in the retry queue and ready to reprocess.' });
+      } else if (modal.type === 'mark_stuck_charged') {
+        if (!form.transaction_id || form.transaction_id.trim().length < 4) throw new Error('Enter the real Authorize.net transaction ID');
+        await callApi('mark_stuck_charged', { charge_id: modal.charge_id, transaction_id: form.transaction_id.trim() });
+        setNotice({ type: 'success', text: 'Confirmed paid and Zoho updated.' });
       } else if (modal.type === 'charge_now') {
         const r = await callApi('charge_now', { charge_id: modal.charge_id });
         const txn = r.transaction_id || r.transactionId || (r.charge && r.charge.transaction_id) || null;
@@ -1733,6 +1757,23 @@ export default function Invoices() {
             {modal.type === 'void_charge' && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
                 This will permanently close out the ${(parseFloat(modal.amount) || 0).toFixed(2)} charge due {fmtDate(modal.due_date)}. It will never be collected. This cannot be undone from here.
+              </div>
+            )}
+            {modal.type === 'reset_stuck_processing' && (
+              <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-800">
+                Only do this after checking Authorize.net directly and confirming the card was NOT actually charged. This resets the ${(parseFloat(modal.amount) || 0).toFixed(2)} charge back to failed so it can be reprocessed normally.
+              </div>
+            )}
+
+            {modal.type === 'mark_stuck_charged' && (
+              <div className="mb-4">
+                <div className="mb-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  Only do this after checking Authorize.net directly and confirming the card WAS actually charged. Enter the real transaction ID from Authorize.net below.
+                </div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Authorize.net transaction ID</label>
+                <input type="text" value={form.transaction_id || ''} onChange={e => setForm({ ...form, transaction_id: e.target.value })}
+                  placeholder="e.g. 121784441122"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue" />
               </div>
             )}
 
