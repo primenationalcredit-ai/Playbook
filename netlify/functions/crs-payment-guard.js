@@ -44,9 +44,24 @@ exports.handler = async (event) => {
     // guard is only for a current client moving from round 1 into round 2 in CRS /
     // Additional CRS - nothing else should ever be evaluated.
     const pipeId = Number((deal.pipeline_id && (deal.pipeline_id.value || deal.pipeline_id)) || 0);
-    const ALLOWED_PIPELINES = [45, 608];
+    const ALLOWED_PIPELINES = [608];
     if (!ALLOWED_PIPELINES.includes(pipeId)) {
-      out.result = 'skipped - pipeline ' + pipeId + ' is not a CRS pipeline';
+      out.result = 'skipped - pipeline ' + pipeId + ' is not Additional CRS';
+      return ok(out);
+    }
+
+    // ROUND 1 RECENCY GATE (Joe 9/16, Mudasriu Adepoju 202055 + Kristin Willis 144115):
+    // this guard exists for a CURRENT client moving from round 1 into round 2. Both of
+    // those alerts fired on clients whose round 1 started YEARS ago (2023 and 2021) -
+    // they are not in that transition at all. Round 1 Start is the precise signal, so
+    // require it to be recent before evaluating anything.
+    const R1_FIELD = '6979c70df67f42c28dfcff39284ae17d564d600f';
+    const r1Raw = String(deal[R1_FIELD] || '').slice(0, 10);
+    const MAX_R1_AGE_DAYS = 120;
+    if (!r1Raw) { out.result = 'skipped - no Round 1 Start on deal'; return ok(out); }
+    const r1AgeDays = Math.floor((Date.now() - new Date(r1Raw + 'T00:00:00Z').getTime()) / 86400000);
+    if (!(r1AgeDays >= 0 && r1AgeDays <= MAX_R1_AGE_DAYS)) {
+      out.result = 'skipped - Round 1 started ' + r1Raw + ' (' + r1AgeDays + ' days ago), not a current round 1 to round 2 client';
       return ok(out);
     }
 
