@@ -43,17 +43,28 @@ exports.handler = async (event) => {
     const CACHE_KEY = `am_payments_${month}`;
     const refresh = params.refresh === '1' || params.refresh === 'true';
 
+    // MONTH LOCK (Joe 9/16, Dex-Ann ticket): a month FREEZES at 11:59pm CST on its
+    // last day. Before this, every month - including months closed weeks ago - was
+    // recalculated live on a 10-minute TTL, so an AM watched their final bonus
+    // numbers keep moving after the month they were paid on had ended. A closed
+    // month now serves its stored snapshot permanently and is never recomputed.
+    // The current month still uses the 10-minute TTL exactly as before. An admin
+    // can still force a recount on a closed month with ?refresh=1 (deliberate
+    // override, e.g. a genuine late correction) - nothing else reopens it.
+    const _cstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+    const _curMonth = `${_cstNow.getFullYear()}-${String(_cstNow.getMonth() + 1).padStart(2, '0')}`;
+    const monthIsClosed = month < _curMonth;
+
     if (!refresh) {
       try {
-        // 10-minute TTL: a cached month is only served while fresh. Without
-        // this the first snapshot of a month froze forever (served 7/2 data
-        // on 7/20).
+        // 10-minute TTL for the CURRENT month only (see month lock above).
         const TTL_MS = 10 * 60000;
         const c = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.${CACHE_KEY}&select=cache_value,updated_at`, { headers: supa });
         if (c.ok) {
           const rows = await c.json();
           const fresh = rows[0]?.updated_at && (Date.now() - new Date(rows[0].updated_at).getTime()) < TTL_MS;
-          if (rows[0]?.cache_value && fresh) return { statusCode: 200, headers, body: rows[0].cache_value };
+          // A closed month ignores the TTL entirely - the snapshot IS the answer.
+          if (rows[0]?.cache_value && (monthIsClosed || fresh)) return { statusCode: 200, headers, body: rows[0].cache_value };
         }
       } catch (e) {}
     }
