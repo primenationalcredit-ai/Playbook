@@ -41,9 +41,9 @@ exports.handler = async (event) => {
         const hasEmail = !!(orgEmail && String(orgEmail).includes('@'));
         const isConsultantReferral = !!(od && od.label === 2993);
         // LABEL ONLY (Joe 9/8 rule, applied here 9/16): third place with the same bug -
-  // an org having an email is NOT an affiliate. Only the Consultant Referral
-  // label (2993) earns the higher rate.
-  const isAffiliate = isConsultantReferral;
+        // an org having an email is NOT an affiliate. Only the Consultant Referral
+        // label (2993) earns the higher rate.
+        const isAffiliate = isConsultantReferral;
         const patch = { referrer_org: orgName, is_affiliate_deal: isAffiliate, org_email: hasEmail ? String(orgEmail) : null, org_has_email: hasEmail };
         if (isAffiliate) { out.affiliate.push({ client: row.client_name, date: row.payment_date, consultant: row.consultant_name, amount: row.amount, org: orgName }); } else { out.organic++; }
         if (!dry) {
