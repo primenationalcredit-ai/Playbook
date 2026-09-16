@@ -49,10 +49,30 @@ exports.handler = async () => {
     });
     const totalCount = parseInt((totalRes.headers.get('content-range') || '0-0/0').split('/')[1] || '0', 10);
 
-    const rows = await fetch(
+    // PRIORITY PASS (Joe 9/16, Beverly Brown 270444 - same class as the Araceli x2
+    // deals this heal was written for): the rotation below walks the whole table 100
+    // rows per run, so a deal whose rep went blank waits DAYS for the cursor to reach
+    // it and is invisible in CSR conversion numbers the entire time. A blank rep is a
+    // known-broken row - query for those directly and fix them EVERY run, before the
+    // rotation. There are only ever a handful, so this costs almost nothing.
+    let blankRepRows = [];
+    try {
+      blankRepRows = await fetch(
+        `${SUPABASE_URL}/rest/v1/cs_deals?monitoring_site=not.is.null&call_center_rep_name=is.null&select=deal_id,monitoring_site,person_id,call_center_rep_name&order=deal_id.desc&limit=100`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+      ).then((r) => r.json());
+      if (!Array.isArray(blankRepRows)) blankRepRows = [];
+      report.blankRepFound = blankRepRows.length;
+    } catch (eB) { report.errors.push({ deal_id: null, error: 'blank-rep query: ' + eB.message }); }
+
+    const rotationRows = await fetch(
       `${SUPABASE_URL}/rest/v1/cs_deals?monitoring_site=not.is.null&select=deal_id,monitoring_site,person_id,call_center_rep_name&order=deal_id.asc&limit=${BATCH_SIZE}&offset=${offset}`,
       { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
     ).then((r) => r.json());
+
+    // Blank-rep rows first, then the normal rotation (no duplicates).
+    const seenIds = new Set(blankRepRows.map(r => String(r.deal_id)));
+    const rows = blankRepRows.concat((Array.isArray(rotationRows) ? rotationRows : []).filter(r => !seenIds.has(String(r.deal_id))));
 
     for (const row of (rows || [])) {
       report.checked++;
@@ -126,7 +146,8 @@ exports.handler = async () => {
       await sleep(250);
     }
 
-    const nextOffset = (rows && rows.length === BATCH_SIZE) ? offset + BATCH_SIZE : 0; // wrap to 0 when we reach the end
+    // Cursor advances on the ROTATION rows only - the priority blank-rep rows are not part of the rotation.
+    const nextOffset = (Array.isArray(rotationRows) && rotationRows.length === BATCH_SIZE) ? offset + BATCH_SIZE : 0; // wrap to 0 when we reach the end
     await fetch(`${SUPABASE_URL}/rest/v1/app_cache?on_conflict=cache_key`, {
       method: 'POST',
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
