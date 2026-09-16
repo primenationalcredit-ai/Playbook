@@ -203,6 +203,7 @@ export default function ConsultantBonus() {
   const [selectedConsultant, setSelectedConsultant] = useState(null);
   const [tab, setTab] = useState('bonuses');
   const [expandedSection, setExpandedSection] = useState(null);
+  const [commOpen, setCommOpen] = useState(null); // Joe 9/16: which commission breakdown is open (organic | affiliate | null)
   const [pastDueMonth, setPastDueMonth] = useState('all');
   // Drill: when a "Pending 30d" number is clicked, show that consultant's pending clients.
   const [pendingDrill, setPendingDrill] = useState(null); // { consultant, clients: [...] }
@@ -368,7 +369,7 @@ export default function ConsultantBonus() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input type="month" value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setExpandedSection(null); }}
+          <input type="month" value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setExpandedSection(null); setCommOpen(null); }}
             className="px-3 py-1.5 border rounded-lg text-sm text-slate-700 bg-white" />
           {isAdmin && (
             <select value={selectedConsultant || ''} onChange={(e) => setSelectedConsultant(e.target.value)}
@@ -424,9 +425,65 @@ export default function ConsultantBonus() {
               <div className="bg-white rounded-2xl border border-slate-200 p-5">
                 <p className="text-xs font-medium text-slate-500 mb-2">Total commissions</p>
                 <div className="space-y-1 text-sm text-slate-700">
-                  <div className="flex justify-between"><span>Organic {c.baseRate}</span><span>{fmt(orgComm)}</span></div>
-                  <div className="flex justify-between"><span>Affiliate {c.affiliateRate}</span><span>{fmt(affComm)}</span></div>
-                  <div className="flex justify-between pt-1 border-t font-bold text-slate-800"><span>Total</span><span>{fmt(c.totalCommission)}</span></div>
+                  {/* COMMISSION DRILL-DOWN (Joe 9/16): these two lines were plain text, so
+                      there was no way to see which clients made up each total or confirm the
+                      credit was right. Click either to open the client-by-client breakdown. */}
+                  {(() => {
+                    const cbk = c.commissionBreakdown || {};
+                    const rows = commOpen === 'organic' ? (cbk.organic?.clients || [])
+                               : commOpen === 'affiliate' ? (cbk.affiliate?.clients || []) : [];
+                    const openLabel = commOpen === 'organic' ? `Organic ${c.baseRate}` : `Affiliate ${c.affiliateRate}`;
+                    return (
+                      <>
+                        <button type="button" onClick={() => setCommOpen(commOpen === 'organic' ? null : 'organic')}
+                          className={`w-full flex justify-between rounded px-1 py-0.5 text-left hover:bg-slate-50 ${commOpen === 'organic' ? 'bg-slate-50' : ''}`}>
+                          <span className="underline decoration-dotted underline-offset-2">Organic {c.baseRate}</span><span>{fmt(orgComm)}</span>
+                        </button>
+                        <button type="button" onClick={() => setCommOpen(commOpen === 'affiliate' ? null : 'affiliate')}
+                          className={`w-full flex justify-between rounded px-1 py-0.5 text-left hover:bg-slate-50 ${commOpen === 'affiliate' ? 'bg-slate-50' : ''}`}>
+                          <span className="underline decoration-dotted underline-offset-2">Affiliate {c.affiliateRate}</span><span>{fmt(affComm)}</span>
+                        </button>
+                        <div className="flex justify-between pt-1 border-t font-bold text-slate-800"><span>Total</span><span>{fmt(c.totalCommission)}</span></div>
+                        {commOpen && (
+                          <div className="mt-2 border rounded-lg overflow-hidden">
+                            <div className="flex items-center justify-between bg-slate-100 px-2 py-1">
+                              <span className="text-xs font-semibold text-slate-700">{openLabel} &mdash; {rows.length} payment{rows.length === 1 ? '' : 's'}</span>
+                              <button type="button" onClick={() => setCommOpen(null)} className="text-xs text-slate-500 hover:text-slate-800">Close</button>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto">
+                              <table className="w-full text-xs">
+                                <thead className="bg-slate-50 sticky top-0">
+                                  <tr className="text-slate-500">
+                                    <th className="text-left px-2 py-1">Client</th>
+                                    {commOpen === 'affiliate' && <th className="text-left px-2 py-1">Affiliate</th>}
+                                    <th className="text-left px-2 py-1">Date</th>
+                                    <th className="text-right px-2 py-1">Paid</th>
+                                    <th className="text-right px-2 py-1">Rate</th>
+                                    <th className="text-right px-2 py-1">You earn</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map((r, i) => (
+                                    <tr key={i} className="border-t">
+                                      <td className="px-2 py-1 text-slate-800">{r.client || '(no name)'}</td>
+                                      {commOpen === 'affiliate' && <td className="px-2 py-1 text-slate-600">{r.affiliate || '(none)'}</td>}
+                                      <td className="px-2 py-1 text-slate-500">{r.date || ''}</td>
+                                      <td className="px-2 py-1 text-right">{fmt(r.amount)}</td>
+                                      <td className="px-2 py-1 text-right text-slate-500">{r.ratePct}%</td>
+                                      <td className="px-2 py-1 text-right font-medium text-emerald-700">{fmt(r.commission)}</td>
+                                    </tr>
+                                  ))}
+                                  {rows.length === 0 && (
+                                    <tr><td colSpan={commOpen === 'affiliate' ? 6 : 5} className="px-2 py-3 text-center text-slate-400">No payments in this category this month.</td></tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="bg-white rounded-2xl border border-slate-200 p-5">
