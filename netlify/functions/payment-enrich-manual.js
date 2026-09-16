@@ -129,7 +129,11 @@ async function enrichFromDeal(payment, deal, personToAM) {
       orgHasEmail = !!(orgEmail && String(orgEmail).includes('@'));
     }
   }
-  const isAffiliate = isConsultantReferral || orgHasEmail;
+  // LABEL ONLY (Joe 9/8 rule, applied here 9/16 after orgs with no Consultant Referral
+  // label were being paid 21%): an org merely HAVING an email address is not an
+  // affiliate. payment-reaffiliate-sweep.js already enforced label-only; this file
+  // was missed, so it kept re-flagging email-only orgs as affiliate.
+  const isAffiliate = isConsultantReferral;
   await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?id=eq.${payment.id}`, {
     method: 'PATCH',
     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
