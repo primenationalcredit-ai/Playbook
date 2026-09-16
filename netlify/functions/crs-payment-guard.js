@@ -50,17 +50,6 @@ exports.handler = async (event) => {
       return ok(out);
     }
 
-    // AGE GUARD (same ticket): consultant_payments does not hold payment history from
-    // the older years, so an old deal ALWAYS looks short no matter what the client
-    // actually paid. Comparing a current fee against an incomplete payment record
-    // produces a false alarm every time. Only evaluate deals created recently enough
-    // that their full payment history is actually in the table.
-    const PAYMENT_HISTORY_FROM = '2026-01-01';
-    const dealCreated = String(deal.add_time || '').slice(0, 10);
-    if (dealCreated && dealCreated < PAYMENT_HISTORY_FROM) {
-      out.result = 'skipped - deal created ' + dealCreated + ', before complete payment history';
-      return ok(out);
-    }
 
     out.deal = dealId; out.fee = fee;
     if (fee <= 0) { out.result = 'no fee on deal - nothing to compare'; return ok(out); }
