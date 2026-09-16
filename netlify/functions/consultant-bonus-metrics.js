@@ -591,13 +591,44 @@ exports.handler = async (event) => {
 
       // === SALES & COMMISSION (from Zoho) ===
       let totalSales = 0, affiliateSales = 0, organicSales = 0;
+      // COMMISSION BREAKDOWN (Joe 9/16): the two commission totals were summed with
+      // nothing kept underneath, so a consultant could not see WHICH clients made up
+      // their Organic 14% and Affiliate 21% - and could not check they were credited
+      // correctly. Keep the individual rows (client, affiliate org, amount, rate) so
+      // each total can be opened up and verified line by line.
+      const organicList = [];
+      const affiliateList = [];
       let docFeeCount = 0, partialCount = 0, finalCount = 0, paidInFullCount = 0, unknownCount = 0;
       
       for (const p of myPayments) {
         const amt = parseFloat(p.amount) || 0;
         totalSales += amt;
         // Commission rate: is_affiliate_deal = org has "Consultant Referral" label → higher rate
-        if (p.is_affiliate_deal) { affiliateSales += amt; } else { organicSales += amt; }
+        if (p.is_affiliate_deal) {
+          affiliateSales += amt;
+          affiliateList.push({
+            client: p.client_name || null,
+            dealId: p.pipedrive_deal_id || null,
+            affiliate: p.referrer_org || null,
+            amount: amt,
+            ratePct: Math.round(affiliateRate * 100),
+            commission: Math.round(amt * affiliateRate * 100) / 100,
+            type: p.payment_type || null,
+            date: p.payment_date ? String(p.payment_date).slice(0, 10) : null
+          });
+        } else {
+          organicSales += amt;
+          organicList.push({
+            client: p.client_name || null,
+            dealId: p.pipedrive_deal_id || null,
+            affiliate: null,
+            amount: amt,
+            ratePct: Math.round(baseRate * 100),
+            commission: Math.round(amt * baseRate * 100) / 100,
+            type: p.payment_type || null,
+            date: p.payment_date ? String(p.payment_date).slice(0, 10) : null
+          });
+        }
         if (p.payment_type === 'doc_fee') docFeeCount++;
         else if (p.payment_type === 'partial') partialCount++;
         else if (p.payment_type === 'final' || p.payment_type === 'paid_in_full') { finalCount++; const wcF = windowClientMap[p.pipedrive_deal_id || p.client_name]; if (p.payment_type === 'paid_in_full' || !(wcF && wcF.hasPartial)) paidInFullCount++; }
@@ -607,6 +638,9 @@ exports.handler = async (event) => {
       const baseCommission = organicSales * baseRate;
       const affiliateCommission = affiliateSales * affiliateRate;
       const totalCommission = baseCommission + affiliateCommission;
+      const sortByDate = (a, b) => String(b.date || '').localeCompare(String(a.date || ''));
+      organicList.sort(sortByDate);
+      affiliateList.sort(sortByDate);
 
       // === QUALIFIED DOCS (derived from payments) ===
       // Group payments by client (using pipedrive_deal_id as unique identifier, fallback to client_name)
@@ -1310,6 +1344,12 @@ exports.handler = async (event) => {
         baseCommission: Math.round(baseCommission * 100) / 100,
         affiliateCommission: Math.round(affiliateCommission * 100) / 100,
         totalCommission: Math.round(totalCommission * 100) / 100,
+        // Drill-down rows behind each commission total (Joe 9/16) so a consultant can
+        // open Organic 14% / Affiliate 21% and confirm every client is credited right.
+        commissionBreakdown: {
+          organic: { ratePct: Math.round(baseRate * 100), sales: Math.round(organicSales * 100) / 100, clients: organicList },
+          affiliate: { ratePct: Math.round(affiliateRate * 100), sales: Math.round(affiliateSales * 100) / 100, clients: affiliateList }
+        },
         paymentCount: myPayments.length,
         docFeeCount, partialCount, finalCount, paidInFullCount, unknownCount,
         // Qualified docs from payment data
