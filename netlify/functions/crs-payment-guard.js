@@ -1,4 +1,4 @@
-﻿// crs-payment-guard.js - alert-only tripwire (Joe 8/25)
+// crs-payment-guard.js - alert-only tripwire (Joe 8/25)
 // When a deal ENTERS CRS (512) or Additional CRS (608), check payments vs fee.
 // Short = email management + note on deal. Never deletes/moves/changes anything.
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
@@ -37,12 +37,30 @@ exports.handler = async (event) => {
     if (!deal) return ok(out);
     const fee = parseFloat(deal.value) || 0;
 
+    // PIPELINE GATE RESTORED (Joe 9/16, Kristin Willis 144115 - a 2021 deal, WON in
+    // 2021, sitting in pipeline 70, fired this alert). TARGET_STAGES was declared at
+    // the top of this file but nothing ever read it, so the note trigger fired on ANY
+    // deal that got a "2nd round started automation" note regardless of pipeline. This
+    // guard is only for a current client moving from round 1 into round 2 in CRS /
+    // Additional CRS - nothing else should ever be evaluated.
+    const pipeId = Number((deal.pipeline_id && (deal.pipeline_id.value || deal.pipeline_id)) || 0);
+    const ALLOWED_PIPELINES = [45, 608];
+    if (!ALLOWED_PIPELINES.includes(pipeId)) {
+      out.result = 'skipped - pipeline ' + pipeId + ' is not a CRS pipeline';
+      return ok(out);
+    }
 
-
-
-
-
-
+    // AGE GUARD (same ticket): consultant_payments does not hold payment history from
+    // the older years, so an old deal ALWAYS looks short no matter what the client
+    // actually paid. Comparing a current fee against an incomplete payment record
+    // produces a false alarm every time. Only evaluate deals created recently enough
+    // that their full payment history is actually in the table.
+    const PAYMENT_HISTORY_FROM = '2026-01-01';
+    const dealCreated = String(deal.add_time || '').slice(0, 10);
+    if (dealCreated && dealCreated < PAYMENT_HISTORY_FROM) {
+      out.result = 'skipped - deal created ' + dealCreated + ', before complete payment history';
+      return ok(out);
+    }
 
     out.deal = dealId; out.fee = fee;
     if (fee <= 0) { out.result = 'no fee on deal - nothing to compare'; return ok(out); }
