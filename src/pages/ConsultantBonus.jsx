@@ -455,7 +455,7 @@ export default function ConsultantBonus() {
                                 <thead className="bg-slate-50 sticky top-0">
                                   <tr className="text-slate-500">
                                     <th className="text-left px-2 py-1">Client</th>
-                                    {commOpen === 'affiliate' && <th className="text-left px-2 py-1">Affiliate</th>}
+                                    <th className="text-left px-2 py-1">{commOpen === 'affiliate' ? 'Affiliate' : 'Organization'}</th>
                                     <th className="text-left px-2 py-1">Date</th>
                                     <th className="text-right px-2 py-1">Paid</th>
                                     <th className="text-right px-2 py-1">Rate</th>
@@ -466,7 +466,7 @@ export default function ConsultantBonus() {
                                   {rows.map((r, i) => (
                                     <tr key={i} className="border-t">
                                       <td className="px-2 py-1 text-slate-800">{r.client || '(no name)'}</td>
-                                      {commOpen === 'affiliate' && <td className="px-2 py-1 text-slate-600">{r.affiliate || '(none)'}</td>}
+                                      <td className="px-2 py-1 text-slate-600">{r.affiliate || '(none)'}</td>
                                       <td className="px-2 py-1 text-slate-500">{r.date || ''}</td>
                                       <td className="px-2 py-1 text-right">{fmt(r.amount)}</td>
                                       <td className="px-2 py-1 text-right text-slate-500">{r.ratePct}%</td>
@@ -474,7 +474,7 @@ export default function ConsultantBonus() {
                                     </tr>
                                   ))}
                                   {rows.length === 0 && (
-                                    <tr><td colSpan={commOpen === 'affiliate' ? 6 : 5} className="px-2 py-3 text-center text-slate-400">No payments in this category this month.</td></tr>
+                                    <tr><td colSpan={6} className="px-2 py-3 text-center text-slate-400">No payments in this category this month.</td></tr>
                                   )}
                                 </tbody>
                               </table>

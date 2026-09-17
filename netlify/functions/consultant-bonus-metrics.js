@@ -621,7 +621,7 @@ exports.handler = async (event) => {
           organicList.push({
             client: p.client_name || null,
             dealId: p.pipedrive_deal_id || null,
-            affiliate: null,
+            affiliate: p.referrer_org || null, // Astrid 9/16: organic rows carry their org too (google, website, etc) so the list can show an Organization column
             amount: amt,
             ratePct: Math.round(baseRate * 100),
             commission: Math.round(amt * baseRate * 100) / 100,
