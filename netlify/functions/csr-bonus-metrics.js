@@ -138,7 +138,7 @@ const R1_FIELD = '6979c70df67f42c28dfcff39284ae17d564d600f';
 // single page load, sequentially, so the latency stacked. Round 1 Start never changes
 // once it is set, so there is no reason to re-fetch it. Cached in memory for the run
 // and persisted in app_cache between runs; a deal is only ever fetched once.
-const _r1Mem = {};
+const _r1Mem = {}; const _r1Stats = { mem: 0, store: 0, live: 0, liveMs: 0, saveAttempted: false, saveSkipped: null, totalMs: 0 };
 let _r1Store = null;
 let _r1Dirty = false;
 async function loadR1Store() {
@@ -164,9 +164,9 @@ async function pdGetDealR1(dealId) {
   try {
     if (!dealId) return null;
     const key = String(dealId);
-    if (_r1Mem[key] !== undefined) return _r1Mem[key];
+    if (_r1Mem[key] !== undefined) { _r1Stats.mem++; return _r1Mem[key]; }
     const store = await loadR1Store();
-    if (store[key] !== undefined) { _r1Mem[key] = store[key]; return store[key]; }
+    if (store[key] !== undefined) { _r1Stats.store++; _r1Mem[key] = store[key]; return store[key]; }
     const tok = PIPEDRIVE_API_KEY; // FIX 9/17: PIPEDRIVE_API_TOKEN is not set on this site - this returned null on every call since it shipped, so no Pipedrive fetch, no cache write, and the R1 gate never excluded anyone
     if (!tok) return null;
     const res = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/${dealId}?api_token=${tok}`);
