@@ -151,7 +151,7 @@ async function loadR1Store() {
   return _r1Store;
 }
 async function saveR1Store() {
-  if (!_r1Dirty || !_r1Store) return;
+  if (!_r1Dirty) { _r1Stats.saveSkipped = 'notDirty'; return; } if (!_r1Store) { _r1Stats.saveSkipped = 'noStore'; return; } _r1Stats.saveAttempted = true;
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
       method: 'POST',
@@ -172,7 +172,7 @@ async function pdGetDealR1(dealId) {
     const res = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/${dealId}?api_token=${tok}`);
     const j = await res.json().catch(() => null);
     const val = j && j.data ? (j.data[R1_FIELD] || null) : null;
-    _r1Mem[key] = val; store[key] = val; _r1Dirty = true;
+    _r1Mem[key] = val; store[key] = val; _r1Dirty = true; _r1Stats.live++;
     return val;
   } catch (e) { return null; }
 }
@@ -182,7 +182,7 @@ exports.handler = async (event) => {
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json'
   };
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' }; const _tStart = Date.now(); _r1Stats.mem = 0; _r1Stats.store = 0; _r1Stats.live = 0; _r1Stats.liveMs = 0; _r1Stats.saveAttempted = false; _r1Stats.saveSkipped = null;
 
   try {
     const params = event.queryStringParameters || {}; const _r1GateOn = String(params.r1gate || '') === '1'; // R1 gate stays OFF until Joe approves it; ?r1gate=1 previews it
@@ -429,7 +429,7 @@ exports.handler = async (event) => {
       }
       if (effMonth !== month) { tally[rep].outOfMonth++; continue; }
       if (isLateStamp) {
-        const r1Start = await pdGetDealR1(r.deal_id);
+        const _tq = Date.now(); const r1Start = await pdGetDealR1(r.deal_id); _r1Stats.liveMs += (Date.now() - _tq);
         const stampDay = String(r.monitoring_site_set_at || '').slice(0, 10);
         const r1StartedFirst = !!(r1Start && stampDay && String(r1Start).slice(0, 10) <= stampDay);
         if (r1StartedFirst) { tally[rep].lateExcluded++; tally[rep].gatedOut++; if (_r1GateOn) continue; }
@@ -629,7 +629,7 @@ exports.handler = async (event) => {
     const distinctStages = Object.entries(stageSeen).sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
 
     // Persist any Round 1 dates fetched this run so the next load reuses them.
-    await saveR1Store();
+    _r1Stats.totalMs = Date.now() - _tStart; await saveR1Store();
 
     return {
       statusCode: 200,
@@ -642,7 +642,7 @@ exports.handler = async (event) => {
         csrs,
         ownerBasedReports: ownerTally,
         debug: {
-          totalDeals: rows.length,
+          totalDeals: rows.length, r1: _r1Stats,
           movedToQuotedFilter: MOVED_TO_QUOTED_FILTER,
           movedToQuotedCount: movedToQuoted.size,
           usingQuotedFilter: useQuotedFilter,
