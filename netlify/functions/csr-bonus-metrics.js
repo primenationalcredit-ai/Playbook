@@ -66,7 +66,7 @@ function pipelineRank(name) { return PIPELINE_RANK[(name || '').trim().toLowerCa
 const SPOTLIGHT_TOP_CONVERTER = 50;   // highest IDIQ enrollment rate among qualified CSRs
 const SPOTLIGHT_ALL_STAR = 100;       // manual award
 
-async function pdGetDealOwner(dealId) {
+const _ownerMem = new Map(); async function pdGetDealOwner(dealId) { const _ok = String(dealId); if (_ownerMem.has(_ok)) return _ownerMem.get(_ok); const _v = await pdGetDealOwnerRaw(dealId); _ownerMem.set(_ok, _v); return _v; } async function pdGetDealOwnerRaw(dealId) {
   // Returns the Pipedrive deal owner's name (user_id.name), or null. Used to attribute a report
   // that has no Call Center Rep to whoever owns the deal, for tracking only.
   try {
@@ -138,7 +138,7 @@ const R1_FIELD = '6979c70df67f42c28dfcff39284ae17d564d600f';
 // single page load, sequentially, so the latency stacked. Round 1 Start never changes
 // once it is set, so there is no reason to re-fetch it. Cached in memory for the run
 // and persisted in app_cache between runs; a deal is only ever fetched once.
-const _r1Mem = {}; const _r1Stats = { mem: 0, store: 0, live: 0, liveMs: 0, saveAttempted: false, saveSkipped: null, totalMs: 0, ownerCalls: 0, ownerMs: 0, loopRows: 0 };
+const _r1Mem = {}; const _r1Stats = { mem: 0, store: 0, live: 0, liveMs: 0, saveAttempted: false, saveSkipped: null, totalMs: 0, ownerCalls: 0, ownerMs: 0, loopRows: 0, prefetched: 0, prefetchMs: 0 };
 let _r1Store = null;
 let _r1Dirty = false;
 async function loadR1Store() {
@@ -182,7 +182,7 @@ exports.handler = async (event) => {
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json'
   };
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' }; const _tStart = Date.now(); _r1Stats.mem = 0; _r1Stats.store = 0; _r1Stats.live = 0; _r1Stats.liveMs = 0; _r1Stats.saveAttempted = false; _r1Stats.saveSkipped = null; _r1Stats.ownerCalls = 0; _r1Stats.ownerMs = 0; _r1Stats.loopRows = 0;
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' }; const _tStart = Date.now(); _r1Stats.mem = 0; _r1Stats.store = 0; _r1Stats.live = 0; _r1Stats.liveMs = 0; _r1Stats.saveAttempted = false; _r1Stats.saveSkipped = null; _r1Stats.ownerCalls = 0; _r1Stats.ownerMs = 0; _r1Stats.loopRows = 0; _r1Stats.prefetched = 0; _r1Stats.prefetchMs = 0; _ownerMem.clear();
 
   try {
     const params = event.queryStringParameters || {}; const _r1GateOn = String(params.r1gate || '') === '1'; // R1 gate stays OFF until Joe approves it; ?r1gate=1 previews it
@@ -344,7 +344,7 @@ exports.handler = async (event) => {
       return r;
     };
 
-    for (const r of rows) {
+    const _tpf = Date.now(); const _ownerIds = []; for (const _r of rows) { if (!_r.call_center_rep_name && _r.monitoring_site && monthOf(_r) === month && gatePass(_r)) { const _k = String(_r.deal_id); if (!_ownerMem.has(_k) && _ownerIds.indexOf(_k) < 0) _ownerIds.push(_k); } } for (let _i = 0; _i < _ownerIds.length; _i += 8) { await Promise.all(_ownerIds.slice(_i, _i + 8).map(async (_id) => { try { _ownerMem.set(String(_id), await pdGetDealOwnerRaw(_id)); } catch (e) {} })); } _r1Stats.prefetched = _ownerIds.length; _r1Stats.prefetchMs = Date.now() - _tpf; for (const r of rows) {
       const ms = r.monitoring_site;
       if (ms) msSeen[ms] = (msSeen[ms] || 0) + 1;
       const stageKey = `${r.pipeline_name || '(none)'} | ${r.stage_name || '(none)'}`;
