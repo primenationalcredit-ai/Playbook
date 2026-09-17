@@ -167,7 +167,7 @@ async function pdGetDealR1(dealId) {
     if (_r1Mem[key] !== undefined) return _r1Mem[key];
     const store = await loadR1Store();
     if (store[key] !== undefined) { _r1Mem[key] = store[key]; return store[key]; }
-    const tok = process.env.PIPEDRIVE_API_TOKEN;
+    const tok = PIPEDRIVE_API_KEY; // FIX 9/17: PIPEDRIVE_API_TOKEN is not set on this site - this returned null on every call since it shipped, so no Pipedrive fetch, no cache write, and the R1 gate never excluded anyone
     if (!tok) return null;
     const res = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/${dealId}?api_token=${tok}`);
     const j = await res.json().catch(() => null);
@@ -185,7 +185,7 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
 
   try {
-    const params = event.queryStringParameters || {};
+    const params = event.queryStringParameters || {}; const _r1GateOn = String(params.r1gate || '') === '1'; // R1 gate stays OFF until Joe approves it; ?r1gate=1 previews it
     const now = new Date();
     const month = params.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     // "Today" in US Central time (business timezone), so the daily count matches the team's day.
@@ -432,7 +432,7 @@ exports.handler = async (event) => {
         const r1Start = await pdGetDealR1(r.deal_id);
         const stampDay = String(r.monitoring_site_set_at || '').slice(0, 10);
         const r1StartedFirst = !!(r1Start && stampDay && String(r1Start).slice(0, 10) <= stampDay);
-        if (r1StartedFirst) { tally[rep].lateExcluded++; tally[rep].gatedOut++; continue; }
+        if (r1StartedFirst) { tally[rep].lateExcluded++; tally[rep].gatedOut++; if (_r1GateOn) continue; }
         tally[rep].lateCredited++;
       }
 
