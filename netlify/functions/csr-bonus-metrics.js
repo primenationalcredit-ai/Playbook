@@ -138,7 +138,7 @@ const R1_FIELD = '6979c70df67f42c28dfcff39284ae17d564d600f';
 // single page load, sequentially, so the latency stacked. Round 1 Start never changes
 // once it is set, so there is no reason to re-fetch it. Cached in memory for the run
 // and persisted in app_cache between runs; a deal is only ever fetched once.
-const _r1Mem = {}; const _r1Stats = { mem: 0, store: 0, live: 0, liveMs: 0, saveAttempted: false, saveSkipped: null, totalMs: 0 };
+const _r1Mem = {}; const _r1Stats = { mem: 0, store: 0, live: 0, liveMs: 0, saveAttempted: false, saveSkipped: null, totalMs: 0, ownerCalls: 0, ownerMs: 0, loopRows: 0 };
 let _r1Store = null;
 let _r1Dirty = false;
 async function loadR1Store() {
@@ -182,7 +182,7 @@ exports.handler = async (event) => {
     'Access-Control-Allow-Headers': 'Content-Type',
     'Content-Type': 'application/json'
   };
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' }; const _tStart = Date.now(); _r1Stats.mem = 0; _r1Stats.store = 0; _r1Stats.live = 0; _r1Stats.liveMs = 0; _r1Stats.saveAttempted = false; _r1Stats.saveSkipped = null;
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' }; const _tStart = Date.now(); _r1Stats.mem = 0; _r1Stats.store = 0; _r1Stats.live = 0; _r1Stats.liveMs = 0; _r1Stats.saveAttempted = false; _r1Stats.saveSkipped = null; _r1Stats.ownerCalls = 0; _r1Stats.ownerMs = 0; _r1Stats.loopRows = 0;
 
   try {
     const params = event.queryStringParameters || {}; const _r1GateOn = String(params.r1gate || '') === '1'; // R1 gate stays OFF until Joe approves it; ?r1gate=1 previews it
@@ -387,7 +387,7 @@ exports.handler = async (event) => {
       // gate-passing, sited reports so we do not fan out Pipedrive lookups over the whole history.
       if (!rep || !tally[rep]) {
         if (ms && monthOf(r) === month && gatePass(r)) {
-          const ownerRaw = await pdGetDealOwner(r.deal_id);
+          const _to = Date.now(); const ownerRaw = await pdGetDealOwner(r.deal_id); _r1Stats.ownerMs += (Date.now() - _to); _r1Stats.ownerCalls++;
           const ownerName = mapOwnerToEmployee(ownerRaw);
           if (ownerName) {
             if (!ownerTally[ownerName]) ownerTally[ownerName] = { idiq: 0, smart: 0, other: 0, total: 0, reportList: [], ownerBased: true };
