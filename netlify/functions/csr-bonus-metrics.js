@@ -133,13 +133,47 @@ function classify(ms) {
 // a monitoring site set while the deal already sat in SOLD / C.R.S. counts ONLY
 // if Round 1 had not started by the stamp date (report pulled before service began).
 const R1_FIELD = '6979c70df67f42c28dfcff39284ae17d564d600f';
+// R1 CACHE (Joe 9/16, CSR Bonus page loading slow - measured 6.9s vs under 1s for
+// every other page): this made a LIVE Pipedrive call per late-stamped deal on every
+// single page load, sequentially, so the latency stacked. Round 1 Start never changes
+// once it is set, so there is no reason to re-fetch it. Cached in memory for the run
+// and persisted in app_cache between runs; a deal is only ever fetched once.
+const _r1Mem = {};
+let _r1Store = null;
+let _r1Dirty = false;
+async function loadR1Store() {
+  if (_r1Store) return _r1Store;
+  _r1Store = {};
+  try {
+    const rows = await supaGet('app_cache', 'cache_key=eq.csr_r1_dates&select=cache_value');
+    if (rows && rows[0] && rows[0].cache_value) _r1Store = JSON.parse(rows[0].cache_value) || {};
+  } catch (e) { _r1Store = {}; }
+  return _r1Store;
+}
+async function saveR1Store() {
+  if (!_r1Dirty || !_r1Store) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ cache_key: 'csr_r1_dates', cache_value: JSON.stringify(_r1Store), updated_at: new Date().toISOString() })
+    });
+  } catch (e) { /* cache write failure must never break the page */ }
+}
 async function pdGetDealR1(dealId) {
   try {
+    if (!dealId) return null;
+    const key = String(dealId);
+    if (_r1Mem[key] !== undefined) return _r1Mem[key];
+    const store = await loadR1Store();
+    if (store[key] !== undefined) { _r1Mem[key] = store[key]; return store[key]; }
     const tok = process.env.PIPEDRIVE_API_TOKEN;
-    if (!tok || !dealId) return null;
+    if (!tok) return null;
     const res = await fetch(`https://asapcreditrepairusa.pipedrive.com/api/v1/deals/${dealId}?api_token=${tok}`);
     const j = await res.json().catch(() => null);
-    return j && j.data ? (j.data[R1_FIELD] || null) : null;
+    const val = j && j.data ? (j.data[R1_FIELD] || null) : null;
+    _r1Mem[key] = val; store[key] = val; _r1Dirty = true;
+    return val;
   } catch (e) { return null; }
 }
 exports.handler = async (event) => {
@@ -568,6 +602,9 @@ exports.handler = async (event) => {
     // Sort debug maps into arrays (desc by count)
     const distinctMonitoringSites = Object.entries(msSeen).sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
     const distinctStages = Object.entries(stageSeen).sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, count }));
+
+    // Persist any Round 1 dates fetched this run so the next load reuses them.
+    await saveR1Store();
 
     return {
       statusCode: 200,
