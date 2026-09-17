@@ -264,7 +264,32 @@ exports.handler = async (event) => {
 
     // Reports-to-Quoted: deals that moved to Quoted 2.0 this month (Pipedrive filter). Falls back to current pipeline if unavailable.
     let movedToQuoted = new Set();
-    try { movedToQuoted = await fetchFilterDealIds(MOVED_TO_QUOTED_FILTER); } catch (e) {}
+    // FILTER CACHE (Joe 9/16, CSR Bonus speed): fetchFilterDealIds pages a Pipedrive
+    // FILTER sequentially, up to 20 pages of 500, and Pipedrive filters are slow
+    // server-side - this was seconds of the page load. The answer is identical for
+    // every viewer and only used for the current month, so a short cache is safe.
+    try {
+      const FILTER_TTL_MS = 10 * 60000;
+      let cachedIds = null;
+      try {
+        const fRows = await supaGet('app_cache', 'cache_key=eq.csr_moved_to_quoted&select=cache_value,updated_at');
+        if (fRows && fRows[0] && fRows[0].updated_at && (Date.now() - new Date(fRows[0].updated_at).getTime()) < FILTER_TTL_MS) {
+          cachedIds = JSON.parse(fRows[0].cache_value || '[]');
+        }
+      } catch (e) { /* fall through to a live fetch */ }
+      if (Array.isArray(cachedIds)) {
+        movedToQuoted = new Set(cachedIds);
+      } else {
+        movedToQuoted = await fetchFilterDealIds(MOVED_TO_QUOTED_FILTER);
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, {
+            method: 'POST',
+            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify({ cache_key: 'csr_moved_to_quoted', cache_value: JSON.stringify([...movedToQuoted]), updated_at: new Date().toISOString() })
+          });
+        } catch (e) { /* cache write failure must never break the page */ }
+      }
+    } catch (e) {}
     const useQuotedFilter = viewingCurrentMonth && movedToQuoted.size > 0; // FIX (Joe 9/10, Araceli's missing Conversion Bonus): the Pipedrive filter behind movedToQuoted is scoped to Pipedrive's OWN 'this month', with zero awareness of which month THIS function is being asked about. Checking any past month against it was comparing that month's real deals against essentially unrelated current-month deal IDs, silently collapsing the reports-to-quote rate toward zero for every CSR on every past month. Now only trusted for the current month; past months correctly fall back to the rank-based check that was already implemented but never actually reached.
 
     // Per-CSR tallies for the requested month
