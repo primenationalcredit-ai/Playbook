@@ -172,3 +172,8 @@
 # reactivation kicker. Built here so the bonus page only ever reads the cache.
 [functions."org-owner-map-refresh"]
   schedule = "20 * * * *"
+
+# Reverse sweep walks deals one at a time against Pipedrive; the default 10s
+# ceiling kills it partway. Manual/keyed only, no schedule.
+[functions."monitoring-site-reverse-sweep"]
+  timeout = 26
