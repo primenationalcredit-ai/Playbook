@@ -177,3 +177,14 @@
 # ceiling kills it partway. Manual/keyed only, no schedule.
 [functions."monitoring-site-reverse-sweep"]
   timeout = 26
+
+# CS DEALS CATCH-UP (Joe 9/18, Floyd Gordon 270982). cs-deals-webhook is
+# fire-and-forget: Pipedrive announces a deal change once, and if the database
+# is slow at that moment the change is lost forever. This re-checks recently
+# updated deals every 30 minutes and repairs anything that cost a CSR credit.
+[functions."cs-deals-catchup"]
+  schedule = "*/30 * * * *"
+  timeout = 26
+
+[functions."cs-deals-catchup-manual"]
+  timeout = 26
