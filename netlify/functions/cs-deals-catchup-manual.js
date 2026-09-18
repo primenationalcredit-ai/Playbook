@@ -187,9 +187,10 @@ async function runCatchup(opts) {
     await fetch(SUPABASE_URL + '/rest/v1/automation_runs', {
       method: 'POST', headers: Object.assign({}, SB, { Prefer: 'return=minimal' }),
       body: JSON.stringify({
+        automation_id: 'cs-deals-catchup',
         ran_at: new Date().toISOString(),
-        subject: 'cs-deals-catchup',
-        status: out.failed.length ? 'partial' : 'ok',
+        subject: 'CS deals catch-up: repaired ' + out.repaired + ' of ' + out.checked + ' checked',
+        status: out.failed.length ? 'partial' : 'success',
         detail: 'checked ' + out.checked + ', repaired ' + out.repaired +
           ' (missing ' + out.missing_row + ', lost_site ' + out.lost_site +
           ', no_rep ' + out.no_rep + ', mismatch ' + out.site_mismatch +
@@ -197,7 +198,7 @@ async function runCatchup(opts) {
           (dryRun ? ' [DRY RUN]' : '')
       })
     });
-  } catch (e) {}
+  } catch (e) { console.error('[cs-deals-catchup] run log failed:', e.message); }
 
   return out;
 }
