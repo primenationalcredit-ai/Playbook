@@ -188,3 +188,7 @@
 
 [functions."cs-deals-catchup-manual"]
   timeout = 26
+
+# Keyed on-demand twin of the daily review check (scheduled functions reject direct calls).
+[functions."review-reconcile-manual"]
+  timeout = 26
