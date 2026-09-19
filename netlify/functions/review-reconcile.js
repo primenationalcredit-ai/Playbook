@@ -1,243 +1,26 @@
-// review-reconcile.js
-// Flags incoming_reviews that have dropped off Google ("delisted"). Google filters
-// some reviews after they post (new accounts, similar wording, spam model), which
-// removes them from the public page but not from our table. This re-checks the live
-// reviews on each location's Google listing via Outscraper and flags any of our
-// PENDING/ASSIGNED reviews that are no longer there.
+// netlify/functions/review-reconcile.js
 //
-// Cost control (Outscraper bills per review at ~$3/1000):
-//   - Only locations that actually have pending/assigned reviews are checked. Most
-//     days most locations have none, so they cost nothing.
-//   - Only the newest REVIEW_CAP reviews per location are pulled.
-//   - One location per invocation, resumable, so it never times out and never loops.
-//   - A review is judged ONLY if it falls within the date range we actually fetched,
-//     so an older review beyond the fetch window is never falsely flagged.
-//   - Matching is by Google review id first, with a reviewer-name + rating + text
-//     fallback, so a difference in id format between Zapier and Outscraper can't
-//     cause a live review to look missing.
-//
-// Manual:  /.netlify/functions/review-reconcile           (one location per call; loop until done=true)
-//          /.netlify/functions/review-reconcile?reset=1   (restart the pass from the first location)
-//          /.netlify/functions/review-reconcile?location=ASAP%20Credit%20Repair%20Houston  (single location)
+// Daily schedule for the review check. The logic lives in review-reconcile-manual.js
+// (see its header for why). Calls it one location at a time, resuming where the last
+// run stopped, until the pass is done or ~20 seconds are used.
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://kkcbpqbcpzcarxhknzza.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
-
-const REVIEW_CAP = parseInt(process.env.REVIEW_RECONCILE_CAP || '25', 10); // newest reviews pulled per location
-const PROGRESS_KEY = 'review_reconcile_progress';
-const SCHEDULED_BUDGET_MS = 24000; // when run on the daily schedule, loop locations until ~24s elapsed
-
-const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
-const supa = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-
-const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const snippet = (s) => norm(s).slice(0, 60);
-
-async function readCache(key) {
-  try { const r = await fetch(`${SUPABASE_URL}/rest/v1/app_cache?cache_key=eq.${key}&select=cache_value`, { headers: supa }); if (r.ok) { const rows = await r.json(); if (rows[0]) return JSON.parse(rows[0].cache_value); } } catch (e) {}
-  return null;
-}
-async function writeCache(key, data) {
-  await fetch(`${SUPABASE_URL}/rest/v1/app_cache`, { method: 'POST', headers: { ...supa, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ cache_key: key, cache_value: JSON.stringify(data), updated_at: new Date().toISOString() }) });
-}
-
-// Pull the newest reviews for a location from Outscraper. Returns { live, oldest, capped }
-// where live is an array of { id, author, rating, text, date }, oldest is the oldest
-// fetched review date (ms) or null, and capped is true if we likely didn't reach the
-// bottom of the location's reviews (so older stored reviews must not be judged).
-async function fetchLiveReviews(locationName) {
-  if (!OUTSCRAPER_API_KEY) throw new Error('OUTSCRAPER_API_KEY not set');
-  const url = `https://api.outscraper.cloud/maps/reviews-v3?query=${encodeURIComponent(locationName)}&reviewsLimit=${REVIEW_CAP}&sort=newest&language=en&async=false`;
-  const res = await fetch(url, { headers: { 'X-API-KEY': OUTSCRAPER_API_KEY } });
-  if (!res.ok) throw new Error(`Outscraper ${res.status}`);
-  const json = await res.json().catch(() => ({}));
-
-  // Response shapes vary; find the reviews array defensively.
-  let reviewsArr = [];
-  const root = json?.data;
-  if (Array.isArray(root) && root.length) {
-    if (Array.isArray(root[0]?.reviews_data)) reviewsArr = root[0].reviews_data;
-    else if (root[0]?.review_id || root[0]?.review_text || root[0]?.author_title) reviewsArr = root;
-  } else if (Array.isArray(json?.reviews_data)) {
-    reviewsArr = json.reviews_data;
+exports.handler = async () => {
+  const base = process.env.URL || 'https://cute-cat-d9631c.netlify.app';
+  const started = Date.now();
+  const results = [];
+  while (Date.now() - started < 20000) {
+    try {
+      const r = await fetch(base + '/.netlify/functions/review-reconcile-manual', {
+        headers: { 'X-API-Key': process.env.INTERNAL_API_KEY || '' }
+      });
+      const j = await r.json().catch(() => ({}));
+      results.push({ status: r.status, location: j.lastLocation || j.location || null, flagged: j.flagged, cleared: j.cleared, edited: j.edited, done: !!j.done, error: j.error || null });
+      if (!r.ok || j.done || j.error) break;
+    } catch (e) {
+      results.push({ error: e.message });
+      break;
+    }
   }
-
-  const live = reviewsArr.map(r => {
-    const id = r.review_id || r.reviewId || r.id || null;
-    const author = r.author_title || r.author_name || r.name || r.reviewer_name || '';
-    const rating = parseInt(r.review_rating ?? r.rating ?? r.stars) || null;
-    const text = r.review_text || r.text || r.review || '';
-    const dRaw = r.review_datetime_utc || r.review_date || r.date || r.datetime || null;
-    const d = dRaw ? new Date(dRaw) : null;
-    return { id: id ? String(id) : null, author, rating, text, date: (d && !isNaN(d)) ? d.getTime() : null };
-  });
-
-  const dates = live.map(l => l.date).filter(Boolean);
-  const oldest = dates.length ? Math.min(...dates) : null;
-  // If we got at least REVIEW_CAP reviews, assume there are older ones we didn't see.
-  const capped = reviewsArr.length >= REVIEW_CAP;
-  return { live, oldest, capped };
-}
-
-function bonusMonthStart() {
-  const n = new Date();
-  return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)).toISOString().slice(0, 10);
-}
-
-// Returns the live Google review that matches our stored one, or null.
-// RATING IS NOT A MATCH KEY (Joe 9/19, CJ ticket, Ruth Hernandez 270114): a client
-// who edits a review from 4 to 5 stars is the same review, not a new one. The old
-// matcher rejected any rating difference, so every edited review was marked
-// "delisted" and the CSR lost the credit - and the restore branch used the same
-// matcher, so it could never come back. Match on id, then name + text, then name
-// alone when the person has exactly one review on this listing.
-function findLive(stored, live) {
-  if (stored.google_review_id) {
-    const sid = String(stored.google_review_id);
-    const byId = live.find(l => l.id && (l.id === sid || l.id.endsWith(sid) || sid.endsWith(l.id)));
-    if (byId) return byId;
-  }
-  const sa = norm(stored.reviewer_name);
-  if (!sa) return null;
-  const sameName = live.filter(l => norm(l.author) === sa);
-  if (!sameName.length) return null;
-  const ss = snippet(stored.review_text);
-  if (!ss) return sameName[0];
-  const byText = sameName.find(l => {
-    const ls = snippet(l.text);
-    if (!ls) return false;
-    return ls === ss || ls.startsWith(ss) || ss.startsWith(ls);
-  });
-  if (byText) return byText;
-  if (sameName.length === 1) return sameName[0];
-  return null;
-}
-
-exports.handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
-  try {
-    const params = event.queryStringParameters || {};
-
-    // Build the worklist: locations that currently have pending/assigned reviews.
-    // BONUS INTEGRITY (Joe 8/27): completed reviews from the CURRENT bonus month are
-    // re-checked too - Google deleting an already-credited review must pull it out of
-    // this month's bonus counts (both bonus calculators filter delisted_at=is.null).
-    // Completed reviews from closed/paid months stay untouched: clawbacks are a human
-    // policy call, never silent code.
-    const actRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/incoming_reviews?or=(status.in.(pending,assigned),and(status.eq.completed,review_date.gte.${bonusMonthStart()}))&select=location_name`,
-      { headers: supa }
-    );
-    const actRows = actRes.ok ? await actRes.json() : [];
-    const allLocations = Array.from(new Set(actRows.map(r => r.location_name).filter(Boolean))).sort();
-
-    if (allLocations.length === 0) {
-      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, message: 'No pending/assigned reviews to reconcile.' }) };
-    }
-
-    // Single-location mode
-    if (params.location) {
-      const result = await reconcileLocation(params.location);
-      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, ...result }) };
-    }
-
-    // Scheduled / full-run mode: process EVERY location in one invocation, bounded
-    // by a time budget. Netlify invokes this daily with no query params, so the
-    // absence of the manual button's 'step' param marks a scheduled/full run.
-    const isScheduled = !params.step;
-    if (isScheduled) {
-      const started = Date.now();
-      let flagged = 0, cleared = 0, reviewsPulled = 0, locationsDone = 0;
-      const queue = [...allLocations];
-      while (queue.length && (Date.now() - started) < SCHEDULED_BUDGET_MS) {
-        const loc = queue.shift();
-        const r = await reconcileLocation(loc);
-        flagged += r.flagged || 0; cleared += r.cleared || 0; reviewsPulled += r.reviewsPulled || 0; locationsDone++;
-      }
-      await writeCache(PROGRESS_KEY, { startedFor: allLocations.join('|'), queue, doneCount: locationsDone, totalFlagged: flagged, totalCleared: cleared, reviewsPulled, finishedAt: new Date().toISOString(), partial: queue.length > 0 });
-      return { statusCode: 200, headers, body: JSON.stringify({ done: queue.length === 0, remaining: queue.length, totals: { flagged, cleared, reviewsPulled, locations: locationsDone } }) };
-    }
-
-    // Resumable pass across all locations (manual button: one location per call)
-    let prog = params.reset ? null : await readCache(PROGRESS_KEY);
-    if (!prog || !Array.isArray(prog.queue) || prog.queue.length === 0 || prog.startedFor !== allLocations.join('|')) {
-      prog = { startedFor: allLocations.join('|'), queue: [...allLocations], doneCount: 0, totalFlagged: 0, totalCleared: 0, reviewsPulled: 0 };
-    }
-
-    const loc = prog.queue.shift();
-    const result = await reconcileLocation(loc);
-    prog.doneCount += 1;
-    prog.totalFlagged += result.flagged;
-    prog.totalCleared += result.cleared;
-    prog.reviewsPulled += result.reviewsPulled;
-
-    const remaining = prog.queue.length;
-    if (remaining === 0) {
-      await writeCache(PROGRESS_KEY, { ...prog, finishedAt: new Date().toISOString() });
-      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, lastLocation: loc, ...result, totals: { flagged: prog.totalFlagged, cleared: prog.totalCleared, reviewsPulled: prog.reviewsPulled, locations: prog.doneCount } }) };
-    }
-    await writeCache(PROGRESS_KEY, prog);
-    return { statusCode: 200, headers, body: JSON.stringify({ done: false, remaining, lastLocation: loc, ...result, nextUrl: '/.netlify/functions/review-reconcile' }) };
-  } catch (error) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: error.message }) };
-  }
+  console.log('[review-reconcile] ' + JSON.stringify(results).slice(0, 800));
+  return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runs: results }) };
 };
-
-async function reconcileLocation(locationName) {
-  // Our pending/assigned reviews for this location.
-  const rRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/incoming_reviews?or=(status.in.(pending,assigned),and(status.eq.completed,review_date.gte.${bonusMonthStart()}))&location_name=eq.${encodeURIComponent(locationName)}&select=id,google_review_id,reviewer_name,rating,review_text,review_date,delisted_at,status,assigned_to,notes`,
-    { headers: supa }
-  );
-  const stored = rRes.ok ? await rRes.json() : [];
-  if (stored.length === 0) return { location: locationName, flagged: 0, cleared: 0, reviewsPulled: 0, checked: 0, note: 'no pending/assigned' };
-
-  let live, oldest, capped, reviewsPulled = 0;
-  try {
-    const r = await fetchLiveReviews(locationName);
-    live = r.live; oldest = r.oldest; capped = r.capped; reviewsPulled = live.length;
-  } catch (e) {
-    return { location: locationName, flagged: 0, cleared: 0, reviewsPulled: 0, checked: 0, error: e.message };
-  }
-
-  let flagged = 0, cleared = 0, checked = 0, edited = 0;
-  for (const s of stored) {
-    // Only judge reviews within the window we actually fetched. If the fetch was
-    // capped (we didn't reach the bottom) and this review is older than the oldest
-    // fetched review, we can't know if it's live, so we skip it.
-    const sDate = s.review_date ? new Date(s.review_date).getTime() : null;
-    if (capped && oldest != null && sDate != null && sDate < oldest) continue;
-    checked++;
-
-    const hit = findLive(s, live);
-    const liveNow = !!hit;
-    if (!liveNow && !s.delisted_at) {
-      await patch(s.id, { delisted_at: new Date().toISOString(), notes: appendNote(s.notes, `Delisted ${new Date().toISOString().slice(0, 10)}${s.status === 'completed' ? ' [WAS CREDITED' + (s.assigned_to ? ' to ' + s.assigned_to : '') + ' - removed from this month bonus counts]' : ''} — no longer on Google.`) });
-      flagged++;
-    } else if (liveNow) {
-      // Still on Google. Clear a wrong "delisted" flag, and if the client edited the
-      // review, bring our copy's rating and text up to what Google shows now.
-      const body = {};
-      if (s.delisted_at) { body.delisted_at = null; cleared++; }
-      if (hit.rating && s.rating !== hit.rating) {
-        body.rating = hit.rating;
-        if (hit.text) body.review_text = hit.text;
-        body.notes = appendNote(s.notes, 'Edited on Google ' + new Date().toISOString().slice(0, 10) + ': rating ' + (s.rating || '?') + ' to ' + hit.rating + '.');
-        edited++;
-      }
-      if (Object.keys(body).length) { body.updated_at = new Date().toISOString(); await patch(s.id, body); }
-    }
-  }
-  return { location: locationName, flagged, cleared, edited, reviewsPulled, checked, capped };
-}
-
-function appendNote(existing, line) {
-  const e = (existing || '').trim();
-  return e ? `${e}\n${line}` : line;
-}
-async function patch(id, body) {
-  await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?id=eq.${id}`, {
-    method: 'PATCH', headers: { ...supa, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(body),
-  });
-}

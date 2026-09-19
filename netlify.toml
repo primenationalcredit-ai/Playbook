@@ -96,6 +96,7 @@
 # has pending/assigned reviews, within a time budget.
 [functions."review-reconcile"]
   schedule = "0 14 * * *"
+  timeout = 26
 
 [[redirects]]
   from = "/*"
