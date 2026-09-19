@@ -85,22 +85,33 @@ function bonusMonthStart() {
   return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)).toISOString().slice(0, 10);
 }
 
-function isLive(stored, live) {
-  // 1) direct google review id match
+// Returns the live Google review that matches our stored one, or null.
+// RATING IS NOT A MATCH KEY (Joe 9/19, CJ ticket, Ruth Hernandez 270114): a client
+// who edits a review from 4 to 5 stars is the same review, not a new one. The old
+// matcher rejected any rating difference, so every edited review was marked
+// "delisted" and the CSR lost the credit - and the restore branch used the same
+// matcher, so it could never come back. Match on id, then name + text, then name
+// alone when the person has exactly one review on this listing.
+function findLive(stored, live) {
   if (stored.google_review_id) {
     const sid = String(stored.google_review_id);
-    if (live.some(l => l.id && (l.id === sid || l.id.endsWith(sid) || sid.endsWith(l.id)))) return true;
+    const byId = live.find(l => l.id && (l.id === sid || l.id.endsWith(sid) || sid.endsWith(l.id)));
+    if (byId) return byId;
   }
-  // 2) fallback: same reviewer + rating + matching text snippet
   const sa = norm(stored.reviewer_name);
+  if (!sa) return null;
+  const sameName = live.filter(l => norm(l.author) === sa);
+  if (!sameName.length) return null;
   const ss = snippet(stored.review_text);
-  return live.some(l => {
-    if (norm(l.author) !== sa) return false;
-    if (stored.rating && l.rating && stored.rating !== l.rating) return false;
+  if (!ss) return sameName[0];
+  const byText = sameName.find(l => {
     const ls = snippet(l.text);
-    if (!ss || !ls) return true; // name (+rating) match with no text to compare
+    if (!ls) return false;
     return ls === ss || ls.startsWith(ss) || ss.startsWith(ls);
   });
+  if (byText) return byText;
+  if (sameName.length === 1) return sameName[0];
+  return null;
 }
 
 exports.handler = async (event) => {
@@ -190,7 +201,7 @@ async function reconcileLocation(locationName) {
     return { location: locationName, flagged: 0, cleared: 0, reviewsPulled: 0, checked: 0, error: e.message };
   }
 
-  let flagged = 0, cleared = 0, checked = 0;
+  let flagged = 0, cleared = 0, checked = 0, edited = 0;
   for (const s of stored) {
     // Only judge reviews within the window we actually fetched. If the fetch was
     // capped (we didn't reach the bottom) and this review is older than the oldest
@@ -199,17 +210,26 @@ async function reconcileLocation(locationName) {
     if (capped && oldest != null && sDate != null && sDate < oldest) continue;
     checked++;
 
-    const liveNow = isLive(s, live);
+    const hit = findLive(s, live);
+    const liveNow = !!hit;
     if (!liveNow && !s.delisted_at) {
       await patch(s.id, { delisted_at: new Date().toISOString(), notes: appendNote(s.notes, `Delisted ${new Date().toISOString().slice(0, 10)}${s.status === 'completed' ? ' [WAS CREDITED' + (s.assigned_to ? ' to ' + s.assigned_to : '') + ' - removed from this month bonus counts]' : ''} — no longer on Google.`) });
       flagged++;
-    } else if (liveNow && s.delisted_at) {
-      // Reappeared on Google — clear the flag.
-      await patch(s.id, { delisted_at: null });
-      cleared++;
+    } else if (liveNow) {
+      // Still on Google. Clear a wrong "delisted" flag, and if the client edited the
+      // review, bring our copy's rating and text up to what Google shows now.
+      const body = {};
+      if (s.delisted_at) { body.delisted_at = null; cleared++; }
+      if (hit.rating && s.rating !== hit.rating) {
+        body.rating = hit.rating;
+        if (hit.text) body.review_text = hit.text;
+        body.notes = appendNote(s.notes, 'Edited on Google ' + new Date().toISOString().slice(0, 10) + ': rating ' + (s.rating || '?') + ' to ' + hit.rating + '.');
+        edited++;
+      }
+      if (Object.keys(body).length) { body.updated_at = new Date().toISOString(); await patch(s.id, body); }
     }
   }
-  return { location: locationName, flagged, cleared, reviewsPulled, checked, capped };
+  return { location: locationName, flagged, cleared, edited, reviewsPulled, checked, capped };
 }
 
 function appendNote(existing, line) {
