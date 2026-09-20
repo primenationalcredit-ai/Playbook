@@ -80,7 +80,7 @@ async function runCatchup(opts) {
 
   const out = {
     ok: true, dry_run: dryRun, checked: 0,
-    missing_row: 0, lost_site: 0, no_rep: 0, site_mismatch: 0, stale: 0,
+    missing_row: 0, lost_site: 0, no_rep: 0, site_mismatch: 0, stale: 0, no_date: 0, dated: 0,
     repaired: 0, repairs: [], failed: [], note: null, ms: 0
   };
 
@@ -92,7 +92,40 @@ async function runCatchup(opts) {
   if (!Object.keys(siteMap).length) {
     out.ok = false;
     out.note = 'monitoring-site field map unavailable - aborted rather than risk wrong reads';
+  // REPORT DATE = LATEST MOVE INTO READY TO QUOTE (Joe 9/20). A deal with a monitoring site
+  // but no report date gets its date from Pipedrive's own stage history, so a lost webhook
+  // message cannot leave a report undated. Only a move in the CURRENT month is stamped:
+  // closed months never change. At most 15 lookups per run.
+  const monthNow = new Date().toISOString().slice(0, 7);
+  let dateLookups = 0;
+  for (const d of dateWork) {
+    if (dateLookups >= 15 || Date.now() - started > budgetMs) break;
+    dateLookups++;
+    try {
+      const fr = await fetch(baseUrl + '/deals/' + d.id + '/flow?api_token=' + PIPEDRIVE_API_KEY + '&limit=500');
+      const fj = await fr.json().catch(function () { return {}; });
+      let last = null;
+      for (const ev of (fj.data || [])) {
+        if (ev.object === 'dealChange' && ev.data && ev.data.field_key === 'stage_id' && String(ev.data.new_value) === '490') {
+          const t = String(ev.data.log_time || '');
+          if (!last || t > last) last = t;
+        }
+      }
+      if (!last) continue;
+      const iso = new Date(last.replace(' ', 'T') + 'Z').toISOString();
+      if (iso.slice(0, 7) !== monthNow) continue;
+      if (dryRun) { out.dated++; out.repairs.push({ deal_id: d.id, title: d.title, why: 'no_date', would_set: iso }); continue; }
+      const pr = await fetch(SUPABASE_URL + '/rest/v1/cs_deals?deal_id=eq.' + d.id + '&monitoring_site_set_at=is.null', {
+        method: 'PATCH', headers: Object.assign({}, SB, { Prefer: 'return=minimal' }),
+        body: JSON.stringify({ monitoring_site_set_at: iso, monitoring_site_set_pipeline: 'Quoted 2.0', monitoring_site_set_stage: 'Ready to Quote' })
+      });
+      if (pr.ok) { out.dated++; out.repairs.push({ deal_id: d.id, title: d.title, why: 'no_date', set: iso }); }
+      else out.failed.push({ deal_id: d.id, why: 'no_date', error: pr.status });
+    } catch (e) { out.failed.push({ deal_id: d.id, why: 'no_date', error: e.message }); }
+  }
+
     out.ms = Date.now() - started;
+  const dateWork = [];
     return out;
   }
 
@@ -105,6 +138,7 @@ async function runCatchup(opts) {
       if (!r.ok) break;
       const j = await r.json();
       if (!j.data || !j.data.length) break;
+    if (pdSite && !row.monitoring_site_set_at) { out.no_date++; dateWork.push(d); continue; }
       for (const d of j.data) deals.push(d);
       const pg = j.additional_data && j.additional_data.pagination;
       if (pg && pg.more_items_in_collection === false) break;
@@ -118,7 +152,7 @@ async function runCatchup(opts) {
     const ids = deals.slice(i, i + 100).map(function (d) { return d.id; }).join(',');
     try {
       const rr = await fetch(SUPABASE_URL + '/rest/v1/cs_deals?deal_id=in.(' + ids +
-        ')&select=deal_id,deal_title,monitoring_site,call_center_rep_name,synced_at&limit=200', { headers: SB });
+        ')&select=deal_id,deal_title,monitoring_site,monitoring_site_set_at,call_center_rep_name,synced_at&limit=200', { headers: SB });
       const rows = await rr.json().catch(function () { return []; });
       for (const row of (Array.isArray(rows) ? rows : [])) rowMap[String(row.deal_id)] = row;
     } catch (e) {}
@@ -194,7 +228,7 @@ async function runCatchup(opts) {
         detail: 'checked ' + out.checked + ', repaired ' + out.repaired +
           ' (missing ' + out.missing_row + ', lost_site ' + out.lost_site +
           ', no_rep ' + out.no_rep + ', mismatch ' + out.site_mismatch +
-          '), stale ' + out.stale + ', failed ' + out.failed.length +
+          '), stale ' + out.stale + ', dated ' + out.dated + ', failed ' + out.failed.length +
           (dryRun ? ' [DRY RUN]' : '')
       })
     });

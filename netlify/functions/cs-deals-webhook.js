@@ -202,25 +202,30 @@ exports.handler = async (event) => {
     let monitoringSiteSetStage = existing && existing.monitoring_site_set_stage ? existing.monitoring_site_set_stage : null;
     if (siteRemoved) { monitoringSiteSetAt = null; monitoringSiteSetPipeline = null; monitoringSiteSetStage = null; }
 
-    // The monitoring-site change IS the trigger. Credit (stamp NOW) when the deal has a monitoring
-    // site, is in an early pipeline (New Leads / Reports / Quoted), and does not already have a
-    // set-date. We do NOT read the `previous` payload (Pipedrive omits custom fields there, which
-    // caused reports to be missed). We never overwrite an existing set-date, so re-touching an already
-    // credited deal keeps its original date (Marcel does not move); and the early-pipeline gate keeps
-    // old SOLD/CRS deals from being stamped when they are edited.
-    const createdThisMonth = String(current.add_time || '').slice(0,7) === new Date().toISOString().slice(0,7);
-    // Path B (the OR-branch of the credit rule): a deal WITH a monitoring site and WITHOUT a
-    // set-date that is in Ready to Quote gets credited now - this is how legacy deals (synced
-    // with the site already filled, so no stamp) earn their report the moment they re-enter
-    // the funnel. The null-stamp guard keeps already-credited deals from ever re-dating.
+    // REPORT DATE RULE (Joe 9/20, Michael Harrison 268612): a report is pulled the moment
+    // the deal moves into Ready to Quote. That move is the ONLY thing that sets
+    // monitoring_site_set_at. Filling in or editing the monitoring site never sets it, and
+    // the deal's creation date is never used. A later move back into Ready to Quote (a
+    // returning client) re-dates the report to that move. The time comes from Pipedrive's
+    // own stage_change_time, so a late or replayed message still records the real moment.
+    const RTQ_STAGE_ID = '490';
     const stageLower = (stageName || '').trim().toLowerCase();
     const inReadyToQuote = /ready\s*to\s*quote/.test(stageLower);
-    const shouldCredit = !!monitoringSite && !monitoringSiteSetAt && (
-      (inCreditPipeline && createdThisMonth) || inReadyToQuote
-    );
+    const curStageId = String(dealData.stage_id || current.stage_id || '');
+    const prevStageId = (previous && previous.stage_id != null) ? String(previous.stage_id)
+      : ((existing && existing.stage_id != null) ? String(existing.stage_id) : null);
+    const inRtqNow = curStageId === RTQ_STAGE_ID || inReadyToQuote;
+    const enteredRtq = inRtqNow && prevStageId !== null && prevStageId !== RTQ_STAGE_ID;
+    const sct = dealData.stage_change_time || current.stage_change_time || null;
+    let rtqMoveTime = new Date().toISOString();
+    if (sct) {
+      const _t = new Date(String(sct).replace(' ', 'T') + (/[zZ]$|[+-]\d\d:?\d\d$/.test(String(sct)) ? '' : 'Z'));
+      if (!isNaN(_t)) rtqMoveTime = _t.toISOString();
+    }
+    const shouldCredit = enteredRtq || (inRtqNow && !monitoringSiteSetAt);
 
     if (shouldCredit) {
-      monitoringSiteSetAt = new Date().toISOString();
+      monitoringSiteSetAt = rtqMoveTime;
       monitoringSiteSetPipeline = pipelineName;
       monitoringSiteSetStage = stageName;
     }

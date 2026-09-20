@@ -1,3 +1,6 @@
+// REPORT DATE (Joe 9/20): from September 2026 on, a report counts ONLY in the month of its
+// Ready to Quote move (monitoring_site_set_at). The creation-date fallback survives only for
+// months before September so paid history does not change.
 // CSR Bonus Metrics — computes the CSR Performance & Bonus Plan from cs_deals.
 // Phase 1: Report Bonus (fully from cs_deals) + a debug block reporting the data shape
 // (distinct monitoring sites + pipeline/stage names) so the gate can be locked precisely.
@@ -103,12 +106,12 @@ function monthOf(row) {
   // Fallback: if that date is missing (older/backfilled deals where Pipedrive did not
   // record a set-date), use the deal creation date so the report still counts toward
   // its month instead of being silently dropped.
-  const d = row.monitoring_site_set_at || row.deal_created_at || null;
+  const d = row.monitoring_site_set_at || (String(row.deal_created_at || '').slice(0, 7) < '2026-09' ? row.deal_created_at : null) || null;
   return d ? String(d).slice(0, 7) : null;
 }
 function dayOf(row) {
   // Full date (yyyy-MM-dd) a report was pulled, same source as monthOf.
-  const d = row.monitoring_site_set_at || row.deal_created_at || null;
+  const d = row.monitoring_site_set_at || (String(row.deal_created_at || '').slice(0, 7) < '2026-09' ? row.deal_created_at : null) || null;
   return d ? String(d).slice(0, 10) : null;
 }
 function gatePass(row) {
