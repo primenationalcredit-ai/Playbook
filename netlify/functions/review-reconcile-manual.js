@@ -175,7 +175,7 @@ exports.handler = async (event) => {
     // Single-location mode
     if (params.location) {
       const result = await reconcileLocation(params.location);
-      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, build: 'strikes-v3-pinned', ...result }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, build: 'strikes-v4-renamed', ...result }) };
     }
 
     // Scheduled / full-run mode: process EVERY location in one invocation, bounded
@@ -255,7 +255,15 @@ async function reconcileLocation(locationName) {
     if (capped && oldest != null && sDate != null && sDate < oldest) continue;
     checked++;
 
-    const hit = findLive(s, live);
+    let hit = findLive(s, live);
+    // RENAMED REVIEWER GUARD (Joe 9/21, Fort Myers: "Larry Jones" from Zapier is "Johnny Jones"
+    // on Google). Same day and same stars, and no other stored review claims that Google review
+    // = it is this one under a new name. Errs toward keeping credit.
+    if (!hit && s.review_date) {
+      const sDay = new Date(s.review_date).getTime();
+      const cands = live.filter(l => l.date && Math.abs(new Date(new Date(l.date).toISOString().slice(0, 10)).getTime() - sDay) <= 86400000 && (!s.rating || !l.rating || Number(l.rating) === Number(s.rating)) && !stored.some(o => o.id !== s.id && findLive(o, [l])));
+      if (cands.length === 1) hit = cands[0];
+    }
     const liveNow = !!hit;
     if (!liveNow && !s.delisted_at) {
       const st = strikes[s.id] || { count: 0, lastDay: null, firstDay: today };
@@ -294,11 +302,15 @@ async function reconcileLocation(locationName) {
     const fresh = live.filter(l => l.date && (now - l.date) < 7 * 86400000 && (now - l.date) > 2 * 3600000);
     if (fresh.length) {
       const since = new Date(now - 45 * 86400000).toISOString();
-      const kr = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?location_name=eq.${encodeURIComponent(locationName)}&created_at=gte.${since}&select=google_review_id,reviewer_name,review_text&limit=1000`, { headers: supa });
+      const kr = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?location_name=eq.${encodeURIComponent(locationName)}&created_at=gte.${since}&select=google_review_id,reviewer_name,review_text,review_date,rating&limit=1000`, { headers: supa });
       if (kr.ok) {
         const known = await kr.json();
         for (const l of fresh) {
           if (known.some(k => findLive(k, [l]))) continue;
+          // RENAMED REVIEWER GUARD: a review we already have from the same day and stars that
+          // matches nobody on Google is this same review under a different name. Do not copy it.
+          const lDay = new Date(new Date(l.date).toISOString().slice(0, 10)).getTime();
+          if (known.some(k => k.review_date && Math.abs(new Date(k.review_date).getTime() - lDay) <= 86400000 && (!l.rating || !k.rating || Number(k.rating) === Number(l.rating)) && !findLive(k, live))) continue;
           const ins = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews`, {
             method: 'POST',
             headers: { ...supa, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
