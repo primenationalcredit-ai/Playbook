@@ -95,7 +95,7 @@
 # Google (delisted). Runs once a day; one invocation loops every location that
 # has pending/assigned reviews, within a time budget.
 [functions."review-reconcile"]
-  schedule = "0 14 * * *"
+  schedule = "*/10 13-15 * * *"
   timeout = 26
 
 [[redirects]]

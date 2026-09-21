@@ -153,7 +153,7 @@ exports.handler = async (event) => {
     // Single-location mode
     if (params.location) {
       const result = await reconcileLocation(params.location);
-      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, build: 'strikes-v1', ...result }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, build: 'strikes-v2-coverage', ...result }) };
     }
 
     // Scheduled / full-run mode: process EVERY location in one invocation, bounded
@@ -175,7 +175,11 @@ exports.handler = async (event) => {
 
     // Resumable pass across all locations (manual button: one location per call)
     let prog = params.reset ? null : await readCache(PROGRESS_KEY);
-    if (!prog || !Array.isArray(prog.queue) || prog.queue.length === 0 || prog.startedFor !== allLocations.join('|')) {
+    // COVERAGE FIX (Joe 9/21): keep going through the saved queue even if the location list
+    // changed; once a full pass is finished, scheduled runs that morning return right away.
+    const _recentDone = prog && Array.isArray(prog.queue) && prog.queue.length === 0 && prog.finishedAt && (Date.now() - new Date(prog.finishedAt).getTime()) < 12 * 3600 * 1000;
+    if (params.sched && _recentDone) return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, skipped: 'pass already finished in the last 12 hours' }) };
+    if (!prog || !Array.isArray(prog.queue) || prog.queue.length === 0) {
       prog = { startedFor: allLocations.join('|'), queue: [...allLocations], doneCount: 0, totalFlagged: 0, totalCleared: 0, reviewsPulled: 0 };
     }
 
@@ -257,7 +261,33 @@ async function reconcileLocation(locationName) {
     }
   }
   if (strikesChanged) await writeCache(STRIKE_KEY, strikes);
-  return { location: locationName, flagged, cleared, edited, pending, reviewsPulled, checked, capped };
+  // MISSED-REVIEW BACKUP (Joe 9/21, Reni ticket, Shantavius Guyton 265252): Zapier can drop a
+  // review (it tried while the database was overloaded and gave up). Any review Google shows
+  // from the last 7 days, at least 2 hours old so Zapier had its chance, that we do not have
+  // for this location is added as pending, exactly as the Zapier webhook would add it.
+  let added = 0;
+  const addedNames = [];
+  try {
+    const now = Date.now();
+    const fresh = live.filter(l => l.date && (now - l.date) < 7 * 86400000 && (now - l.date) > 2 * 3600000);
+    if (fresh.length) {
+      const since = new Date(now - 45 * 86400000).toISOString();
+      const kr = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews?location_name=eq.${encodeURIComponent(locationName)}&created_at=gte.${since}&select=google_review_id,reviewer_name,review_text&limit=1000`, { headers: supa });
+      if (kr.ok) {
+        const known = await kr.json();
+        for (const l of fresh) {
+          if (known.some(k => findLive(k, [l]))) continue;
+          const ins = await fetch(`${SUPABASE_URL}/rest/v1/incoming_reviews`, {
+            method: 'POST',
+            headers: { ...supa, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ location_name: locationName, reviewer_name: l.author || 'Anonymous', rating: l.rating, review_text: l.text || '', review_date: new Date(l.date).toISOString().slice(0, 10), google_review_id: l.id, status: 'pending', notes: `Added by the daily review check ${new Date().toISOString().slice(0, 10)}: on Google but Zapier never delivered it.` }),
+          });
+          if (ins.ok) { added++; addedNames.push(l.author); }
+        }
+      }
+    }
+  } catch (e) {}
+  return { location: locationName, flagged, cleared, edited, pending, added, addedNames, reviewsPulled, checked, capped };
 }
 
 function appendNote(existing, line) {
