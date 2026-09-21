@@ -193,3 +193,10 @@
 # Keyed on-demand twin of the daily review check (scheduled functions reject direct calls).
 [functions."review-reconcile-manual"]
   timeout = 26
+
+# Database health watchdog (Joe 9/21 outage): emails management if the Playbook database is slow or not answering.
+[functions."db-health-watchdog"]
+  schedule = "*/10 * * * *"
+  timeout = 26
+[functions."db-health-watchdog-manual"]
+  timeout = 26
