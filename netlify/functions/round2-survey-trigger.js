@@ -40,6 +40,46 @@ function contact(p) {
   return { email: email || null, phone: phone || null };
 }
 
+// CSAT FOLLOW-UP (Joe 9/21): every Round 2 survey that goes out is posted on the client's deal,
+// and the client's account manager gets a call activity due the same day. Fail-open: a Pipedrive
+// hiccup never blocks the survey. One post per client per day (a resend or re-run won't double up).
+async function notifyAfterSend(t, emailResult, smsResult) {
+  const out = { deal_id: null, note_id: null, activity_id: null, assigned_to: null, error: null };
+  try {
+    const fmt = v => (v == null ? 'not sent' : (typeof v === 'string' ? v : JSON.stringify(v))).slice(0, 80);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    const deals = ((await pd(`/persons/${t.person_id}/deals?status=open&limit=50`)).data) || [];
+    if (!deals.length) { out.error = 'no open deal'; return out; }
+    const deal = deals.find(d => Number(d.pipeline_id) === 45) || deals.sort((a, b) => String(b.update_time).localeCompare(String(a.update_time)))[0];
+    out.deal_id = deal.id;
+    const notes = ((await pd(`/notes?deal_id=${deal.id}&limit=50&sort=add_time%20DESC`)).data) || [];
+    const utcToday = new Date().toISOString().slice(0, 10);
+    if (notes.some(n => String(n.content || '').includes('CSAT SURVEY SENT') && String(n.add_time || '').slice(0, 10) === utcToday)) { out.error = 'already posted today'; return out; }
+    let userId = null;
+    const amName = String(t.am || '').trim().toLowerCase();
+    if (amName) {
+      const users = ((await pd('/users')).data) || [];
+      const first = amName.split(/\s+/)[0];
+      const hit = users.find(u => u.active_flag && String(u.name || '').toLowerCase().trim() === amName) || users.find(u => u.active_flag && String(u.name || '').toLowerCase().split(/\s+/)[0] === first);
+      if (hit) { userId = hit.id; out.assigned_to = hit.name; }
+    }
+    if (!userId && deal.user_id) { userId = deal.user_id.id || deal.user_id.value || deal.user_id; out.assigned_to = (deal.user_id.name || 'deal owner') + ' (deal owner)'; }
+    const lines = [
+      `<b>CSAT SURVEY SENT ${today}</b>`,
+      `Round 2 client satisfaction survey sent to ${t.name}.`,
+      `Email: ${t.email || 'none on file'} (${fmt(emailResult)})`,
+      `Text: ${t.phone || 'none on file'} (${fmt(smsResult)})`,
+      `Account manager${t.am ? ' ' + t.am : ''}: please call the client today.`
+    ];
+    const note = await pd('/notes', 'POST', { deal_id: deal.id, person_id: Number(t.person_id), content: lines.join('<br>') });
+    out.note_id = note.data && note.data.id;
+    const act = { subject: `CALL TODAY: CSAT survey sent to ${t.name}`, type: 'call', due_date: today, deal_id: deal.id, person_id: Number(t.person_id), done: 0, note: 'The Round 2 CSAT survey just went out. Call the client today to follow up.' };
+    if (userId) act.user_id = userId;
+    const a = await pd('/activities', 'POST', act);
+    out.activity_id = a.data && a.data.id;
+  } catch (e) { out.error = e.message; }
+  return out;
+}
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   try {
@@ -170,7 +210,9 @@ exports.handler = async (event) => {
         method: 'POST', headers: { ...supa, Prefer: 'return=minimal' },
         body: JSON.stringify({ person_id: t.person_id, client_name: t.name, client_email: t.email, client_phone: t.phone, am_name: t.am, survey_type: 'round2_am', source: 'auto', email_result: emailResult, sms_result: smsResult }),
       });
-      sent++; results.push({ name: t.name, email: emailResult, sms: smsResult });
+      // CSAT FOLLOW-UP: note on the deal + same-day call activity for the AM (fail-open)
+      const _n = await notifyAfterSend(t, emailResult, smsResult);
+      sent++; results.push({ name: t.name, email: emailResult, sms: smsResult, deal_note: _n });
     }
 
     return { statusCode: 200, headers, body: JSON.stringify({ matched: people.length, eligible: toSend.length, sent, remaining: Math.max(0, toSend.length - sent), results }) };
