@@ -382,6 +382,32 @@ exports.handler = async (event) => {
         } catch (e) { console.error('Parked handling failed (non-fatal):', e.message); }
       }
     }
+    // FINAL TWIN CHECK (Joe 9/21, Amber Proffitt 256843 + Robert E Lee Jr 271017): a live-charge
+    // row can land AFTER this run's earlier checks but BEFORE this save (a slow database widens the
+    // gap). Re-check each row right before saving: if the same money is now in the table, stamp the
+    // Zoho ids onto that row instead of inserting a twin.
+    if (batch.length > 0) {
+      const _keep = [];
+      for (const b of batch) {
+        try {
+          const d0 = new Date(new Date(b.payment_date).getTime() - 86400000).toISOString().split('T')[0];
+          const d1 = new Date(new Date(b.payment_date).getTime() + 86400000).toISOString().split('T')[0];
+          const ex = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?pipedrive_deal_id=eq.${b.pipedrive_deal_id}&amount=eq.${b.amount}&payment_date=gte.${d0}&payment_date=lte.${d1}&refunded_at=is.null&select=id,zoho_payment_id&limit=1`, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }).then(r => r.ok ? r.json() : []);
+          if (Array.isArray(ex) && ex.length) {
+            if (!ex[0].zoho_payment_id) {
+              const up = { zoho_payment_id: b.zoho_payment_id };
+              if (b.zoho_invoice_id) up.zoho_invoice_id = b.zoho_invoice_id;
+              await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments?id=eq.${ex[0].id}`, { method: 'PATCH', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(up) }).catch(() => {});
+            }
+            console.log(`final twin check: deal ${b.pipedrive_deal_id} $${b.amount} ${b.payment_date} already recorded - not inserted`);
+            skipped++; newRecords--;
+            continue;
+          }
+        } catch (e) { /* best effort - never blocks a real import */ }
+        _keep.push(b);
+      }
+      batch.length = 0; _keep.forEach(k => batch.push(k));
+    }
     if (batch.length > 0) {
       const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/consultant_payments`, {
         method: 'POST',

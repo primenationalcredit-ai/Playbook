@@ -130,6 +130,7 @@ exports.handler = async (event) => {
     } catch (e) {}
 
     const uniqueDeals = [...new Set(payments.filter(p => p.pipedrive_deal_id).map(p => String(p.pipedrive_deal_id)))];
+    let _ownerRoster = null;
     let resolved = 0;
     for (const dealId of uniqueDeals) {
       if (dealToAM[dealId]) continue;
@@ -146,6 +147,17 @@ exports.handler = async (event) => {
         if (!am && personId) {
           const pr = await pdGet(`/persons/${personId}`);
           am = amNameOf(pr?.data?.[ACCOUNT_MANAGER_FIELD]);
+        }
+        // OWNER FALLBACK (Joe 9/21, same rule as am-additional-rounds): no Account Manager on the
+        // deal or the person = credit the deal owner, only when the owner is an account manager.
+        if (!am) {
+          if (!_ownerRoster) {
+            try { const rr = await fetch(`${SUPABASE_URL}/rest/v1/users?department=eq.account_managers&select=name`, { headers: supa }); _ownerRoster = rr.ok ? await rr.json() : []; } catch (e) { _ownerRoster = []; }
+          }
+          const ownerName = (deal && deal.user_id && deal.user_id.name) || '';
+          const o = ownerName.toLowerCase().trim();
+          const of = o.split(/\s+/)[0] || '';
+          if (o && _ownerRoster.some(u => { const n = (u.name || '').toLowerCase().trim(); return n === o || n.split(/\s+/)[0] === of; })) am = ownerName;
         }
         if (am) {
           dealToAM[dealId] = am;
