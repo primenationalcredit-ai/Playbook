@@ -82,7 +82,7 @@ exports.handler = async (event) => {
     }
     if (params.backfillToday === '1') {
       const since = new Date().toISOString().slice(0, 10) + 'T00:00:00Z';
-      const rr = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?survey_type=eq.round2_am&source=eq.auto&created_at=gte.${since}&select=person_id,client_name,client_email,client_phone,am_name,email_result,sms_result`, { headers: supa });
+      const rr = await fetch(`${SUPABASE_URL}/rest/v1/survey_sends?survey_type=eq.round2_am&source=eq.auto&sent_at=gte.${since}&select=person_id,client_name,client_email,client_phone,am_name,email_result,sms_result`, { headers: supa });
       const rows = rr.ok ? await rr.json() : [];
       const results = [];
       for (const r of rows) results.push({ client: r.client_name, ...(await notifyAfterSend({ person_id: String(r.person_id), name: r.client_name, am: r.am_name, email: r.client_email, phone: r.client_phone }, r.email_result, r.sms_result)) });
