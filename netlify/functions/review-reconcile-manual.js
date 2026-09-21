@@ -34,6 +34,10 @@ const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 
 const REVIEW_CAP = parseInt(process.env.REVIEW_RECONCILE_CAP || '25', 10); // newest reviews pulled per location
 const PROGRESS_KEY = 'review_reconcile_progress';
+const STRIKE_KEY = 'review_reconcile_strikes';
+// 3-STRIKE RULE (Joe 9/21, Vic ticket, Kaleb Blanchard 270622): a review loses credit only
+// after it is missing from Google on this many DIFFERENT days in a row. Seen once = reset.
+const MISS_STRIKES = parseInt(process.env.REVIEW_MISS_STRIKES || '3', 10);
 const SCHEDULED_BUDGET_MS = 24000; // when run on the daily schedule, loop locations until ~24s elapsed
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
@@ -149,7 +153,7 @@ exports.handler = async (event) => {
     // Single-location mode
     if (params.location) {
       const result = await reconcileLocation(params.location);
-      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, ...result }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, build: 'strikes-v1', ...result }) };
     }
 
     // Scheduled / full-run mode: process EVERY location in one invocation, bounded
@@ -210,8 +214,13 @@ async function reconcileLocation(locationName) {
   } catch (e) {
     return { location: locationName, flagged: 0, cleared: 0, reviewsPulled: 0, checked: 0, error: e.message };
   }
+  // EMPTY FETCH GUARD (Joe 9/21): an empty pull is a scraper glitch, not every review deleted.
+  if (!live.length) return { location: locationName, flagged: 0, cleared: 0, reviewsPulled: 0, checked: 0, error: 'empty fetch - skipped, nothing judged' };
+  const strikes = (await readCache(STRIKE_KEY)) || {};
+  const today = new Date().toISOString().slice(0, 10);
+  let strikesChanged = false;
 
-  let flagged = 0, cleared = 0, checked = 0, edited = 0;
+  let flagged = 0, cleared = 0, checked = 0, edited = 0, pending = 0;
   for (const s of stored) {
     // Only judge reviews within the window we actually fetched. If the fetch was
     // capped (we didn't reach the bottom) and this review is older than the oldest
@@ -223,23 +232,32 @@ async function reconcileLocation(locationName) {
     const hit = findLive(s, live);
     const liveNow = !!hit;
     if (!liveNow && !s.delisted_at) {
-      await patch(s.id, { delisted_at: new Date().toISOString(), notes: appendNote(s.notes, `Delisted ${new Date().toISOString().slice(0, 10)}${s.status === 'completed' ? ' [WAS CREDITED' + (s.assigned_to ? ' to ' + s.assigned_to : '') + ' - removed from this month bonus counts]' : ''} — no longer on Google.`) });
-      flagged++;
+      const st = strikes[s.id] || { count: 0, lastDay: null, firstDay: today };
+      if (st.lastDay !== today) { st.count += 1; st.lastDay = today; strikes[s.id] = st; strikesChanged = true; }
+      if (st.count >= MISS_STRIKES) {
+        await patch(s.id, { delisted_at: new Date().toISOString(), notes: appendNote(s.notes, `Delisted ${today} after missing from Google ${st.count} days in a row (first missed ${st.firstDay})${s.status === 'completed' ? ' [WAS CREDITED' + (s.assigned_to ? ' to ' + s.assigned_to : '') + ' - removed from this month bonus counts]' : ''}.`) });
+        delete strikes[s.id]; strikesChanged = true;
+        flagged++;
+      } else {
+        pending++;
+      }
     } else if (liveNow) {
+      if (strikes[s.id]) { delete strikes[s.id]; strikesChanged = true; }
       // Still on Google. Clear a wrong "delisted" flag, and if the client edited the
       // review, bring our copy's rating and text up to what Google shows now.
       const body = {};
-      if (s.delisted_at) { body.delisted_at = null; cleared++; }
+      if (s.delisted_at) { body.delisted_at = null; body.notes = appendNote(s.notes, 'Back on Google ' + today + ' - removed flag cleared, credit restored.'); cleared++; }
       if (hit.rating && s.rating !== hit.rating) {
         body.rating = hit.rating;
         if (hit.text) body.review_text = hit.text;
-        body.notes = appendNote(s.notes, 'Edited on Google ' + new Date().toISOString().slice(0, 10) + ': rating ' + (s.rating || '?') + ' to ' + hit.rating + '.');
+        body.notes = appendNote(body.notes || s.notes, 'Edited on Google ' + new Date().toISOString().slice(0, 10) + ': rating ' + (s.rating || '?') + ' to ' + hit.rating + '.');
         edited++;
       }
       if (Object.keys(body).length) { body.updated_at = new Date().toISOString(); await patch(s.id, body); }
     }
   }
-  return { location: locationName, flagged, cleared, edited, reviewsPulled, checked, capped };
+  if (strikesChanged) await writeCache(STRIKE_KEY, strikes);
+  return { location: locationName, flagged, cleared, edited, pending, reviewsPulled, checked, capped };
 }
 
 function appendNote(existing, line) {
