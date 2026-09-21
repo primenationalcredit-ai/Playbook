@@ -33,6 +33,26 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 
 const REVIEW_CAP = parseInt(process.env.REVIEW_RECONCILE_CAP || '25', 10); // newest reviews pulled per location
+// PINNED LISTINGS (Joe 9/21): searching Google by name landed Laurel and Utah on the Houston
+// listing, so their reviews looked "missing" and a Houston review was copied into Utah. Each
+// location is now looked up by its exact Google listing id. No id here = skipped, never guessed.
+const PLACE_IDS = {
+  'ASAP Credit Repair Albuquerque': 'ChIJORdrT2B1IocRVjh_AnUP6z4',
+  'ASAP Credit Repair Birmingham': 'ChIJWZDK8_EbiYgRHX_bF5K4CYc',
+  'ASAP Credit Repair Columbus': 'ChIJFaBjGUKNOIgRc0rsuLi2TMA',
+  'ASAP Credit Repair Detroit': 'ChIJhzjNolzVJIgRmvJuEhpo7vo',
+  'ASAP Credit Repair El Paso': 'ChIJBySn6tNZ54YR2bcMWkQWntQ',
+  'ASAP Credit Repair Fort Myers': 'ChIJBXvTWVM_24gR2cBw6WYw9Cc',
+  'ASAP Credit Repair Fort Washington': 'ChIJIaVDAo-7t4kRvBlLXRP-HsQ',
+  'ASAP Credit Repair Houston': 'ChIJXYfKx5bbQIYRL4WynnIND-o',
+  'ASAP Credit Repair Longmont': 'ChIJJYSRvPn5a4cR9_CF_sxRe0s',
+  'ASAP Credit Repair Mcallen': 'ChIJX8GseDanZYYRQn_meOUDNxk',
+  'ASAP Credit Repair New York': 'ChIJC53ePdJZwokRUQP4Z3Iv66I',
+  'ASAP Credit Repair Phoenix': 'ChIJZaeAQ9htK4cRrQkUdugeYSU',
+  'ASAP Credit Repair San Antonio': 'ChIJnX5thXtjXIYRVFlM5WpTaOs',
+  'ASAP Credit Repair San Jose': 'ChIJxyEpB9vNj4ARhD1MJYNpofY',
+  'ASAP Credit Repair Victoria': 'ChIJOW3IhT9nQoYR58yhiPJfGO0',
+};
 const PROGRESS_KEY = 'review_reconcile_progress';
 const STRIKE_KEY = 'review_reconcile_strikes';
 // 3-STRIKE RULE (Joe 9/21, Vic ticket, Kaleb Blanchard 270622): a review loses credit only
@@ -60,7 +80,9 @@ async function writeCache(key, data) {
 // bottom of the location's reviews (so older stored reviews must not be judged).
 async function fetchLiveReviews(locationName) {
   if (!OUTSCRAPER_API_KEY) throw new Error('OUTSCRAPER_API_KEY not set');
-  const url = `https://api.outscraper.cloud/maps/reviews-v3?query=${encodeURIComponent(locationName)}&reviewsLimit=${REVIEW_CAP}&sort=newest&language=en&async=false`;
+  const placeId = PLACE_IDS[String(locationName || '').trim()];
+  if (!placeId) throw new Error('no pinned Google listing for this location - skipped, nothing judged');
+  const url = `https://api.outscraper.cloud/maps/reviews-v3?query=${encodeURIComponent(placeId)}&reviewsLimit=${REVIEW_CAP}&sort=newest&language=en&async=false`;
   const res = await fetch(url, { headers: { 'X-API-KEY': OUTSCRAPER_API_KEY } });
   if (!res.ok) throw new Error(`Outscraper ${res.status}`);
   const json = await res.json().catch(() => ({}));
@@ -153,7 +175,7 @@ exports.handler = async (event) => {
     // Single-location mode
     if (params.location) {
       const result = await reconcileLocation(params.location);
-      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, build: 'strikes-v2-coverage', ...result }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ done: true, remaining: 0, build: 'strikes-v3-pinned', ...result }) };
     }
 
     // Scheduled / full-run mode: process EVERY location in one invocation, bounded
