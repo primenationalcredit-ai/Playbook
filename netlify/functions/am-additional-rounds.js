@@ -96,6 +96,15 @@ exports.handler = async (event) => {
           const pr = await pdGet(`/persons/${personId}`);
           am = amNameOf(pr.data?.[ACCOUNT_MANAGER_FIELD]);
         }
+        // OWNER FALLBACK (Joe 9/21, Dex-Ann ticket, Robert E Lee Jr 271017): no Account Manager on
+        // the deal or the person (e.g. a brand-new person record made for the rounds deal) = credit
+        // the deal owner, but only when the owner is one of our account managers.
+        if (!am) {
+          const ownerName = (deal && deal.user_id && deal.user_id.name) || '';
+          const o = ownerName.toLowerCase().trim();
+          const of = o.split(/\s+/)[0] || '';
+          if (o && amRoster.some(r => r.name.toLowerCase().trim() === o || r.first === of)) am = ownerName;
+        }
         if (am) {
           await fetch(`${SUPABASE_URL}/rest/v1/deal_am_map`, {
             method: 'POST',
@@ -138,7 +147,14 @@ exports.handler = async (event) => {
 
     const byAM = {};
     let unattributed = 0;
+    // NO DOUBLE COUNTING (Joe 9/21, Amber Proffitt 256843): the live charge and the Zoho sync can
+    // both record the same payment. Same deal + same day + same amount counts once (the same rule
+    // the nightly payment watchdog uses to merge exact twins).
+    const _seenPay = new Set();
     for (const p of paid) {
+      const _k = `${p.pipedrive_deal_id}|${p.payment_date}|${Number(p.amount)}`;
+      if (_seenPay.has(_k)) continue;
+      _seenPay.add(_k);
       let am = await resolveAM(Number(p.pipedrive_deal_id));
       if (!am) { unattributed++; continue; }
       am = canonicalAM(am);
@@ -175,7 +191,7 @@ exports.handler = async (event) => {
           .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')));
         let paid = arPaidByDeal[dealId] || 0;
         let am = null, resolved = false;
-        // Only chase OPEN deals in the past-due list — skip won and lost deals.
+        // Only chase OPEN deals in the past-due list ï¿½ skip won and lost deals.
         try {
           const statusRes = await pdGet(`/deals/${dealId}`);
           const dealStatus = statusRes?.data?.status;
