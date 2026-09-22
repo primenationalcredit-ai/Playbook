@@ -29,7 +29,7 @@ function contact(p) {
 // CSAT FOLLOW-UP (Joe 9/21): every Round 2 survey that goes out is posted on the client's deal,
 // and the client's account manager gets a call activity due the same day. Fail-open: a Pipedrive
 // hiccup never blocks the survey. One post per client per day (a resend or re-run won't double up).
-async function notifyAfterSend(t, emailResult, smsResult) {
+async function notifyAfterSend(t, emailResult, smsResult, surveyLink) {
   const out = { deal_id: null, note_id: null, activity_id: null, assigned_to: null, error: null };
   try {
     const fmt = v => (v == null ? 'not sent' : (typeof v === 'string' ? v : JSON.stringify(v))).slice(0, 80);
@@ -40,7 +40,13 @@ async function notifyAfterSend(t, emailResult, smsResult) {
     out.deal_id = deal.id;
     const notes = ((await pd(`/notes?deal_id=${deal.id}&limit=50&sort=add_time%20DESC`)).data) || [];
     const utcToday = new Date().toISOString().slice(0, 10);
-    if (notes.some(n => String(n.content || '').includes('CSAT SURVEY SENT') && String(n.add_time || '').slice(0, 10) === utcToday)) { out.error = 'already posted today'; return out; }
+    const noteExists = notes.some(n => String(n.content || '').includes('CSAT SURVEY SENT') && String(n.add_time || '').slice(0, 10) === utcToday);
+    // SEPARATE CHECKS (Joe 9/22): the note and the call task are two different API
+    // calls. If the note landed and the task did not, the old single check skipped
+    // BOTH on every later run, so the AM never got their call. Each is checked alone.
+    const actsToday = ((await pd(`/deals/${deal.id}/activities?limit=100`)).data) || [];
+    const actExists = actsToday.some(a => String(a.subject || '').includes('CSAT survey sent') && String(a.due_date || '') === today);
+    if (noteExists && actExists) { out.error = 'already posted today'; return out; }
     let userId = null;
     const amName = String(t.am || '').trim().toLowerCase();
     if (amName) {
@@ -55,14 +61,33 @@ async function notifyAfterSend(t, emailResult, smsResult) {
       `Round 2 client satisfaction survey sent to ${t.name}.`,
       `Email: ${t.email || 'none on file'} (${fmt(emailResult)})`,
       `Text: ${t.phone || 'none on file'} (${fmt(smsResult)})`,
-      `Account manager${t.am ? ' ' + t.am : ''}: please call the client today.`
+      `Account manager${t.am ? ' ' + t.am : ''}: please call the client today.`,
+      `<br><b>THE EMAIL THE CLIENT RECEIVED</b>`,
+      `Subject: How are we doing so far?`,
+      `"Hi ${t.name || 'there'}, thanks for being a client of ASAP Credit &amp; Financial Services. You are a couple of rounds in, and we want to make sure everything is going the way it should. Could you take under a minute to tell us how we are doing?"`,
+      surveyLink ? `Survey link (resend this to the client if they say they never got it): <a href="${surveyLink}">${surveyLink}</a>` : `Survey link not recorded for this send - use the Resend button in Survey Results in the Playbook.`
     ];
-    const note = await pd('/notes', 'POST', { deal_id: deal.id, person_id: Number(t.person_id), content: lines.join('<br>') });
+    let note = { data: null };
+    if (!noteExists) { note = await pd('/notes', 'POST', { deal_id: deal.id, person_id: Number(t.person_id), content: lines.join('<br>') }); }
     out.note_id = note.data && note.data.id;
+    if (noteExists) out.note_id = 'already posted';
     const act = { subject: `CALL TODAY: CSAT survey sent to ${t.name}`, type: 'call', due_date: today, deal_id: deal.id, person_id: Number(t.person_id), done: 0, note: 'The Round 2 CSAT survey just went out. Call the client today to follow up.' };
     if (userId) act.user_id = userId;
-    const a = await pd('/activities', 'POST', act);
-    out.activity_id = a.data && a.data.id;
+    if (actExists) {
+      out.activity_id = 'already existed';
+    } else {
+      let a = null;
+      for (let attempt = 1; attempt <= 2 && !a; attempt++) {
+        try { a = await pd('/activities', 'POST', act); }
+        catch (e) {
+          out.error = `call task attempt ${attempt} failed: ${e.message}`;
+          if (attempt === 2) throw e;
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+      out.activity_id = a && a.data && a.data.id;
+      if (out.activity_id) out.error = null;
+    }
   } catch (e) { out.error = e.message; }
   return out;
 }
