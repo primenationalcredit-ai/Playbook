@@ -152,6 +152,7 @@ function App() {
             <Route path="admin/lead-provider-funnel" element={<LeadProviderFunnel />} />
         <Route path="payments" element={<ConsultantPayments />} />
         <Route path="invoices" element={<Invoices />} />
+        <Route path="invoices/:view" element={<Invoices />} />
         <Route path="agreements" element={<Agreements />} />
         <Route path="approvals" element={<Approvals />} />
         <Route path="approvals/:id" element={<Approvals />} />

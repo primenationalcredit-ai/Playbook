@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Send, ExternalLink, RefreshCw, FileText, AlertTriangle, CheckCircle2, Clock, XCircle, DollarSign, CalendarClock, PauseCircle, PlayCircle, Zap, Undo2, ChevronDown, ChevronUp, AlarmClock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
+import { NavLink, Navigate, useParams, useNavigate } from 'react-router-dom';
 
 const PIPEDRIVE_DOMAIN = 'asapcreditrepair';
 // Split-charge feature flag. Flip to true only after the full lifecycle test passes.
@@ -187,6 +188,11 @@ function DocFeeCard({ token, isAdmin, onAction }) {
 }
 
 function ScheduledChargeCard({ charge, label, isAdmin, canRequest, onAction, pendingApproval }) {
+  // FIX (Joe 9/22): Fix Address / Discount / Add Card on a payment row used deal_id, client_name and
+  // client_email without defining them here, so clicking them threw an error and did nothing.
+  const deal_id = charge.pipedrive_deal_id;
+  const client_name = charge.client_name;
+  const client_email = charge.client_email;
   const c = charge;
   const refunded = !!c.refunded_at;
   const isPaid = c.status === 'paid';
@@ -761,7 +767,7 @@ function BrowseView({ data, filter, onFilterChange, isAdmin, canRequest, onActio
                     <td className="px-3 py-2">
                       <a href={DEAL_URL(i.pipedrive_deal_id)} target="_blank" rel="noreferrer" className="font-mono text-xs font-semibold text-asap-blue hover:underline">#{i.pipedrive_deal_id || '?'}</a>
                       {i.pipedrive_deal_id && (
-                        <a href={`/invoices?deal=${i.pipedrive_deal_id}`}
+                        <a href={`/invoices/client?deal=${i.pipedrive_deal_id}`}
                           className="block text-[10px] text-slate-500 hover:text-asap-blue hover:underline mt-0.5">
                           View invoices →
                         </a>
@@ -1074,7 +1080,7 @@ function BillingRow({ r, showDecline, isAdmin = false }) {
         </p>
       </div>
       {r.pipedrive_deal_id && (
-        <a href={`?deal=${r.pipedrive_deal_id}`} className="shrink-0 text-emerald-700 hover:underline inline-flex items-center gap-1 text-xs font-semibold">
+        <a href={`/invoices/client?deal=${r.pipedrive_deal_id}`} className="shrink-0 text-emerald-700 hover:underline inline-flex items-center gap-1 text-xs font-semibold">
           Client page
         </a>
       )}
@@ -1257,13 +1263,68 @@ function DeclineOutreachBar({ r, isAdmin = false }) {
     )}
   </>);
 }
-function BillingOverview({ isAdmin }) {
+// ===== INVOICES SUB-PAGES (Joe 9/22) =====
+// The one long Invoices page is split into four pages: Upcoming Runs, Declines, Client Lookup and
+// All Invoices. BillingOverview renders the first two (view="runs" or view="declines").
+const isoDay = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
+const dayLabel = (s) => { const d = new Date(String(s).slice(0, 10) + 'T12:00:00'); return isNaN(d) ? s : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); };
+
+function InvoiceTabs() {
+  const tabs = [
+    { to: '/invoices', label: 'Upcoming Runs', end: true },
+    { to: '/invoices/declines', label: 'Declines' },
+    { to: '/invoices/client', label: 'Client Lookup' },
+    { to: '/invoices/all', label: 'All Invoices' },
+  ];
+  return (
+    <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-3">
+      {tabs.map(t => (
+        <NavLink key={t.to} to={t.to} end={!!t.end}
+          className={({ isActive }) => `px-3 py-1.5 rounded-lg text-sm font-semibold border ${isActive ? 'bg-asap-blue text-white border-asap-blue' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+          {t.label}
+        </NavLink>
+      ))}
+    </div>
+  );
+}
+
+function UpcomingDay({ day, rows, defaultOpen, isAdmin }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const noCard = rows.filter(r => !r.customer_profile_id).length;
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-3">
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-800 flex-wrap">
+          <CalendarClock size={15} className="text-sky-600" />{dayLabel(day)}
+          <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{rows.length}</span>
+          <span className="text-xs font-semibold text-slate-500">{fmtMoney(total)}</span>
+          {noCard > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">{noCard} NO CARD</span>}
+        </span>
+        {open ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+      </button>
+      {open && <div className="px-4 pb-4 space-y-2">{rows.map(r => <BillingRow key={r.id} r={r} isAdmin={isAdmin} />)}</div>}
+    </div>
+  );
+}
+
+function UpcomingByDay({ rows, isAdmin }) {
+  const groups = {};
+  rows.forEach(r => { const k = String(r.due_date || '').slice(0, 10) || 'no date'; (groups[k] = groups[k] || []).push(r); });
+  const days = Object.keys(groups).sort();
+  if (!days.length) return <p className="text-xs text-slate-400 italic px-1">Nothing scheduled in this window.</p>;
+  const tomorrow = isoDay(1);
+  return <div className="space-y-2">{days.map(d => <UpcomingDay key={d} day={d} rows={groups[d]} defaultOpen={d <= tomorrow} isAdmin={isAdmin} />)}</div>;
+}
+
+function BillingOverview({ isAdmin, view = 'runs' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [window_, setWindow_] = useState('month');
-  const [range, setRange] = useState(7); // upcoming view: 7 / 14 / 30 / 'all'
-  const [billingTab, setBillingTab] = useState('declined'); // Joe 9/14: Declined + Upcoming share one tabbed slot instead of both expanding at once
+  const [range, setRange] = useState(14); // Upcoming Runs: this week + next week by default
+  const [declineDays, setDeclineDays] = useState('all');
+  const [declineOwner, setDeclineOwner] = useState('');
 
   const load = async () => {
     setLoading(true); setErr(null);
@@ -1280,37 +1341,77 @@ function BillingOverview({ isAdmin }) {
   if (!data) return null;
 
   const m = (data.metrics || {})[window_] || {};
+  const today = isoDay(0);
+  const weekAgo = isoDay(-7);
+  const declinedAll = (data.declined_open || []).slice().sort((a, b) => String(b.due_date || '').localeCompare(String(a.due_date || '')));
+
+  const header = (title, icon) => (
+    <div className="flex items-center justify-between">
+      <h2 className="text-base font-semibold text-asap-blue flex items-center gap-2">{icon} {title}</h2>
+      <div className="flex items-center gap-2">
+        <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+          {['week','month','year'].map(w => (
+            <button key={w} onClick={() => setWindow_(w)}
+              className={`px-3 py-1.5 capitalize ${window_ === w ? 'bg-asap-blue text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+              {w}
+            </button>
+          ))}
+        </div>
+        <button onClick={load} title="Refresh" className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+    </div>
+  );
+  const metrics = (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <MetricCard label="Succeeded" tone="green" count={m.succeeded?.count || 0} amount={m.succeeded?.amount || 0} />
+      <MetricCard label="Declined (open)" tone="red" count={m.declined?.count || 0} amount={m.declined?.amount || 0} />
+      <MetricCard label="Recovered" tone="blue" count={m.recovered?.count || 0} amount={m.recovered?.amount || 0} />
+    </div>
+  );
+
+  if (view === 'declines') {
+    const owners = [...new Set(declinedAll.map(r => r.owner_name).filter(Boolean))].sort();
+    const shown = declinedAll.filter(r => (declineDays === 'all' || String(r.due_date || '') >= isoDay(-declineDays)) && (!declineOwner || r.owner_name === declineOwner));
+    const shownTotal = shown.reduce((s, r) => s + Number(r.amount || 0), 0);
+    return (
+      <div className="space-y-3 mb-6">
+        {header('Declines', <XCircle size={16} className="text-red-600" />)}
+        {metrics}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">Show:</span>
+          {[7, 30, 'all'].map(d => (
+            <button key={d} onClick={() => setDeclineDays(d)} className={`px-2 py-1 rounded text-xs font-semibold ${declineDays === d ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{d === 'all' ? 'All open' : `Last ${d} days`}</button>
+          ))}
+          <select value={declineOwner} onChange={e => setDeclineOwner(e.target.value)} className="ml-2 px-2 py-1 text-xs border border-slate-200 rounded">
+            <option value="">Everyone</option>
+            {owners.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <span className="ml-auto text-xs text-slate-500">{shown.length} decline{shown.length === 1 ? '' : 's'} {'·'} {fmtMoney(shownTotal)}</span>
+        </div>
+        <BillingList title="Declined, needs outreach (newest first)" icon={<XCircle size={15} className="text-red-600" />} rows={shown} emptyText="No open declines match this filter." showDecline={true} defaultOpen={true} isAdmin={isAdmin} />
+      </div>
+    );
+  }
+
+  // Upcoming Runs (default page)
+  const lim = range === 'all' ? null : isoDay(range);
+  const upcomingRows = data.upcoming_all || data.upcoming_7_days || [];
+  const upcomingFiltered = upcomingRows.filter(r => { const d = String(r.due_date || '').slice(0, 10); return d > today && (!lim || d <= lim); });
+  const recentDeclines = declinedAll.filter(r => String(r.due_date || '') >= weekAgo);
   return (
     <div className="space-y-3 mb-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-asap-blue flex items-center gap-2"><Zap size={16} /> Billing Overview</h2>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
-            {['week','month','year'].map(w => (
-              <button key={w} onClick={() => setWindow_(w)}
-                className={`px-3 py-1.5 capitalize ${window_ === w ? 'bg-asap-blue text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-                {w}
-              </button>
-            ))}
-          </div>
-          <button onClick={load} title="Refresh" className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-      </div>
+      {header('Upcoming Runs', <Zap size={16} />)}
       <NeedsAttentionBanner na={data.needs_attention || {}} />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <MetricCard label="Succeeded" tone="green" count={m.succeeded?.count || 0} amount={m.succeeded?.amount || 0} />
-        <MetricCard label="Declined (open)" tone="red" count={m.declined?.count || 0} amount={m.declined?.amount || 0} />
-        <MetricCard label="Recovered" tone="blue" count={m.recovered?.count || 0} amount={m.recovered?.amount || 0} />
-      </div>
+      {metrics}
       <BillingList title="Due Today" icon={<AlarmClock size={15} className="text-amber-600" />} rows={data.due_today || []} emptyText="Nothing bills today." defaultOpen={true} isAdmin={isAdmin} />
       {data.outstanding && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-semibold text-slate-800">
-              Outstanding autobill: {data.outstanding.count} charges {'\u00b7'} ${Number(data.outstanding.total).toLocaleString()}
-              <span className="ml-2 text-xs font-normal text-slate-500">({data.outstanding.scheduled} scheduled, {data.outstanding.failed} in retry)</span>
+              Outstanding autobill: {data.outstanding.count} charges {'·'} ${Number(data.outstanding.total).toLocaleString()}
+              <span className="ml-2 text-xs font-normal text-slate-500">({data.outstanding.scheduled} scheduled, {data.outstanding.failed} in retry) {'·'} showing retries from the last 7 days</span>
             </span>
             <span className="flex gap-1">
               {[7, 14, 30, 'all'].map(r => (
@@ -1319,12 +1420,11 @@ function BillingOverview({ isAdmin }) {
             </span>
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {(data.outstanding.by_day || []).filter(d => { if (range === 'all') return true; const lim = new Date(Date.now() + range * 86400000).toISOString().slice(0, 10); return d.date <= lim; }).map(d => {
-              const today = new Date().toISOString().slice(0, 10);
+            {(data.outstanding.by_day || []).filter(d => d.date >= weekAgo && (!lim || d.date <= lim)).map(d => {
               const past = d.date < today;
               return (
-                <div key={d.date} title={past ? 'Failed charges awaiting retry from this date' : `${d.count} charges scheduled`} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-center ${past ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
-                  <div className="text-[10px] text-slate-500">{past ? 'retry ' : ''}{d.date.slice(5)}</div>
+                <div key={d.date} title={past ? 'Failed charges awaiting retry from this date' : `${d.count} charges scheduled`} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-center ${past ? 'border-red-200 bg-red-50' : d.date === today ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+                  <div className="text-[10px] text-slate-500">{past ? 'retry ' : ''}{d.date === today ? 'today' : d.date.slice(5)}</div>
                   <div className="text-sm font-bold text-slate-800">{d.count}</div>
                   <div className="text-[10px] text-slate-600">${Number(d.total).toLocaleString()}</div>
                 </div>
@@ -1333,32 +1433,22 @@ function BillingOverview({ isAdmin }) {
           </div>
         </div>
       )}
-      {(() => {
-        const upcomingRows = data.upcoming_all || data.upcoming_7_days || [];
-        const upcomingFiltered = range === 'all' ? upcomingRows : upcomingRows.filter(r => (r.due_date || '') <= new Date(Date.now() + range * 86400000).toISOString().slice(0, 10));
-        const declinedCount = (data.declined_open || []).length;
-        const upcomingCount = upcomingFiltered.length;
-        return (
-          <div>
-            <div className="flex gap-2 mb-2">
-              <button onClick={() => setBillingTab('declined')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${billingTab === 'declined' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>Declined ({declinedCount})</button>
-              <button onClick={() => setBillingTab('upcoming')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold border ${billingTab === 'upcoming' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>Upcoming ({upcomingCount})</button>
-            </div>
-            {billingTab === 'declined' && (
-              <BillingList title="Declined — needs outreach" icon={<XCircle size={15} className="text-red-600" />} rows={data.declined_open || []} emptyText="No open declines. 🎉" showDecline={true} defaultOpen={true} isAdmin={isAdmin} />
-            )}
-            {billingTab === 'upcoming' && (
-              <BillingList title={range === 'all' ? 'Upcoming (all scheduled)' : `Upcoming (${range} days)`} icon={<CalendarClock size={15} className="text-sky-600" />} rows={upcomingFiltered} emptyText="Nothing scheduled in this window." defaultOpen={true} isAdmin={isAdmin} />
-            )}
-          </div>
-        );
-      })()}
+      <BillingList title={`Declined in the last 7 days (${recentDeclines.length} of ${declinedAll.length} open)`} icon={<XCircle size={15} className="text-red-600" />} rows={recentDeclines} emptyText="No declines in the last 7 days." showDecline={true} defaultOpen={false} isAdmin={isAdmin} />
+      {declinedAll.length > recentDeclines.length && (
+        <NavLink to="/invoices/declines" className="inline-block text-xs font-semibold text-asap-blue hover:underline px-1">See all {declinedAll.length} open declines on the Declines page {'→'}</NavLink>
+      )}
+      <div className="pt-2">
+        <h3 className="text-sm font-semibold text-slate-700 px-1 mb-2">Upcoming runs {range === 'all' ? '(everything scheduled)' : `(next ${range} days)`}, by day</h3>
+        <UpcomingByDay rows={upcomingFiltered} isAdmin={isAdmin} />
+      </div>
     </div>
   );
 }
 // ===== End Billing Overview =====
 export default function Invoices() {
   const { currentUser } = useApp();
+  const params = useParams();
+  const navigate = useNavigate();
 
   const isRestrictedLeader = RESTRICTED_LEADER_IDS.includes(currentUser?.id);
   // Admin (in the Playbook UI sense): can take direct actions on invoices.
@@ -1383,6 +1473,9 @@ export default function Invoices() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const [mode, setMode] = useState(initialDeal ? 'lookup' : 'browse');
+  // INVOICES SUB-PAGES (Joe 9/22): /invoices = Upcoming Runs, /invoices/declines, /invoices/client, /invoices/all
+  const VIEWS = ['runs', 'declines', 'client', 'all'];
+  const view = VIEWS.includes(params.view) ? params.view : 'runs';
 
   // Map of charge_id -> pending approval (so a charge that already has an open
   // request shows a badge and blocks a duplicate). Loaded alongside invoices.
@@ -1558,6 +1651,7 @@ export default function Invoices() {
     try {
       const [data] = await Promise.all([callApi('get_deal', { deal_id: id }), loadPendingApprovals()]);
       setDealData(data);
+      if (params.view === 'client') navigate(`/invoices/client?deal=${id}`, { replace: true });
       callApi('check_qualified_doc', { deal_id: id }).then(setQualifiedDoc).catch(() => setQualifiedDoc(null));
     } catch (e) {
       setErr(e.message); setDealData(null);
@@ -1575,10 +1669,17 @@ export default function Invoices() {
   };
 
   useEffect(() => {
-    if (initialDeal) lookup(initialDeal);
-    else browse(); // default to All Invoices on open, no click needed
+    if (view === 'client') {
+      const d = (() => { try { return new URLSearchParams(window.location.search).get('deal') || ''; } catch { return ''; } })();
+      if (d) { setDealInput(d); lookup(d); }
+    } else if (view === 'all') {
+      browse();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [view]);
+
+  // Old links like /invoices?deal=123 (Approvals page) open straight into Client Lookup.
+  if (!params.view && initialDeal) return <Navigate to={`/invoices/client?deal=${initialDeal}`} replace />;
 
   const modalTitles = {
     request_split: 'Request a payment split',
@@ -1608,83 +1709,58 @@ export default function Invoices() {
               : 'Track doc fees and scheduled payments. Read-only.'}
         </p>
       </div>
-      {!isAdmin && (
+      <InvoiceTabs />
+
+      {(view === 'runs' || view === 'declines') && <BillingOverview key={view} isAdmin={isAdmin} view={view} />}
+
+      {view === 'client' && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
-        <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Pipedrive Deal ID</label>
-            <input
-              type="text"
-              value={dealInput}
-              onChange={e => setDealInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') lookup(); }}
-              placeholder="e.g. 265795"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Pipedrive Deal ID</label>
+              <input
+                type="text"
+                value={dealInput}
+                onChange={e => setDealInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') lookup(); }}
+                placeholder="e.g. 265795"
+                autoFocus
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
             <button onClick={() => lookup()} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-60">
               <Search size={16} /> Look Up
             </button>
-            <button onClick={browse} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-white text-asap-blue border border-asap-blue text-sm font-semibold rounded hover:bg-blue-50 disabled:opacity-60">
-              <FileText size={16} /> Show All Invoices
-            </button>
           </div>
+          {err && (
+            <div className="mt-3 p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700 flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+              <span>{err}</span>
+            </div>
+          )}
         </div>
-        {err && (
-          <div className="mt-3 p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700 flex items-start gap-2">
-            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-            <span>{err}</span>
-          </div>
-        )}
-      </div>
-      )}
-      <BillingOverview isAdmin={isAdmin} />
-      {isAdmin && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 mb-6">
-        <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-slate-500 mb-1">Pipedrive Deal ID</label>
-            <input
-              type="text"
-              value={dealInput}
-              onChange={e => setDealInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') lookup(); }}
-              placeholder="e.g. 265795"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded focus:outline-none focus:border-asap-blue focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => lookup()} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-asap-blue text-white text-sm font-semibold rounded hover:bg-blue-800 disabled:opacity-60">
-              <Search size={16} /> Look Up
-            </button>
-            <button onClick={browse} disabled={loading} className="inline-flex items-center gap-2 px-4 py-2 bg-white text-asap-blue border border-asap-blue text-sm font-semibold rounded hover:bg-blue-50 disabled:opacity-60">
-              <FileText size={16} /> Show All Invoices
-            </button>
-          </div>
-        </div>
-        {err && (
-          <div className="mt-3 p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700 flex items-start gap-2">
-            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-            <span>{err}</span>
-          </div>
-        )}
-      </div>
       )}
 
-      {loading && (
+      {view === 'all' && err && (
+        <div className="mb-6 p-3 rounded border border-red-200 bg-red-50 text-sm text-red-700 flex items-start gap-2">
+          <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+          <span>{err}</span>
+        </div>
+      )}
+
+      {(view === 'client' || view === 'all') && loading && (
         <div className="text-center py-12 text-slate-500">
           <RefreshCw size={20} className="inline animate-spin mr-2" />
           Loading...
         </div>
       )}
 
-      {!loading && mode === 'lookup' && dealData && <DealView data={dealData} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} qualifiedDoc={qualifiedDoc} />}
-      {!loading && mode === 'browse' && browseData && <BrowseView data={browseData} filter={filter} onFilterChange={setFilter} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} />}
+      {view === 'client' && !loading && mode === 'lookup' && dealData && <DealView data={dealData} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} qualifiedDoc={qualifiedDoc} />}
+      {view === 'all' && !loading && mode === 'browse' && browseData && <BrowseView data={browseData} filter={filter} onFilterChange={setFilter} isAdmin={isAdmin} canRequest={canRequest} onAction={openAction} pendingByCharge={pendingByCharge} />}
 
-      {!loading && !dealData && !browseData && !err && (
+      {view === 'client' && !loading && !dealData && !err && (
         <div className="text-center py-12 text-slate-400 text-sm italic">
-          Look up a deal by ID or show all invoices from the last 90 days.
+          Enter a Pipedrive Deal ID to open that client's invoices, payments, notes and actions.
         </div>
       )}
 

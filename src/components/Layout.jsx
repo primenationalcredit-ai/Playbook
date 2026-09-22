@@ -281,11 +281,20 @@ function Layout() {
 
   const isAM = currentUser?.department === 'account_managers' || currentUser?.role === 'admin' || isLeadership;
 
+  // INVOICES SUB-PAGES (Joe 9/22): Invoices is split into four pages. "Invoices" opens
+  // Upcoming Runs; the other three show indented right under it.
+  const INVOICE_NAV = [
+    { path: '/invoices', icon: FileText, label: 'Invoices', end: true },
+    { path: '/invoices/declines', icon: CreditCard, label: 'Declines', sub: true },
+    { path: '/invoices/client', icon: Search, label: 'Client Lookup', sub: true },
+    { path: '/invoices/all', icon: FileText, label: 'All Invoices', sub: true },
+  ];
+
   // Core department items (Payment Dashboard & Paysheet - shown in main nav)
   const coreDepartmentItems = [
     ...((isConsultant && !isLeadership && !isAccountManagerDept) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue, unread: affiliateCallsOverdue }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
-    ...((isAM || isConsultant) ? [{ path: '/invoices', icon: FileText, label: 'Invoices' }] : []),
+    ...((isAM || isConsultant) ? INVOICE_NAV : []),
     ...((isAM || isConsultant) ? [{ path: '/agreements', icon: FileText, label: 'Agreements' }] : []),
     ...(isAM ? [{ path: '/approvals', icon: ShieldCheck, label: 'Approvals', badge: amApprovalsBadge, unread: approvalsUnread }] : []),
     // AMs get Additional Rounds (Joe 8/4) - THIS array is what regular AMs
@@ -322,7 +331,7 @@ function Layout() {
   const departmentItems = isJoe ? [
     ...((isConsultant || isLeadership) ? [{ path: '/affiliate-outreach', icon: Users2, label: 'Affiliates', badge: affiliateCallsDue, unread: affiliateCallsOverdue }] : []),
     ...(isConsultant ? [{ path: '/payments', icon: DollarSign, label: 'Payment Dashboard' }] : []),
-    { path: '/invoices', icon: FileText, label: 'Invoices' },
+    ...INVOICE_NAV,
     { path: '/agreements', icon: FileText, label: 'Agreements' },
     { path: '/admin/automations', icon: ShieldCheck, label: 'Automations' },
     ...((isConsultant || isCSR) ? [{ path: '/claim-reviews', icon: Star, label: 'Claim Reviews' }] : []),
@@ -566,8 +575,9 @@ function Layout() {
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  end={!!item.end}
                   className={({ isActive }) => `
-                    flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all
+                    flex items-center gap-3 ${item.sub && sidebarOpen ? 'pl-10 pr-3 py-1.5 text-sm' : 'px-3 py-2.5'} rounded-lg transition-all
                     ${isActive 
                       ? 'bg-green-500/20 text-green-400' 
                       : 'text-slate-300 hover:bg-white/10 hover:text-white'
@@ -577,7 +587,7 @@ function Layout() {
                   title={!sidebarOpen ? item.label : undefined}
                 >
                   <span className="relative">
-                    <item.icon size={20} />
+                    <item.icon size={item.sub ? 16 : 20} />
                     {!sidebarOpen && item.unread > 0 && (
                       <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-asap-red rounded-full ring-2 ring-asap-navy" />
                     )}
