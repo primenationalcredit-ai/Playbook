@@ -63,17 +63,6 @@ async function pd(path, method, body) {
   if (!res.ok) throw new Error(`PD ${opts.method} ${path.split('?')[0]} -> ${res.status}: ${JSON.stringify(json).slice(0, 200)}`);
   return json;
 }
-async function pdPaged(path, cap) {
-  const out = [];
-  for (let start = 0; start < (cap || 5000); start += 500) {
-    const j = await pd(`${path}&start=${start}&limit=500`);
-    const batch = (j && j.data) || [];
-    out.push(...batch);
-    if (!(j.additional_data && j.additional_data.pagination && j.additional_data.pagination.more_items_in_collection)) break;
-  }
-  return out;
-}
-
 // Every open D activity on a deal. This is the duplicate guard: a deal never
 // gets a second live step while one is already open.
 async function openDsForDeal(dealId) {
@@ -81,30 +70,45 @@ async function openDsForDeal(dealId) {
   return (j && j.data) || [];
 }
 
+// WHAT CHANGED SINCE X (9/22): the first cut paged every completed D activity
+// over a 400 day window and blew the function's time limit. Pipedrive has a
+// "recents" feed built for exactly this, so each run only looks at what moved
+// since the last run.
+async function recents(sinceIso, items) {
+  const out = [];
+  const since = sinceIso.replace('T', ' ').slice(0, 19);
+  for (let start = 0; start < 2000; start += 500) {
+    const j = await pd(`/recents?since_timestamp=${encodeURIComponent(since)}&items=${items}&start=${start}&limit=500`);
+    const batch = (j && j.data) || [];
+    out.push(...batch);
+    if (!(j.additional_data && j.additional_data.pagination && j.additional_data.pagination.more_items_in_collection)) break;
+  }
+  return out;
+}
+
 async function run(params) {
   const live = params.live === '1' || params.live === 'true';
-  const hours = Math.min(parseInt(params.hours || '24', 10) || 24, 24 * 14);
+  const hours = Math.min(parseInt(params.hours || '24', 10) || 24, 24 * 7);
   const sinceMs = Date.now() - hours * 3600000;
-  const out = { mode: live ? 'LIVE' : 'preview', window_hours: hours, advanced: [], started: [], moved: [], skipped: [], errors: [] };
+  const sinceIso = new Date(sinceMs).toISOString();
+  const budgetMs = Math.min(parseInt(params.budget_ms || '20000', 10) || 20000, 24000);
+  const t0 = Date.now();
+  const timeLeft = () => (Date.now() - t0) < budgetMs;
+  const out = { mode: live ? 'LIVE' : 'preview', window_hours: hours, since: sinceIso, advanced: [], started: [], moved: [], skipped: [], errors: [], truncated: false };
 
-  // ---- 1. ADVANCE: D activities completed inside the window ----
-  const doneFrom = ymd(new Date(sinceMs - 400 * 86400000)); // due date can be far in the past
-  const doneTo = ymd(new Date(Date.now() + 2 * 86400000));
-  let doneActs = [];
+  // ---- 1. ADVANCE: D activities completed since the window opened ----
+  let acts = [];
   try {
-    doneActs = await pdPaged(`/activities?done=1&user_id=0&type=${TYPE_LIST}&start_date=${doneFrom}&end_date=${doneTo}`, 20000);
-  } catch (e) { out.errors.push('done pull: ' + e.message); }
-  const recentlyDone = doneActs.filter(a => {
-    const t = a.marked_as_done_time || a.update_time;
-    return t && new Date(String(t).replace(' ', 'T') + 'Z').getTime() >= sinceMs;
-  });
-  out.completed_in_window = recentlyDone.length;
+    const raw = await recents(sinceIso, 'activity');
+    acts = raw.map(r => r.data || r).filter(a => a && a.done === true && stepFromType(a.type) !== null);
+  } catch (e) { out.errors.push('recents(activity): ' + e.message); }
+  out.completed_in_window = acts.length;
 
-  for (const act of recentlyDone) {
+  for (const act of acts) {
+    if (!timeLeft()) { out.truncated = true; break; }
     try {
       if (!act.deal_id) { out.skipped.push({ activity: act.id, why: 'no deal attached' }); continue; }
       const step = stepFromType(act.type);
-      if (step === null) { out.skipped.push({ activity: act.id, why: `type ${act.type} not in the ladder` }); continue; }
       const next = nextStepAfter(step);
       if (next === null) { out.skipped.push({ activity: act.id, deal: act.deal_id, why: 'D372 is the last step' }); continue; }
       const stillOpen = await openDsForDeal(act.deal_id);
@@ -114,10 +118,7 @@ async function run(params) {
       const completedYmd = ymd(new Date(String(act.marked_as_done_time || act.update_time).replace(' ', 'T') + 'Z'));
       const due = dueForNext(step, next, completedYmd);
       const owner = (deal.user_id && (deal.user_id.id || deal.user_id.value)) || act.user_id;
-      const plan = {
-        deal: act.deal_id, client: deal.title || null, from: 'D' + step, to: 'D' + next,
-        completed: completedYmd, due, type: 'd' + next, subject: subjectFor(prefix, next), owner
-      };
+      const plan = { deal: act.deal_id, client: deal.title || null, from: 'D' + step, to: 'D' + next, completed: completedYmd, due, type: 'd' + next, subject: subjectFor(prefix, next), owner };
       if (live) {
         const created = await pd('/activities', 'POST', {
           subject: plan.subject, type: 'd' + next, due_date: due, deal_id: act.deal_id,
@@ -130,46 +131,51 @@ async function run(params) {
     } catch (e) { out.errors.push(`advance ${act.id}: ${e.message}`); }
   }
 
-  // ---- 2. ARRIVALS: deals that changed into an autopilot stage in the window ----
-  for (const stageId of Object.keys(STAGES)) {
+  // ---- 2. ARRIVALS + STAGE MOVES: deals that changed since the window opened ----
+  let deals = [];
+  try {
+    const raw = await recents(sinceIso, 'deal');
+    deals = raw.map(r => r.data || r).filter(d => d && STAGES[d.stage_id] && d.status === 'open');
+  } catch (e) { out.errors.push('recents(deal): ' + e.message); }
+  out.deals_changed_in_window = deals.length;
+
+  for (const deal of deals) {
+    if (!timeLeft()) { out.truncated = true; break; }
     try {
-      const deals = await pdPaged(`/deals?stage_id=${stageId}&status=open&sort=update_time%20DESC`, 3000);
-      const arrived = deals.filter(d => {
-        const t = d.stage_change_time || d.add_time;
-        return t && new Date(String(t).replace(' ', 'T') + 'Z').getTime() >= sinceMs;
-      });
-      for (const deal of arrived) {
-        const prefix = STAGES[stageId];
-        const open = await openDsForDeal(deal.id);
-        const foreign = open.filter(a => (prefixFromSubject(a.subject) || prefix) !== prefix);
-        const mine = open.filter(a => (prefixFromSubject(a.subject) || prefix) === prefix);
-        if (mine.length) { out.skipped.push({ deal: deal.id, why: `already running in ${prefix} (${mine.map(x => x.type).join(',')})` }); continue; }
-        const due = skipSunday(addDays(ymd(new Date()), 1));
-        const plan = {
-          deal: deal.id, client: deal.title || null, stage: prefix, start_at: 'D' + FIRST_STEP,
-          due, type: 'd' + FIRST_STEP, subject: subjectFor(prefix, FIRST_STEP),
-          owner: (deal.user_id && (deal.user_id.id || deal.user_id.value)) || null,
-          deleting_old: foreign.map(a => ({ activity: a.id, subject: a.subject, type: a.type }))
-        };
-        if (live) {
-          for (const f of foreign) {
-            try { await pd(`/activities/${f.id}`, 'DELETE'); } catch (e) { out.errors.push(`delete ${f.id}: ${e.message}`); }
-          }
-          const created = await pd('/activities', 'POST', {
-            subject: plan.subject, type: 'd' + FIRST_STEP, due_date: due, deal_id: deal.id,
-            person_id: deal.person_id ? (deal.person_id.value || deal.person_id) : undefined,
-            user_id: plan.owner, done: 0
-          });
-          plan.created_activity = created.data && created.data.id;
+      const changed = deal.stage_change_time || deal.add_time;
+      if (!changed || new Date(String(changed).replace(' ', 'T') + 'Z').getTime() < sinceMs) { continue; }
+      const prefix = STAGES[deal.stage_id];
+      const open = await openDsForDeal(deal.id);
+      const mine = open.filter(a => (prefixFromSubject(a.subject) || prefix) === prefix);
+      const foreign = open.filter(a => (prefixFromSubject(a.subject) || prefix) !== prefix);
+      if (mine.length) { out.skipped.push({ deal: deal.id, why: `already running in ${prefix} (${mine.map(x => x.type).join(',')})` }); continue; }
+      const due = skipSunday(addDays(ymd(new Date()), 1));
+      const plan = {
+        deal: deal.id, client: deal.title || null, stage: prefix, start_at: 'D' + FIRST_STEP, due,
+        type: 'd' + FIRST_STEP, subject: subjectFor(prefix, FIRST_STEP),
+        owner: (deal.user_id && (deal.user_id.id || deal.user_id.value)) || deal.user_id || null,
+        moved_into_stage: changed,
+        deleting_old: foreign.map(a => ({ activity: a.id, subject: a.subject, type: a.type }))
+      };
+      if (live) {
+        for (const f of foreign) {
+          try { await pd(`/activities/${f.id}`, 'DELETE'); } catch (e) { out.errors.push(`delete ${f.id}: ${e.message}`); }
         }
-        (foreign.length ? out.moved : out.started).push(plan);
+        const created = await pd('/activities', 'POST', {
+          subject: plan.subject, type: 'd' + FIRST_STEP, due_date: due, deal_id: deal.id,
+          person_id: deal.person_id ? (deal.person_id.value || deal.person_id) : undefined,
+          user_id: plan.owner, done: 0
+        });
+        plan.created_activity = created.data && created.data.id;
       }
-    } catch (e) { out.errors.push(`stage ${stageId}: ${e.message}`); }
+      (foreign.length ? out.moved : out.started).push(plan);
+    } catch (e) { out.errors.push(`deal ${deal.id}: ${e.message}`); }
   }
 
+  out.elapsed_ms = Date.now() - t0;
   out.summary = {
     would_advance: out.advanced.length, would_start: out.started.length,
-    would_move: out.moved.length, skipped: out.skipped.length, errors: out.errors.length
+    would_move: out.moved.length, skipped: out.skipped.length, errors: out.errors.length, truncated: out.truncated
   };
   return out;
 }
