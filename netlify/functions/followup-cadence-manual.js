@@ -65,9 +65,14 @@ async function pd(path, method, body) {
 }
 // Every open D activity on a deal. This is the duplicate guard: a deal never
 // gets a second live step while one is already open.
+// 9/22: the first cut asked /activities?deal_id=... which IGNORES the deal
+// filter and hands back a global list - the preview showed every deal
+// reporting the same 100 activities, so nothing could ever advance. The deal's
+// own activities endpoint is the one that actually scopes to the deal.
 async function openDsForDeal(dealId) {
-  const j = await pd(`/activities?done=0&user_id=0&type=${TYPE_LIST}&deal_id=${dealId}&limit=100`);
-  return (j && j.data) || [];
+  const j = await pd(`/deals/${dealId}/activities?done=0&limit=100`);
+  const rows = (j && j.data) || [];
+  return rows.filter(a => stepFromType(a.type) !== null);
 }
 
 // WHAT CHANGED SINCE X (9/22): the first cut paged every completed D activity
@@ -103,8 +108,21 @@ async function run(params) {
     acts = raw.map(r => r.data || r).filter(a => a && a.done === true && stepFromType(a.type) !== null);
   } catch (e) { out.errors.push('recents(activity): ' + e.message); }
   out.completed_in_window = acts.length;
+  // One deal can have several steps cleared in the same window; only the
+  // newest matters, and a cap keeps a single run inside its time budget.
+  const maxPerRun = Math.min(parseInt(params.max || '40', 10) || 40, 200);
+  const byDeal = new Map();
+  for (const a of acts) {
+    if (!a.deal_id) continue;
+    const prev = byDeal.get(a.deal_id);
+    const t = new Date(String(a.marked_as_done_time || a.update_time || 0).replace(' ', 'T') + 'Z').getTime();
+    if (!prev || t > prev._t) { a._t = t; byDeal.set(a.deal_id, a); }
+  }
+  const candidates = Array.from(byDeal.values()).sort((x, y) => (x._t || 0) - (y._t || 0));
+  out.deals_with_a_cleared_step = candidates.length;
+  if (candidates.length > maxPerRun) { out.truncated = true; }
 
-  for (const act of acts) {
+  for (const act of candidates.slice(0, maxPerRun)) {
     if (!timeLeft()) { out.truncated = true; break; }
     try {
       if (!act.deal_id) { out.skipped.push({ activity: act.id, why: 'no deal attached' }); continue; }
@@ -139,7 +157,8 @@ async function run(params) {
   } catch (e) { out.errors.push('recents(deal): ' + e.message); }
   out.deals_changed_in_window = deals.length;
 
-  for (const deal of deals) {
+  const maxDeals = Math.min(parseInt(params.max || '40', 10) || 40, 200);
+  for (const deal of deals.slice(0, maxDeals)) {
     if (!timeLeft()) { out.truncated = true; break; }
     try {
       const changed = deal.stage_change_time || deal.add_time;
