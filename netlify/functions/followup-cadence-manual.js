@@ -122,7 +122,7 @@ async function run(params) {
   const budgetMs = Math.min(parseInt(params.budget_ms || '20000', 10) || 20000, 24000);
   const t0 = Date.now();
   const timeLeft = () => (Date.now() - t0) < budgetMs;
-  const out = { mode: live ? 'LIVE' : 'preview', window_hours: hours, since: sinceIso, advanced: [], started: [], moved: [], skipped: [], errors: [], truncated: false };
+  const out = { build: 'cadence-v5', mode: live ? 'LIVE' : 'preview', window_hours: hours, since: sinceIso, advanced: [], started: [], moved: [], skipped: [], errors: [], truncated: false };
 
   // ---- 1. ADVANCE: D activities completed since the window opened ----
   let acts = [];
@@ -155,6 +155,12 @@ async function run(params) {
       const stillOpen = await openDsForDeal(act.deal_id);
       if (stillOpen.length) { out.skipped.push({ activity: act.id, deal: act.deal_id, why: `deal already has ${stillOpen.length} open D (${stillOpen.map(x => x.type).join(',')})` }); continue; }
       const deal = (await pd(`/deals/${act.deal_id}`)).data || {};
+      // DELETED DEALS (Joe 9/22, caught in preview on Sollie Davis 271148): a
+      // chain must never add work to a deal that has been deleted.
+      if (!deal.id || deal.status === 'deleted' || deal.active_flag === false) {
+        out.skipped.push({ activity: act.id, deal: act.deal_id, why: `deal is ${deal.status || 'gone'}` });
+        continue;
+      }
       const prefix = STAGES[deal.stage_id] || (await pipelineLabel(deal.pipeline_id)) || prefixFromSubject(act.subject) || 'Follow Up';
       const completedYmd = ymd(new Date(String(act.marked_as_done_time || act.update_time).replace(' ', 'T') + 'Z'));
       const due = dueForNext(step, next, completedYmd);
@@ -184,6 +190,7 @@ async function run(params) {
   for (const deal of deals.slice(0, maxDeals)) {
     if (!timeLeft()) { out.truncated = true; break; }
     try {
+      if (deal.status === 'deleted' || deal.active_flag === false) { out.skipped.push({ deal: deal.id, why: 'deal is deleted' }); continue; }
       const changed = deal.stage_change_time || deal.add_time;
       if (!changed || new Date(String(changed).replace(' ', 'T') + 'Z').getTime() < sinceMs) { continue; }
       const prefix = STAGES[deal.stage_id];
