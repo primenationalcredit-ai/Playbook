@@ -1378,6 +1378,7 @@ function BillingOverview({ isAdmin, view = 'runs' }) {
     return (
       <div className="space-y-3 mb-6">
         {header('Declines', <XCircle size={16} className="text-red-600" />)}
+        <NeedsAttentionBanner na={data.needs_attention || {}} />
         {metrics}
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-3 flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-slate-500">Show:</span>
@@ -1395,48 +1396,41 @@ function BillingOverview({ isAdmin, view = 'runs' }) {
     );
   }
 
-  // Upcoming Runs (default page)
+  // Upcoming Runs (default page) - Joe 9/22: runs only. Metrics on top, then today and the days
+  // ahead. No declines or retries here; those live on the Declines page.
   const lim = range === 'all' ? null : isoDay(range);
   const upcomingRows = data.upcoming_all || data.upcoming_7_days || [];
   const upcomingFiltered = upcomingRows.filter(r => { const d = String(r.due_date || '').slice(0, 10); return d > today && (!lim || d <= lim); });
-  const recentDeclines = declinedAll.filter(r => String(r.due_date || '') >= weekAgo);
+  const stripDays = ((data.outstanding && data.outstanding.by_day) || []).filter(d => d.date >= today && (!lim || d.date <= lim));
+  const stripCount = stripDays.reduce((s, d) => s + Number(d.count || 0), 0);
+  const stripTotal = stripDays.reduce((s, d) => s + Number(d.total || 0), 0);
   return (
     <div className="space-y-3 mb-6">
       {header('Upcoming Runs', <Zap size={16} />)}
-      <NeedsAttentionBanner na={data.needs_attention || {}} />
       {metrics}
       <BillingList title="Due Today" icon={<AlarmClock size={15} className="text-amber-600" />} rows={data.due_today || []} emptyText="Nothing bills today." defaultOpen={true} isAdmin={isAdmin} />
-      {data.outstanding && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-semibold text-slate-800">
-              Outstanding autobill: {data.outstanding.count} charges {'·'} ${Number(data.outstanding.total).toLocaleString()}
-              <span className="ml-2 text-xs font-normal text-slate-500">({data.outstanding.scheduled} scheduled, {data.outstanding.failed} in retry) {'·'} showing retries from the last 7 days</span>
-            </span>
-            <span className="flex gap-1">
-              {[7, 14, 30, 'all'].map(r => (
-                <button key={r} onClick={() => setRange(r)} className={`px-2 py-1 rounded text-xs font-semibold ${range === r ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{r === 'all' ? 'All' : `${r}d`}</button>
-              ))}
-            </span>
-          </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {(data.outstanding.by_day || []).filter(d => d.date >= weekAgo && (!lim || d.date <= lim)).map(d => {
-              const past = d.date < today;
-              return (
-                <div key={d.date} title={past ? 'Failed charges awaiting retry from this date' : `${d.count} charges scheduled`} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-center ${past ? 'border-red-200 bg-red-50' : d.date === today ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
-                  <div className="text-[10px] text-slate-500">{past ? 'retry ' : ''}{d.date === today ? 'today' : d.date.slice(5)}</div>
-                  <div className="text-sm font-bold text-slate-800">{d.count}</div>
-                  <div className="text-[10px] text-slate-600">${Number(d.total).toLocaleString()}</div>
-                </div>
-              );
-            })}
-          </div>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-slate-800">
+            Scheduled autobill: {stripCount} charges {'\u00b7'} ${stripTotal.toLocaleString()}
+            <span className="ml-2 text-xs font-normal text-slate-500">{range === 'all' ? 'everything scheduled' : `today + next ${range} days`}</span>
+          </span>
+          <span className="flex gap-1">
+            {[7, 14, 30, 'all'].map(r => (
+              <button key={r} onClick={() => setRange(r)} className={`px-2 py-1 rounded text-xs font-semibold ${range === r ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{r === 'all' ? 'All' : `${r}d`}</button>
+            ))}
+          </span>
         </div>
-      )}
-      <BillingList title={`Declined in the last 7 days (${recentDeclines.length} of ${declinedAll.length} open)`} icon={<XCircle size={15} className="text-red-600" />} rows={recentDeclines} emptyText="No declines in the last 7 days." showDecline={true} defaultOpen={false} isAdmin={isAdmin} />
-      {declinedAll.length > recentDeclines.length && (
-        <NavLink to="/invoices/declines" className="inline-block text-xs font-semibold text-asap-blue hover:underline px-1">See all {declinedAll.length} open declines on the Declines page {'→'}</NavLink>
-      )}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {stripDays.map(d => (
+            <div key={d.date} title={`${d.count} charges scheduled`} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-center ${d.date === today ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+              <div className="text-[10px] text-slate-500">{d.date === today ? 'today' : d.date.slice(5)}</div>
+              <div className="text-sm font-bold text-slate-800">{d.count}</div>
+              <div className="text-[10px] text-slate-600">${Number(d.total).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="pt-2">
         <h3 className="text-sm font-semibold text-slate-700 px-1 mb-2">Upcoming runs {range === 'all' ? '(everything scheduled)' : `(next ${range} days)`}, by day</h3>
         <UpcomingByDay rows={upcomingFiltered} isAdmin={isAdmin} />
