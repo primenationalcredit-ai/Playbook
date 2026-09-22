@@ -204,3 +204,8 @@
 # Follow-up cadence engine: needs the full 26s like the other heavy jobs.
 [functions."followup-cadence-manual"]
   timeout = 26
+
+# Follow-up cadence runner. PREVIEW until CADENCE_LIVE=1 is set in Netlify.
+[functions."followup-cadence"]
+  schedule = "*/5 * * * *"
+  timeout = 26

@@ -27,6 +27,27 @@ const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Head
 const STEPS = [1, 2, 3, 4, 6, 8, 11, 14, 18, 22, 27, 32, 37, 42, 49, 56, 63, 70, 84, 98, 112, 126, 140, 154, 168, 189, 210, 231, 252, 282, 312, 342, 372];
 const FIRST_STEP = 2; // D1 is skipped on arrival: first contact happened before the move
 const STAGES = { 580: 'New Lead', 581: 'Reports', 588: 'Quoted' };
+// A chain keeps running after a deal leaves autopilot (only a delete stops it),
+// so the subject falls back to the deal's CURRENT pipeline name - Joe's spec is
+// "pipeline name + day number". Friendly labels for the three autopilot ones.
+const PIPELINE_LABEL = { 21: 'New Lead', 37: 'Reports', 42: 'Quoted' };
+let _pipelineNames = null;
+async function pipelineLabel(pipelineId) {
+  if (!pipelineId) return null;
+  if (PIPELINE_LABEL[pipelineId]) return PIPELINE_LABEL[pipelineId];
+  if (!_pipelineNames) {
+    try {
+      const j = await pd('/pipelines');
+      _pipelineNames = {};
+      for (const p of (j.data || [])) _pipelineNames[p.id] = p.name;
+    } catch (e) { _pipelineNames = {}; }
+  }
+  const raw = _pipelineNames[pipelineId];
+  if (!raw) return null;
+  // "C.R.S." -> "C.R.S.", "SOLD" -> "Sold", "Quoted 2.0" -> "Quoted"
+  const cleaned = String(raw).replace(/\s*2\.0\s*$/i, '').trim();
+  return /[a-z]/.test(cleaned) ? cleaned : cleaned.charAt(0) + cleaned.slice(1).toLowerCase();
+}
 const TYPE_LIST = STEPS.map(n => 'd' + n).join(',');
 
 function nextStepAfter(n) {
@@ -92,7 +113,9 @@ async function recents(sinceIso, items) {
 }
 
 async function run(params) {
-  const live = params.live === '1' || params.live === 'true';
+  // CUTOVER SWITCH: stays a preview until CADENCE_LIVE=1 is set in Netlify (or
+  // ?live=1 is passed by hand). Joe turns the Zaps off, then this goes on.
+  const live = params.live === '1' || params.live === 'true' || process.env.CADENCE_LIVE === '1';
   const hours = Math.min(parseInt(params.hours || '24', 10) || 24, 24 * 7);
   const sinceMs = Date.now() - hours * 3600000;
   const sinceIso = new Date(sinceMs).toISOString();
@@ -132,7 +155,7 @@ async function run(params) {
       const stillOpen = await openDsForDeal(act.deal_id);
       if (stillOpen.length) { out.skipped.push({ activity: act.id, deal: act.deal_id, why: `deal already has ${stillOpen.length} open D (${stillOpen.map(x => x.type).join(',')})` }); continue; }
       const deal = (await pd(`/deals/${act.deal_id}`)).data || {};
-      const prefix = STAGES[deal.stage_id] || prefixFromSubject(act.subject) || 'Follow Up';
+      const prefix = STAGES[deal.stage_id] || (await pipelineLabel(deal.pipeline_id)) || prefixFromSubject(act.subject) || 'Follow Up';
       const completedYmd = ymd(new Date(String(act.marked_as_done_time || act.update_time).replace(' ', 'T') + 'Z'));
       const due = dueForNext(step, next, completedYmd);
       const owner = (deal.user_id && (deal.user_id.id || deal.user_id.value)) || act.user_id;
